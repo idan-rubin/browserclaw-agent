@@ -1,0 +1,78 @@
+services:
+  # ─── Object Storage ───────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  # ─── Reverse Proxy ──────────────────────────────────────────────
+  traefik:
+    image: traefik:v3.4
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "8081:8080" # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # ─── Frontend ───────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./src/Frontend
+      dockerfile: Dockerfile
+    environment:
+      BACKEND_URL: "http://browser:5040"
+    ports:
+      - "3001:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+
+  # ─── Browser Service ───────────────────────────────────────────
+  browser:
+    build:
+      context: ./src/Services/Browser
+      dockerfile: Dockerfile
+    env_file:
+      - ./src/Services/Browser/.env.local
+    environment:
+      PORT: "5040"
+      BROWSER_HEADLESS: "false"
+      MINIO_ENDPOINT: "http://minio:9000"
+      MINIO_ACCESS_KEY: "minioadmin"
+      MINIO_SECRET_KEY: "minioadmin"
+      MINIO_BUCKET: "browserclaw-skills"
+    ports:
+      - "5040:5040"
+      - "6080:6080"
+    volumes:
+      - prompt_logs:/app/data/prompts
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.browser.rule=PathPrefix(`/vnc`)"
+      - "traefik.http.routers.browser.entrypoints=web"
+      - "traefik.http.routers.browser.priority=10"
+      - "traefik.http.routers.browser.middlewares=strip-vnc"
+      - "traefik.http.middlewares.strip-vnc.stripprefix.prefixes=/vnc"
+      - "traefik.http.services.browser.loadbalancer.server.port=6080"
+
+volumes:
+  minio_data:
+  prompt_logs:

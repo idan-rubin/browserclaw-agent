@@ -1,0 +1,65 @@
+services:
+  minio:
+    volumes:
+      - minio_data:/data
+
+  traefik:
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=idan@browserclaw.org"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+
+  frontend:
+    build:
+      args:
+        NEXT_PUBLIC_GA_ID: "G-PG1VRFZPH3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.routers.frontend-secure.rule=Host(`browserclaw.org`) && PathPrefix(`/`)"
+      - "traefik.http.routers.frontend-secure.entrypoints=websecure"
+      - "traefik.http.routers.frontend-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.frontend-secure.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+
+  browser:
+    environment:
+      MINIO_ENDPOINT: "http://minio:9000"
+      MINIO_ACCESS_KEY: "minioadmin"
+      MINIO_SECRET_KEY: "minioadmin"
+      MINIO_BUCKET: "browserclaw-skills"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.browser.rule=PathPrefix(`/vnc`)"
+      - "traefik.http.routers.browser.entrypoints=web"
+      - "traefik.http.routers.browser.priority=10"
+      - "traefik.http.routers.browser.middlewares=strip-vnc"
+      - "traefik.http.routers.browser-secure.rule=Host(`browserclaw.org`) && PathPrefix(`/vnc`)"
+      - "traefik.http.routers.browser-secure.entrypoints=websecure"
+      - "traefik.http.routers.browser-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.browser-secure.priority=10"
+      - "traefik.http.routers.browser-secure.middlewares=strip-vnc"
+      - "traefik.http.middlewares.strip-vnc.stripprefix.prefixes=/vnc"
+      - "traefik.http.services.browser.loadbalancer.server.port=6080"
+
+volumes:
+  minio_data:
+  letsencrypt:

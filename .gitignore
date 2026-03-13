@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Build
+dist/
+build/
+
+# Environment
+.env
+.env*.local
+
+# IDE
+.idea/
+*.swp
+*~
+.vscode/
+*.code-workspace
+
+# Claude Code
+.claude/worktrees/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Test results
+coverage/
+test-results/
+playwright-report/
+
+# Articles
+docs/articles/
+
+# Misc
+*.log
+*.tsbuildinfo

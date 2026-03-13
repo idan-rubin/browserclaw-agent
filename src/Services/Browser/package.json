@@ -1,0 +1,26 @@
+{
+  "name": "browserclaw-browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env.local src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@types/ws": "^8.18.1",
+    "@aws-sdk/client-s3": "^3.750.0",
+    "browserclaw": "^0.5.6",
+    "openai": "^4.80.0",
+    "ws": "^8.19.0"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.39.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

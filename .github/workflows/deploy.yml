@@ -1,0 +1,236 @@
+# BROWSERCLAW CI/CD
+#
+# Push to main → detect what changed → deploy to Hetzner
+#
+# 🔍 Detect → 🚀 Deploy → 📊 Summary
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'docker-compose.yml'
+      - 'docker-compose.prod.yml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+# Cancel in-progress runs when a new commit is pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 🔍 DETECT - What changed?
+  # ─────────────────────────────────────────────────────────────────────────────
+  detect-changes:
+    name: 🔍 Detect
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.changes.outputs.frontend }}
+      browser: ${{ steps.changes.outputs.browser }}
+      infra: ${{ steps.changes.outputs.infra }}
+      any_changed: ${{ steps.changes.outputs.any_changed }}
+      sha_short: ${{ steps.changes.outputs.sha_short }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Analyze
+        id: changes
+        env:
+          GIT_SHA: ${{ github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          SHA_SHORT=$(echo "$GIT_SHA" | cut -c1-8)
+          echo "sha_short=$SHA_SHORT" >> $GITHUB_OUTPUT
+
+          # If BEFORE_SHA is unknown (new branch, force push, manual dispatch),
+          # rebuild everything
+          if [[ -z "$BEFORE_SHA" ]] || \
+             [[ "$BEFORE_SHA" == "0000000000000000000000000000000000000000" ]] || \
+             ! git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
+            echo "BEFORE_SHA unavailable — rebuilding all"
+            echo "frontend=true" >> $GITHUB_OUTPUT
+            echo "browser=true" >> $GITHUB_OUTPUT
+            echo "infra=true" >> $GITHUB_OUTPUT
+            echo "any_changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          DIFF_FILES=$(git diff --name-only "$BEFORE_SHA" "$GIT_SHA")
+          echo "Files changed:"
+          echo "$DIFF_FILES"
+
+          FRONTEND=false
+          BROWSER=false
+          INFRA=false
+
+          if echo "$DIFF_FILES" | grep -q '^src/Frontend/'; then
+            FRONTEND=true
+          fi
+
+          if echo "$DIFF_FILES" | grep -q '^src/Services/Browser/'; then
+            BROWSER=true
+          fi
+
+          if echo "$DIFF_FILES" | grep -qE '^docker-compose\.(yml|prod\.yml)$'; then
+            INFRA=true
+          fi
+
+          echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
+          echo "browser=$BROWSER" >> $GITHUB_OUTPUT
+          echo "infra=$INFRA" >> $GITHUB_OUTPUT
+
+          if [ "$FRONTEND" = "true" ] || [ "$BROWSER" = "true" ] || [ "$INFRA" = "true" ]; then
+            echo "any_changed=true" >> $GITHUB_OUTPUT
+            echo "Changed: frontend=$FRONTEND browser=$BROWSER infra=$INFRA"
+          else
+            echo "any_changed=false" >> $GITHUB_OUTPUT
+            echo "No relevant changes detected"
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 🚀 DEPLOY - rsync + docker compose on Hetzner
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: 🚀 Deploy
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.any_changed == 'true'
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check deploy config
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+        run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "HETZNER_SSH_KEY not set — deploy skipped"
+            echo "SKIP=true" >> $GITHUB_ENV
+          else
+            echo "SKIP=false" >> $GITHUB_ENV
+          fi
+
+      - name: Set up SSH
+        if: env.SKIP == 'false'
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HOST: ${{ vars.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync files
+        if: env.SKIP == 'false'
+        env:
+          HOST: ${{ vars.HETZNER_HOST }}
+        run: |
+          rsync -avz --delete \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='.git' \
+            --exclude='test-results' \
+            --exclude='.env.local' \
+            -e "ssh -i ~/.ssh/hetzner" \
+            ./ "root@$HOST:/opt/browserclaw/"
+
+      - name: Deploy services
+        if: env.SKIP == 'false'
+        env:
+          FRONTEND: ${{ needs.detect-changes.outputs.frontend }}
+          BROWSER: ${{ needs.detect-changes.outputs.browser }}
+          INFRA: ${{ needs.detect-changes.outputs.infra }}
+          HOST: ${{ vars.HETZNER_HOST }}
+        run: |
+          SSH="ssh -i ~/.ssh/hetzner root@$HOST"
+          COMPOSE="cd /opt/browserclaw && docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+
+          # If infra changed, rebuild everything
+          if [ "$INFRA" = "true" ]; then
+            echo "Infrastructure changed — full rebuild"
+            $SSH "$COMPOSE up -d --build"
+          else
+            # Build only changed services
+            SERVICES=""
+            [ "$FRONTEND" = "true" ] && SERVICES="$SERVICES frontend"
+            [ "$BROWSER" = "true" ] && SERVICES="$SERVICES browser"
+
+            if [ -n "$SERVICES" ]; then
+              echo "Rebuilding:$SERVICES"
+              $SSH "$COMPOSE up -d --build $SERVICES"
+            fi
+          fi
+
+      - name: Smoke test
+        if: env.SKIP == 'false'
+        run: |
+          echo "Waiting for production..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -sL -o /dev/null -w "%{http_code}" "https://browserclaw.org/" --max-time 10 || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✓ Production healthy (https://browserclaw.org)"
+              exit 0
+            fi
+            echo "  attempt $i/12 — HTTP $STATUS — retrying in 10s..."
+            sleep 10
+          done
+          echo "✗ Smoke test failed after 2 minutes"
+          exit 1
+
+      - name: Cleanup
+        if: always() && env.SKIP == 'false'
+        env:
+          HOST: ${{ vars.HETZNER_HOST }}
+        run: |
+          ssh -i ~/.ssh/hetzner "root@$HOST" "docker image prune -f" || true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 📊 SUMMARY
+  # ─────────────────────────────────────────────────────────────────────────────
+  summary:
+    name: 📊 Summary
+    runs-on: ubuntu-latest
+    needs: [detect-changes, deploy]
+    if: always()
+
+    steps:
+      - name: Report
+        env:
+          SHA_SHORT: ${{ needs.detect-changes.outputs.sha_short }}
+          FRONTEND: ${{ needs.detect-changes.outputs.frontend }}
+          BROWSER: ${{ needs.detect-changes.outputs.browser }}
+          INFRA: ${{ needs.detect-changes.outputs.infra }}
+          DETECT_RESULT: ${{ needs.detect-changes.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: |
+          DETECT_ICON=$( [ "$DETECT_RESULT" = "success" ] && echo "✅" || echo "❌" )
+          if [ "$DEPLOY_RESULT" = "success" ]; then DEPLOY_ICON="✅"
+          elif [ "$DEPLOY_RESULT" = "skipped" ]; then DEPLOY_ICON="⏭️"
+          else DEPLOY_ICON="❌"; fi
+
+          SERVICES=""
+          [ "$FRONTEND" = "true" ] && SERVICES="$SERVICES frontend"
+          [ "$BROWSER" = "true" ] && SERVICES="$SERVICES browser"
+          [ "$INFRA" = "true" ] && SERVICES="$SERVICES infra"
+          [ -z "$SERVICES" ] && SERVICES=" none"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          # CI/CD Results
+
+          | Stage | Status |
+          |-------|--------|
+          | 🔍 Detect | $DETECT_ICON |
+          | 🚀 Deploy | $DEPLOY_ICON |
+
+          **Tag:** \`$SHA_SHORT\`
+          **Changed:**$SERVICES
+          EOF
