@@ -7,6 +7,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getMinioConfig } from './config.js';
 import type { CatalogSkill, SkillOutput } from './types.js';
+import { logger } from './logger.js';
 
 let s3: S3Client;
 let bucket: string;
@@ -27,10 +28,10 @@ export async function initSkillStore(): Promise<void> {
 
   try {
     await s3.send(new HeadBucketCommand({ Bucket: bucket }));
-    console.log(`Skill store ready (bucket: ${bucket})`);
+    logger.info({ bucket }, 'Skill store ready');
   } catch {
     await s3.send(new CreateBucketCommand({ Bucket: bucket }));
-    console.log(`Created skill store bucket: ${bucket}`);
+    logger.info({ bucket }, 'Created skill store bucket');
   }
 }
 
@@ -84,5 +85,5 @@ export async function saveSkill(
     }),
   );
 
-  console.log(`Saved skill "${skill.title}" for ${domain} (run #${catalogSkill.run_count})`);
+  logger.info({ title: skill.title, domain, runCount: catalogSkill.run_count }, 'Saved skill');
 }

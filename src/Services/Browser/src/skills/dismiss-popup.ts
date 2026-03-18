@@ -1,4 +1,5 @@
 import type { CrawlPage } from 'browserclaw';
+import { logger } from '../logger.js';
 
 export async function detectPopup(page: CrawlPage): Promise<boolean> {
   return await page.evaluate(`
@@ -90,12 +91,12 @@ export async function dismissPopup(page: CrawlPage): Promise<boolean> {
     `) as boolean;
 
     if (dismissed) {
-      console.log('dismiss-popup: closed a popup');
+      logger.debug('dismiss-popup: closed a popup');
       await page.waitFor({ timeMs: 500 });
     }
     return dismissed;
   } catch (err) {
-    console.error('dismiss-popup failed:', err instanceof Error ? err.message : err);
+    logger.error({ err }, 'dismiss-popup failed');
     return false;
   }
 }

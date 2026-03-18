@@ -9,6 +9,7 @@ import { logPrompt } from './prompt-log.js';
 import { requireEnvInt, USER_RESPONSE_TIMEOUT_MS } from './config.js';
 import { getLLMCallCount, resetLLMCallCount } from './llm.js';
 import { extractDomain, getSkillForDomain, saveSkill } from './skill-store.js';
+import { logger } from './logger.js';
 
 interface ManagedSession {
   id: string;
@@ -73,7 +74,7 @@ export function addSSEClient(sessionId: string, res: ServerResponse): void {
       setTimeout(async () => {
         const current = sessions.get(sessionId);
         if (current && current.sseClients.size === 0 && current.status === 'running') {
-          console.log(`Closing session ${sessionId} — all clients disconnected`);
+          logger.info({ sessionId }, 'Closing session — all clients disconnected');
           await closeSession(sessionId);
         }
       }, 5_000);
@@ -88,11 +89,11 @@ export function startCleanupLoop(): void {
       const age = now - session.createdAt.getTime();
       const idle = now - session.lastActivityAt.getTime();
       if (age > SESSION_MAX_DURATION_MS) {
-        console.log(`Closing session ${id} — exceeded max duration (${Math.round(age / 1000)}s)`);
+        logger.info({ sessionId: id, ageSec: Math.round(age / 1000) }, 'Closing session — exceeded max duration');
         emitSSE(id, 'timeout', { reason: 'Session time limit reached (5 minutes)' });
         await closeSession(id);
       } else if (idle > SESSION_IDLE_TIMEOUT_MS && session.status !== 'waiting_for_user') {
-        console.log(`Closing idle session ${id}`);
+        logger.info({ sessionId: id }, 'Closing idle session');
         await closeSession(id);
       }
     }
@@ -116,7 +117,7 @@ export async function createSession(
 
   const existingSessions = [...sessions.values()].filter(s => s.ip === ip);
   for (const existing of existingSessions) {
-    console.log(`Closing existing session ${existing.id} for IP ${ip} — new session requested`);
+    logger.info({ sessionId: existing.id, ip }, 'Closing existing session — new session requested');
     await closeSession(existing.id);
   }
 
@@ -149,9 +150,9 @@ export async function createSession(
     page = await browser.currentPage();
     if (url) await page.goto(url);
   } catch (err) {
-    console.error(`Failed to open URL ${url} — stopping orphaned Chrome:`, err);
+    logger.error({ url, err }, 'Failed to open URL — stopping orphaned Chrome');
     await browser.stop().catch((stopErr) => {
-      console.error(`Failed to stop orphaned Chrome for ${url}:`, stopErr);
+      logger.error({ url, err: stopErr }, 'Failed to stop orphaned Chrome');
     });
     throw err;
   }
@@ -178,7 +179,7 @@ export async function createSession(
   };
 
   sessions.set(id, managed);
-  console.log(`Created session ${id} (CDP port ${cdpPort})`);
+  logger.info({ sessionId: id, cdpPort }, 'Created session');
 
   logPrompt({
     timestamp: now.toISOString(),
@@ -190,7 +191,7 @@ export async function createSession(
   });
 
   startAgentLoop(id).catch((err) => {
-    console.error(`Agent loop failed for session ${id}:`, err);
+    logger.error({ sessionId: id, err }, 'Agent loop failed');
   });
 
   return {
@@ -227,7 +228,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
         const fetchMs = Date.now() - fetchStart;
         if (domainSkill) {
           skillsLoadedCount = 1;
-          console.log(`Found skill for ${managed.domain} (${fetchMs}ms): "${domainSkill.skill.title}"`);
+          logger.info({ domain: managed.domain, fetchMs, title: domainSkill.skill.title }, 'Found domain skill');
           emitter('skills_loaded', {
             domain: managed.domain,
             title: domainSkill.skill.title,
@@ -236,7 +237,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
           });
         }
       } catch (err) {
-        console.error(`Failed to fetch skill for ${managed.domain}:`, err instanceof Error ? err.message : err);
+        logger.error({ domain: managed.domain, err }, 'Failed to fetch domain skill');
       }
     }
 
@@ -303,13 +304,13 @@ async function startAgentLoop(sessionId: string): Promise<void> {
   } catch (err) {
     managed.status = 'failed';
     const message = err instanceof Error ? err.message : 'Agent loop crashed';
-    console.error(`Agent loop crashed for session ${sessionId}:`, message);
+    logger.error({ sessionId, error: message }, 'Agent loop crashed');
     emitter('failed', { step: 0, error: message });
   }
 
   setTimeout(() => {
     closeSession(sessionId).catch((err) => {
-      console.error(`Auto-close failed for session ${sessionId}:`, err);
+      logger.error({ sessionId, err }, 'Auto-close failed');
     });
   }, AUTO_CLOSE_DELAY_MS);
 }
@@ -340,7 +341,7 @@ async function tryGenerateSkill(
 
           if (newSteps < oldSteps) {
             await saveSkill(managed.domain, skill, tags);
-            console.log(`Skill improved for ${managed.domain}: ${oldSteps} steps → ${newSteps} steps`);
+            logger.info({ domain: managed.domain, oldSteps, newSteps }, 'Skill improved');
             emitter('skill_improved', {
               domain: managed.domain,
               title: skill.title,
@@ -351,7 +352,7 @@ async function tryGenerateSkill(
           } else {
             const runCount = (existing.run_count ?? 1) + 1;
             await saveSkill(managed.domain, existing.skill, existing.tags, runCount);
-            console.log(`Skill validated for ${managed.domain}: "${existing.skill.title}" (run #${runCount})`);
+            logger.info({ domain: managed.domain, title: existing.skill.title, runCount }, 'Skill validated');
             emitter('skill_validated', {
               domain: managed.domain,
               title: existing.skill.title,
@@ -366,12 +367,12 @@ async function tryGenerateSkill(
           return 'saved';
         }
       } catch (err) {
-        console.error(`Failed to save skill for ${managed.domain}:`, err instanceof Error ? err.message : err);
+        logger.error({ domain: managed.domain, err }, 'Failed to save skill');
       }
     }
     return 'saved';
   } catch (err) {
-    console.error(`Skill generation failed for session ${managed.id}:`, err);
+    logger.error({ sessionId: managed.id, err }, 'Skill generation failed');
     return 'none';
   }
 }
@@ -445,9 +446,9 @@ export async function closeSession(sessionId: string): Promise<void> {
   try {
     await session.browser.stop();
   } catch (err) {
-    console.error(`Failed to stop browser for session ${sessionId}:`, err);
+    logger.error({ sessionId, err }, 'Failed to stop browser');
   }
-  console.log(`Closed session ${sessionId}`);
+  logger.info({ sessionId }, 'Closed session');
 }
 
 export async function closeAllSessions(): Promise<void> {

@@ -5,6 +5,7 @@ import { detectLoop, loopRecoveryStep } from './skills/loop-detection.js';
 import { TabManager } from './skills/tab-manager.js';
 import { llmJson } from './llm.js';
 import type { AgentAction, AgentStep, AgentLoopResult, CatalogSkill } from './types.js';
+import { logger } from './logger.js';
 import {
   WAIT_AFTER_TYPE_MS,
   WAIT_AFTER_CLICK_MS,
@@ -56,7 +57,7 @@ async function safeSnapshot(page: CrawlPage): Promise<string> {
     try {
       return (await page.snapshot({ interactive: true, compact: true })).snapshot;
     } catch (err) {
-      console.error('Snapshot failed after retry:', err instanceof Error ? err.message : err);
+      logger.error({ err }, 'Snapshot failed after retry');
       return '[Snapshot unavailable — page may be loading]';
     }
   }
@@ -220,7 +221,7 @@ Respond with JSON: {"plan": "your plan here"}`,
       emit('plan', { prompt, plan: plan.plan });
     }
   } catch (err) {
-    console.error('Failed to generate plan:', err instanceof Error ? err.message : err);
+    logger.error({ err }, 'Failed to generate plan');
   }
 
   for (let step = 0; ; step++) {
@@ -253,7 +254,7 @@ Respond with JSON: {"plan": "your plan here"}`,
       try {
         tabCount = (await browser.tabs()).length;
       } catch (err) {
-        console.error('Failed to get tab count:', err instanceof Error ? err.message : err);
+        logger.warn({ err }, 'Failed to get tab count');
       }
     }
     const skillForStep = (step <= SKILL_INJECT_MAX_STEP) ? domainSkill : undefined;
@@ -268,17 +269,17 @@ Respond with JSON: {"plan": "your plan here"}`,
       });
       action = parseAction(parsed);
       consecutiveParseFailures = 0;
-      console.log(`Step ${step}: ${action.action} — ${action.reasoning}`);
+      logger.info({ step, action: action.action, reasoning: action.reasoning }, 'Agent step');
 
       if (detectLoop(action, history)) {
-        console.log(`Step ${step}: loop detected`);
+        logger.warn({ step }, 'Loop detected');
         history.push(loopRecoveryStep(step));
         continue;
       }
     } catch (err) {
       consecutiveParseFailures++;
       const message = err instanceof Error ? err.message : 'Failed to parse action';
-      console.error(`Step ${step}: failed to parse LLM response (${consecutiveParseFailures}/${MAX_PARSE_FAILURES}):`, message);
+      logger.error({ step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES, error: message }, 'Failed to parse LLM response');
       emit('step_error', { step, error: `LLM response error: ${message}` });
       if (consecutiveParseFailures >= MAX_PARSE_FAILURES) {
         return {
@@ -367,7 +368,7 @@ Respond with JSON: {"plan": "your plan here"}`,
       await executeAction(action, page);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Action execution failed';
-      console.error(`Step ${step}: action ${action.action} failed:`, message);
+      logger.error({ step, action: action.action, error: message }, 'Action execution failed');
       emit('step_error', { step, action: action.action, error: message });
       await page.waitFor({ timeMs: 1000 });
 
@@ -386,7 +387,7 @@ Respond with JSON: {"plan": "your plan here"}`,
           page = newPage;
           history.push({ step, action: { action: 'navigate', reasoning: `Click opened a new tab: ${newTitle}` }, url: newUrl, page_title: newTitle, timestamp: new Date().toISOString() });
         } catch {
-          console.log('tab-manager: new tab not accessible, staying on current page');
+          logger.debug('tab-manager: new tab not accessible, staying on current page');
         }
       }
     }

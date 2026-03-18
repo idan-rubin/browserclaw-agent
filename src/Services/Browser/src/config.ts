@@ -1,9 +1,10 @@
 import { getAvailableProviders, getActiveProvider, getModel } from './llm.js';
+import { logger } from './logger.js';
 
 export function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
-    console.error(`FATAL: ${name} is required but not set`);
+    logger.fatal({ envVar: name }, 'Required environment variable not set');
     process.exit(1);
   }
   return value;
@@ -14,7 +15,7 @@ export function requireEnvInt(name: string, fallback: number): number {
   if (!raw) return fallback;
   const parsed = parseInt(raw, 10);
   if (Number.isNaN(parsed)) {
-    console.error(`FATAL: ${name} must be a number, got "${raw}"`);
+    logger.fatal({ envVar: name, value: raw }, 'Environment variable must be a number');
     process.exit(1);
   }
   return parsed;
@@ -56,14 +57,14 @@ interface ServerConfig {
 export function validateConfig(): ServerConfig {
   const available = getAvailableProviders();
   if (available.length === 0) {
-    console.error('FATAL: No AI providers available. Set at least one provider API key.');
+    logger.fatal('No AI providers available — set at least one provider API key');
     process.exit(1);
   }
-  console.log(`Available providers: ${available.map(p => p.provider).join(', ')}`);
+  logger.info({ providers: available.map(p => p.provider) }, 'Available providers');
 
   // Validate LLM_PROVIDER + API key at startup so we fail fast
   const active = getActiveProvider();
-  console.log(`Active provider: ${active.provider}, model: ${getModel()}`);
+  logger.info({ provider: active.provider, model: getModel() }, 'Active provider');
 
   return {
     port: requireEnvInt('PORT', 5040),

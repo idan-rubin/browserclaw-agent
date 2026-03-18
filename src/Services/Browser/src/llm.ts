@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { parseJsonResponse } from './parse-json-response.js';
+import { logger } from './logger.js';
 
 export interface ProviderConfig {
   provider: string;
@@ -10,11 +11,24 @@ export interface ProviderConfig {
   useMaxCompletionTokens: boolean;
 }
 
+const DEFAULT_MODELS: Record<string, string> = {
+  groq: 'llama-3.3-70b-versatile',
+  gemini: 'gemini-2.5-flash',
+  openai: 'gpt-4o',
+  'openai-oauth': 'gpt-4o',
+  anthropic: 'claude-sonnet-4-6',
+};
+
+function providerModel(provider: string): string {
+  const envKey = `${provider.toUpperCase().replace(/-/g, '_')}_MODEL`;
+  return process.env[envKey] || DEFAULT_MODELS[provider] || 'unknown';
+}
+
 const PROVIDERS: ProviderConfig[] = [
   {
     provider: 'groq',
     label: 'Groq',
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: providerModel('groq'),
     baseURL: 'https://api.groq.com/openai/v1',
     apiKeyEnv: 'GROQ_API_KEY',
     useMaxCompletionTokens: false,
@@ -22,7 +36,7 @@ const PROVIDERS: ProviderConfig[] = [
   {
     provider: 'gemini',
     label: 'Gemini',
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: providerModel('gemini'),
     baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
     apiKeyEnv: 'GEMINI_API_KEY',
     useMaxCompletionTokens: false,
@@ -30,7 +44,7 @@ const PROVIDERS: ProviderConfig[] = [
   {
     provider: 'openai',
     label: 'OpenAI',
-    defaultModel: 'gpt-5.4',
+    defaultModel: providerModel('openai'),
     baseURL: 'https://api.openai.com/v1',
     apiKeyEnv: 'OPENAI_API_KEY',
     useMaxCompletionTokens: true,
@@ -38,7 +52,7 @@ const PROVIDERS: ProviderConfig[] = [
   {
     provider: 'openai-oauth',
     label: 'OpenAI (ChatGPT Subscription)',
-    defaultModel: 'gpt-5.4',
+    defaultModel: providerModel('openai-oauth'),
     baseURL: 'https://chatgpt.com/backend-api',
     apiKeyEnv: 'OPENAI_OAUTH_TOKEN',
     useMaxCompletionTokens: true,
@@ -46,7 +60,7 @@ const PROVIDERS: ProviderConfig[] = [
   {
     provider: 'anthropic',
     label: 'Anthropic',
-    defaultModel: 'claude-sonnet-4-6',
+    defaultModel: providerModel('anthropic'),
     baseURL: 'https://api.anthropic.com/v1/',
     apiKeyEnv: 'ANTHROPIC_API_KEY',
     useMaxCompletionTokens: false,
@@ -66,7 +80,7 @@ async function refreshOAuthToken(): Promise<void> {
   const refreshToken = process.env.OPENAI_REFRESH_TOKEN;
   if (!refreshToken) throw new Error('OPENAI_REFRESH_TOKEN is required to refresh the access token');
 
-  console.log('Refreshing OpenAI OAuth token...');
+  logger.info('Refreshing OpenAI OAuth token');
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -89,7 +103,7 @@ async function refreshOAuthToken(): Promise<void> {
   }
   oauthTokenIssuedAt = Date.now();
   clientCache.delete('openai-oauth');
-  console.log('OpenAI OAuth token refreshed successfully');
+  logger.info('OpenAI OAuth token refreshed successfully');
 }
 
 function shouldRefreshOAuthToken(): boolean {

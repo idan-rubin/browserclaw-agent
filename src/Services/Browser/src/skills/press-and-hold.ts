@@ -1,5 +1,6 @@
 import type { CrawlPage } from 'browserclaw';
 import { getCdpBaseUrl, getTargetId, activateCdpTarget } from './cdp-utils.js';
+import { logger } from '../logger.js';
 
 const ANTI_BOT_PATTERN = /press.*hold|verify.*human|not a bot|captcha/i;
 const HOLD_DURATION_MS = 5_000;
@@ -96,11 +97,11 @@ export async function pressAndHold(page: CrawlPage): Promise<boolean> {
   try {
     const coords = await findButtonCoordinates(page);
     if (!coords) {
-      console.log('press-and-hold: no button found in DOM');
+      logger.debug('press-and-hold: no button found in DOM');
       return false;
     }
     const { x, y } = coords;
-    console.log(`press-and-hold: CDP mousePressed at (${x}, ${y})`);
+    logger.info({ x, y }, 'press-and-hold: CDP mousePressed');
 
     const cdp = await openCdpConnection(page);
     const urlBefore = await page.url();
@@ -127,7 +128,7 @@ export async function pressAndHold(page: CrawlPage): Promise<boolean> {
     const stillBlocked = await page.evaluate(`!!document.body.innerText.match(/press.*hold|verify.*human|not a bot|access.*denied/i)`);
     return !stillBlocked;
   } catch (err) {
-    console.error('press-and-hold failed:', err instanceof Error ? err.message : err);
+    logger.error({ err }, 'press-and-hold failed');
     return false;
   }
 }

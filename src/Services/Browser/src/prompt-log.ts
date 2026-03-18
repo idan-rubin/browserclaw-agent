@@ -1,5 +1,6 @@
 import { appendFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { logger } from './logger.js';
 
 const LOG_DIR = process.env.PROMPT_LOG_DIR || '/app/data/prompts';
 
@@ -34,7 +35,7 @@ function ensureDir(): Promise<void> {
 }
 
 export async function logPrompt(entry: PromptLogEntry): Promise<void> {
-  console.log(JSON.stringify({ type: 'prompt_log', ...entry }));
+  logger.info({ type: 'prompt_log', ...entry }, 'Prompt log');
 
   try {
     await ensureDir();
@@ -42,6 +43,6 @@ export async function logPrompt(entry: PromptLogEntry): Promise<void> {
     const file = join(LOG_DIR, `prompts-${date}.jsonl`);
     await appendFile(file, JSON.stringify(entry) + '\n');
   } catch (err) {
-    console.error('Failed to write prompt log:', err);
+    logger.error({ err }, 'Failed to write prompt log');
   }
 }

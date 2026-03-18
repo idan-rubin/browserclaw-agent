@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { logger } from './logger.js';
 import {
   createSession,
   getSession,
@@ -221,7 +222,7 @@ export async function handleRequest(
       const isHttpError = err instanceof HttpError;
       const status = isHttpError ? err.statusCode : 500;
       const internal = err instanceof Error ? err.message : 'Internal server error';
-      console.error(`Error handling ${method} ${path}:`, internal);
+      logger.error({ method, path, error: internal }, 'Request handler error');
       sendError(res, status, isHttpError ? internal : 'Internal server error');
     }
     return;

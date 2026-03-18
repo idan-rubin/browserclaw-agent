@@ -4,6 +4,7 @@ import { handleRequest } from './routes.js';
 import { startCleanupLoop, closeAllSessions, stopCleanupLoop } from './session-manager.js';
 import { validateConfig } from './config.js';
 import { initSkillStore } from './skill-store.js';
+import { logger } from './logger.js';
 
 const { port, rateLimitMax, rateLimitWindowMs, internalToken } = validateConfig();
 
@@ -85,18 +86,18 @@ startCleanupLoop();
 initSkillStore()
   .then(() => {
     server.listen(port, () => {
-      console.log(`browserclaw-browser listening on port ${port}`);
+      logger.info({ port }, 'browserclaw-browser listening');
     });
   })
   .catch((err) => {
-    console.error('FATAL: Failed to initialize skill store:', err);
+    logger.fatal({ err }, 'Failed to initialize skill store');
     process.exit(1);
   });
 
 async function shutdown(): Promise<void> {
-  console.log('Shutting down...');
+  logger.info('Shutting down...');
   const forceExit = setTimeout(() => {
-    console.error('Graceful shutdown timed out, forcing exit');
+    logger.error('Graceful shutdown timed out, forcing exit');
     process.exit(1);
   }, 10_000);
   forceExit.unref();

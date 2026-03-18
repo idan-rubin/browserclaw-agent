@@ -1,5 +1,6 @@
 import type { CrawlPage } from 'browserclaw';
 import { getCdpBaseUrl, activateCdpTarget } from './cdp-utils.js';
+import { logger } from '../logger.js';
 
 interface PageTarget {
   id: string;
@@ -38,10 +39,10 @@ export class TabManager {
       await activateCdpTarget(this.cdpBaseUrl, newTab.id);
 
       this.knownTabIds = new Set(targets.map(t => t.id));
-      console.log(`tab-manager: switched to ${newTab.title} (${newTab.url})`);
+      logger.info({ title: newTab.title, url: newTab.url }, 'tab-manager: switched to new tab');
       return newPage;
     } catch (err) {
-      console.error('tab-manager error:', err instanceof Error ? err.message : err);
+      logger.error({ err }, 'tab-manager error');
       return null;
     }
   }
