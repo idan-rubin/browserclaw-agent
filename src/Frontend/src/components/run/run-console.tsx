@@ -12,6 +12,7 @@ interface RunConsoleProps {
   isSending: boolean;
   chatInputRef: React.RefObject<HTMLInputElement | null>;
   variant: "local" | "compact";
+  onDraggingChange?: (isDragging: boolean) => void;
 }
 
 export function RunConsole({
@@ -23,6 +24,7 @@ export function RunConsole({
   isSending,
   chatInputRef,
   variant,
+  onDraggingChange,
 }: RunConsoleProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [consoleHeight, setConsoleHeight] = useState(112);
@@ -32,6 +34,7 @@ export function RunConsole({
   const onDragStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     setIsDragging(true);
+    onDraggingChange?.(true);
     const startY = e.clientY;
     const startH = consoleHeightRef.current;
     const onMove = (ev: PointerEvent) => {
@@ -42,12 +45,13 @@ export function RunConsole({
     };
     const onUp = () => {
       setIsDragging(false);
+      onDraggingChange?.(false);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-  }, []);
+  }, [onDraggingChange]);
 
   useEffect(() => {
     if (scrollRef.current) {

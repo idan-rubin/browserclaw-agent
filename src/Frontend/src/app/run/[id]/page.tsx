@@ -32,6 +32,7 @@ export default function RunPage({
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const startTime = useRef(Date.now());
 
@@ -116,7 +117,7 @@ export default function RunPage({
 
     eventSource.addEventListener("skills_loaded", (e) => {
       const data = JSON.parse(e.data);
-      addSkillEvent(`Loaded ${data.count} skill${data.count > 1 ? "s" : ""} for ${data.domain}`);
+      addSkillEvent(`Loaded skill "${data.title}" for ${data.domain}`);
     });
 
     eventSource.addEventListener("skill_improved", (e) => {
@@ -280,7 +281,7 @@ export default function RunPage({
           <div className="flex-1 bg-black">
             <iframe
               src={vncUrl}
-              className="h-full w-full border-0"
+              className={`h-full w-full border-0 ${isDragging ? "pointer-events-none" : ""}`}
               title="Browser stream"
             />
           </div>
@@ -293,6 +294,7 @@ export default function RunPage({
             isSending={isSending}
             chatInputRef={chatInputRef}
             variant="compact"
+            onDraggingChange={setIsDragging}
           />
         </>
       )}
