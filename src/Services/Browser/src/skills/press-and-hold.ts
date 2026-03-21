@@ -5,7 +5,9 @@ import { logger } from '../logger.js';
 const PRESS_HOLD_PATTERN = /press.*hold|hold.*to.*confirm/i;
 const CLOUDFLARE_PATTERN = /performing security verification|cloudflare|verify you are human|just a moment/i;
 const ANTI_BOT_PATTERN = /press.*hold|verify.*human|not a bot|captcha/i;
-const HOLD_DURATION_MS = 10_000;
+function humanHoldMs(): number {
+  return 4000 + Math.floor(Math.random() * 6000); // 4-10 seconds
+}
 const MAX_WAIT_MS = 15_000;
 const POLL_INTERVAL_MS = 1_000;
 
@@ -152,11 +154,14 @@ export async function pressAndHold(page: CrawlPage): Promise<boolean> {
     try {
 
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' });
-      await new Promise(r => setTimeout(r, 100));
-      logger.info({ x, y }, 'press-and-hold: mousePressed, holding 10s');
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
-      await new Promise(r => setTimeout(r, HOLD_DURATION_MS));
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+      await new Promise(r => setTimeout(r, 100 + Math.floor(Math.random() * 200)));
+      const jitterX = x + Math.floor(Math.random() * 20) - 10;
+      const jitterY = y + Math.floor(Math.random() * 10) - 5;
+      const holdMs = humanHoldMs();
+      logger.info({ x: jitterX, y: jitterY, holdMs }, 'press-and-hold: mousePressed');
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: jitterX, y: jitterY, button: 'left', clickCount: 1 });
+      await new Promise(r => setTimeout(r, holdMs));
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: jitterX, y: jitterY, button: 'left', clickCount: 1 });
       logger.info('press-and-hold: released after 10s');
     } finally {
       cdp.close();
