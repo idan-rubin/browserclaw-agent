@@ -153,25 +153,34 @@ export async function pressAndHold(page: CrawlPage): Promise<boolean> {
 
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' });
       await new Promise(r => setTimeout(r, 100));
-      logger.info({ x, y }, 'press-and-hold: mousePressed — holding until confirmed resolved');
+      logger.info({ x, y }, 'press-and-hold: mousePressed — holding until page changes');
       await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
 
-      // Hold and check — text must stay gone for 3 consecutive checks to confirm resolved
-      let consecutiveClear = 0;
-      while (consecutiveClear < 3) {
+      // Hold until the page actually changes — URL change or overlay element removed from DOM
+      while (true) {
         await page.waitFor({ timeMs: POLL_INTERVAL_MS });
         const currentUrl = await page.url();
         if (currentUrl !== urlBefore) {
-          logger.info({ urlBefore, currentUrl }, 'press-and-hold: URL changed while holding');
-          consecutiveClear = 3;
+          logger.info({ urlBefore, currentUrl }, 'press-and-hold: URL changed');
           break;
         }
-        const textGone = await page.evaluate(`!(document.body && document.body.innerText && document.body.innerText.match(/press.*hold|verify.*human|not a bot/i))`);
-        if (textGone) {
-          consecutiveClear++;
-          logger.info({ consecutiveClear }, 'press-and-hold: text gone, confirming');
-        } else {
-          consecutiveClear = 0;
+        // Check if the overlay container (the 530px wide div) is gone — not just the text
+        const overlayGone = await page.evaluate(`
+          (function() {
+            var all = document.querySelectorAll('div');
+            for (var i = 0; i < all.length; i++) {
+              var rect = all[i].getBoundingClientRect();
+              if (rect.width > 400 && rect.width < 600 && rect.height > 200 && rect.height < 400) {
+                var t = (all[i].innerText || '');
+                if (t.match(/press.*hold|verify.*human|not a bot/i)) return false;
+              }
+            }
+            return true;
+          })()
+        `);
+        if (overlayGone) {
+          logger.info('press-and-hold: overlay element gone from DOM');
+          break;
         }
       }
 
