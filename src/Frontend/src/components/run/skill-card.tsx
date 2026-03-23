@@ -1,30 +1,40 @@
-import { toast } from "sonner";
-import type { SkillOutput } from "./types";
+import { toast } from 'sonner';
+import type { SkillOutput } from './types';
 
 function downloadSkillMarkdown(skill: SkillOutput): void {
-  const blob = new Blob([skill.markdown], { type: "text/markdown" });
+  const blob = new Blob([skill.markdown], { type: 'text/markdown' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
+  const a = document.createElement('a');
   a.href = url;
-  a.download = `${skill.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.md`;
+  a.download = `${skill.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-export function SkillCard({ skill, domain, source }: { skill: SkillOutput; domain?: string; source?: "catalog" | "generated" }) {
+export function SkillCard({
+  skill,
+  domain,
+  source,
+}: {
+  skill: SkillOutput;
+  domain?: string;
+  source?: 'catalog' | 'generated';
+}) {
   return (
     <div className="rounded-2xl border border-primary/20 bg-gradient-to-b from-primary/5 to-transparent p-5 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <span className="inline-block rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
-              {domain ?? "Skill"}
+              {domain ?? 'Skill'}
             </span>
             {source && (
-              <span className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
-                source === "generated" ? "bg-emerald-500/10 text-emerald-400" : "bg-violet-500/10 text-violet-400"
-              }`}>
-                {source === "generated" ? "New" : "Catalog"}
+              <span
+                className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+                  source === 'generated' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-violet-500/10 text-violet-400'
+                }`}
+              >
+                {source === 'generated' ? 'New' : 'Catalog'}
               </span>
             )}
           </div>
@@ -33,13 +43,24 @@ export function SkillCard({ skill, domain, source }: { skill: SkillOutput; domai
         </div>
         <div className="flex shrink-0 gap-2">
           <button
-            onClick={() => navigator.clipboard.writeText(skill.markdown).then(() => toast.success("Copied")).catch(() => toast.error("Failed to copy"))}
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(skill.markdown)
+                .then(() => {
+                  toast.success('Copied');
+                })
+                .catch(() => {
+                  toast.error('Failed to copy');
+                });
+            }}
             className="rounded-lg border border-border/60 bg-card/60 px-3 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/30 hover:text-foreground"
           >
             Copy
           </button>
           <button
-            onClick={() => downloadSkillMarkdown(skill)}
+            onClick={() => {
+              downloadSkillMarkdown(skill);
+            }}
             className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary backdrop-blur-sm transition-colors hover:bg-primary/20"
           >
             Download .md
@@ -49,7 +70,9 @@ export function SkillCard({ skill, domain, source }: { skill: SkillOutput; domai
       <ol className="mt-4 space-y-1.5 border-t border-border/30 pt-4 text-sm text-muted-foreground">
         {skill.steps.map((s) => (
           <li key={s.number} className="flex gap-2">
-            <span className="font-[family-name:var(--font-jetbrains-mono)] text-xs text-primary/70">{String(s.number).padStart(2, "0")}</span>
+            <span className="font-[family-name:var(--font-jetbrains-mono)] text-xs text-primary/70">
+              {String(s.number).padStart(2, '0')}
+            </span>
             <span>{s.description}</span>
           </li>
         ))}

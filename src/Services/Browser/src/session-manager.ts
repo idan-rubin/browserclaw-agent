@@ -46,7 +46,7 @@ const sessions = new Map<string, ManagedSession>();
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 function nextAvailableCdpPort(): number {
-  const usedPorts = new Set([...sessions.values()].map(s => s.cdpPort));
+  const usedPorts = new Set([...sessions.values()].map((s) => s.cdpPort));
   let port = BASE_CDP_PORT;
   while (usedPorts.has(port)) port++;
   return port;
@@ -73,11 +73,11 @@ export function addSSEClient(sessionId: string, res: ServerResponse): void {
   res.on('close', () => {
     managed.sseClients.delete(res);
     if (managed.sseClients.size === 0 && managed.status === 'running') {
-      setTimeout(async () => {
+      setTimeout(() => {
         const current = sessions.get(sessionId);
-        if (current && current.sseClients.size === 0 && current.status === 'running') {
+        if (current?.sseClients.size === 0 && current.status === 'running') {
           logger.info({ sessionId }, 'Closing session — all clients disconnected');
-          await closeSession(sessionId);
+          void closeSession(sessionId);
         }
       }, 5_000);
     }
@@ -85,7 +85,7 @@ export function addSSEClient(sessionId: string, res: ServerResponse): void {
 }
 
 export function startCleanupLoop(): void {
-  cleanupInterval = setInterval(async () => {
+  cleanupInterval = setInterval(() => {
     const now = Date.now();
     const toClose: { id: string; reason: string }[] = [];
     for (const [id, session] of sessions) {
@@ -97,23 +97,25 @@ export function startCleanupLoop(): void {
         toClose.push({ id, reason: 'idle' });
       }
     }
-    for (const { id, reason } of toClose) {
-      if (reason === 'max_duration') {
-        const session = sessions.get(id);
-        if (!session) continue;
-        const age = now - session.createdAt.getTime();
-        logger.info({ sessionId: id, ageSec: Math.round(age / 1000) }, 'Closing session — exceeded max duration');
-        emitSSE(id, 'timeout', { reason: 'Session time limit reached (5 minutes)' });
-      } else {
-        logger.info({ sessionId: id }, 'Closing idle session');
+    void (async () => {
+      for (const { id, reason } of toClose) {
+        if (reason === 'max_duration') {
+          const session = sessions.get(id);
+          if (session === undefined) continue;
+          const age = now - session.createdAt.getTime();
+          logger.info({ sessionId: id, ageSec: Math.round(age / 1000) }, 'Closing session — exceeded max duration');
+          emitSSE(id, 'timeout', { reason: 'Session time limit reached (5 minutes)' });
+        } else {
+          logger.info({ sessionId: id }, 'Closing idle session');
+        }
+        await closeSession(id);
       }
-      await closeSession(id);
-    }
+    })();
   }, 5_000);
 }
 
 export function stopCleanupLoop(): void {
-  if (cleanupInterval) clearInterval(cleanupInterval);
+  if (cleanupInterval !== null) clearInterval(cleanupInterval);
 }
 
 export async function createSession(
@@ -124,16 +126,16 @@ export async function createSession(
   skipModeration?: boolean,
 ): Promise<{ session: Session }> {
   if (sessions.size >= MAX_SESSIONS) {
-    throw new HttpError(429, `Maximum concurrent sessions (${MAX_SESSIONS}) reached`);
+    throw new HttpError(429, `Maximum concurrent sessions (${String(MAX_SESSIONS)}) reached`);
   }
 
-  const existingSessions = [...sessions.values()].filter(s => s.ip === ip);
+  const existingSessions = [...sessions.values()].filter((s) => s.ip === ip);
   for (const existing of existingSessions) {
     logger.info({ sessionId: existing.id, ip }, 'Closing existing session — new session requested');
     await closeSession(existing.id);
   }
 
-  if (!skipModeration) {
+  if (skipModeration !== true) {
     const aiCheck = await moderatePrompt(prompt);
     if (!aiCheck.allowed) {
       throw new HttpError(422, aiCheck.reason ?? 'Prompt blocked by content policy.');
@@ -153,17 +155,17 @@ export async function createSession(
       '--disable-blink-features=AutomationControlled',
       '--disable-downloads',
       '--disable-file-system',
-      ...(headless ? [] : ['--start-maximized']),
+      ...(headless === true ? [] : ['--start-maximized']),
     ],
   });
 
   let page: CrawlPage;
   try {
     page = await browser.currentPage();
-    if (url) await page.goto(url);
+    if (url !== undefined) await page.goto(url);
   } catch (err) {
     logger.error({ url, err }, 'Failed to open URL — stopping orphaned Chrome');
-    await browser.stop().catch((stopErr) => {
+    await browser.stop().catch((stopErr: unknown) => {
       logger.error({ url, err: stopErr }, 'Failed to stop orphaned Chrome');
     });
     throw err;
@@ -183,7 +185,7 @@ export async function createSession(
     createdAt: now,
     lastActivityAt: now,
     sseClients: new Set(),
-    domain: url ? extractDomain(url) : null,
+    domain: url !== undefined ? extractDomain(url) : null,
     result: null,
     skill: null,
     skillTags: [],
@@ -195,7 +197,7 @@ export async function createSession(
   sessions.set(id, managed);
   logger.info({ sessionId: id, cdpPort }, 'Created session');
 
-  logPrompt({
+  void logPrompt({
     timestamp: now.toISOString(),
     session_id: id,
     ip,
@@ -204,7 +206,7 @@ export async function createSession(
     status: 'started',
   });
 
-  startAgentLoop(id).catch((err) => {
+  void startAgentLoop(id).catch((err: unknown) => {
     logger.error({ sessionId: id, err }, 'Agent loop failed');
   });
 
@@ -235,7 +237,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
   try {
     // Fetch domain skill if we have a domain
     let domainSkill: CatalogSkill | null = null;
-    if (managed.domain) {
+    if (managed.domain !== null) {
       try {
         const fetchStart = Date.now();
         domainSkill = await getSkillForDomain(managed.domain);
@@ -273,11 +275,13 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     managed.status = result.success ? 'completed' : 'failed';
 
     // Capture domain from first navigate action if not set
-    if (!managed.domain) {
-      const nav = result.steps.find(s => s.action.action === 'navigate' && s.action.url);
-      if (nav?.action.url) {
+    if (managed.domain === null) {
+      const nav = result.steps.find(
+        (s) => s.action.action === 'navigate' && s.action.url !== undefined && s.action.url !== '',
+      );
+      if (nav?.action.url !== undefined && nav.action.url !== '') {
         managed.domain = extractDomain(nav.action.url);
-      } else if (result.final_url) {
+      } else if (result.final_url !== undefined && result.final_url !== '') {
         managed.domain = extractDomain(result.final_url);
       }
     }
@@ -303,7 +307,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
       });
     }
 
-    logPrompt({
+    void logPrompt({
       timestamp: new Date().toISOString(),
       session_id: sessionId,
       ip: managed.ip,
@@ -325,7 +329,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
   }
 
   setTimeout(() => {
-    closeSession(sessionId).catch((err) => {
+    closeSession(sessionId).catch((err: unknown) => {
       logger.error({ sessionId, err }, 'Auto-close failed');
     });
   }, AUTO_CLOSE_DELAY_MS);
@@ -342,20 +346,20 @@ async function aggregateDomainSkills(
   // Collect all unique domains from step URLs + final URL
   const visitedDomains = new Set<string>();
   for (const step of result.steps) {
-    if (step.url) {
+    if (step.url !== undefined && step.url !== '') {
       const d = extractDomain(step.url);
-      if (d) visitedDomains.add(d);
+      if (d !== '') visitedDomains.add(d);
     }
-    if (step.action.url) {
+    if (step.action.url !== undefined && step.action.url !== '') {
       const d = extractDomain(step.action.url);
-      if (d) visitedDomains.add(d);
+      if (d !== '') visitedDomains.add(d);
     }
   }
-  if (result.final_url) {
+  if (result.final_url !== undefined && result.final_url !== '') {
     const d = extractDomain(result.final_url);
-    if (d) visitedDomains.add(d);
+    if (d !== '') visitedDomains.add(d);
   }
-  if (managed.domain) {
+  if (managed.domain !== null) {
     visitedDomains.add(managed.domain);
   }
 
@@ -364,7 +368,7 @@ async function aggregateDomainSkills(
   const entries: DomainSkillEntry[] = [];
 
   // If we generated a skill this run, add it as 'generated'
-  if (managed.domain && managed.skill) {
+  if (managed.domain !== null && managed.skill !== null) {
     entries.push({
       domain: managed.domain,
       skill: managed.skill,
@@ -377,7 +381,7 @@ async function aggregateDomainSkills(
 
   // For the initial domain, if skill was loaded from catalog but NOT regenerated (e.g. validated),
   // add it as 'catalog'
-  if (initialDomainSkill && !entries.some(e => e.domain === initialDomainSkill.domain)) {
+  if (initialDomainSkill && !entries.some((e) => e.domain === initialDomainSkill.domain)) {
     entries.push({
       domain: initialDomainSkill.domain,
       skill: initialDomainSkill.skill,
@@ -402,7 +406,10 @@ async function aggregateDomainSkills(
         });
       }
     } catch (err) {
-      logger.error({ err: err instanceof Error ? err.message : err }, 'Failed to fetch catalog skills for visited domains');
+      logger.error(
+        { err: err instanceof Error ? err.message : err },
+        'Failed to fetch catalog skills for visited domains',
+      );
     }
   }
 
@@ -421,7 +428,7 @@ async function tryGenerateSkill(
   const result = managed.result;
   if (!result) return 'none';
 
-  const actionSteps = result.steps.filter(s => !NON_ACTION_TYPES.has(s.action.action));
+  const actionSteps = result.steps.filter((s) => !NON_ACTION_TYPES.has(s.action.action));
   if (actionSteps.length < MIN_STEPS_FOR_SKILL) return 'none';
 
   try {
@@ -429,7 +436,7 @@ async function tryGenerateSkill(
     managed.skill = skill;
     emitter('skill_generated', { skill });
 
-    if (managed.domain) {
+    if (managed.domain !== null) {
       try {
         const tags = await generateSkillTags(managed.prompt, skill);
         managed.skillTags = tags;
@@ -449,7 +456,7 @@ async function tryGenerateSkill(
             });
             return 'improved';
           } else {
-            const runCount = (existing.run_count ?? 1) + 1;
+            const runCount = existing.run_count + 1;
             await saveSkill(managed.domain, existing.skill, existing.tags, runCount);
             logger.info({ domain: managed.domain, title: existing.skill.title, runCount }, 'Skill validated');
             emitter('skill_validated', {
@@ -487,7 +494,11 @@ export function getSession(sessionId: string): Session {
   };
 }
 
-export function getSessionResult(sessionId: string): { result: AgentLoopResult | null; skill: SkillOutput | null; domain_skills: DomainSkillEntry[] } {
+export function getSessionResult(sessionId: string): {
+  result: AgentLoopResult | null;
+  skill: SkillOutput | null;
+  domain_skills: DomainSkillEntry[];
+} {
   const managed = getManagedSession(sessionId);
   return { result: managed.result, skill: managed.skill, domain_skills: managed.domainSkills };
 }
@@ -523,7 +534,7 @@ export function waitForUserResponse(sessionId: string): Promise<string> {
 
 export function resolveUserResponse(sessionId: string, text: string): void {
   const managed = getManagedSession(sessionId);
-  if (!managed.pendingUserResponse) {
+  if (managed.pendingUserResponse === null) {
     throw new HttpError(409, 'Session is not waiting for user input');
   }
   managed.pendingUserResponse.resolve(text);
@@ -532,7 +543,7 @@ export function resolveUserResponse(sessionId: string, text: string): void {
 export async function closeSession(sessionId: string): Promise<void> {
   const session = sessions.get(sessionId);
   if (!session) return;
-  if (session.pendingUserResponse) {
+  if (session.pendingUserResponse !== null) {
     session.pendingUserResponse.reject(new Error('Session closed'));
   }
   session.abortController.abort();

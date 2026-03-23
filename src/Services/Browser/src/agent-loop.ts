@@ -114,14 +114,14 @@ function truncateHistory(history: AgentStep[]): string {
   const older = history.slice(0, history.length - HISTORY_RECENT_WINDOW);
   const recent = history.slice(history.length - HISTORY_RECENT_WINDOW);
 
-  let out = `Previous actions (${history.length} total, showing last ${HISTORY_RECENT_WINDOW} in detail):\n`;
+  let out = `Previous actions (${String(history.length)} total, showing last ${String(HISTORY_RECENT_WINDOW)} in detail):\n`;
   out += '  Earlier steps summary: ';
-  out += older.map(s => `${s.action.action}${s.action.error_feedback ? '(FAILED)' : ''}`).join(' → ');
+  out += older.map((s) => `${s.action.action}${s.action.error_feedback !== undefined ? '(FAILED)' : ''}`).join(' → ');
   out += '\n';
 
   // Include the last older step's reasoning as context bridge
   const lastOlderStep = older[older.length - 1];
-  out += `  [Context from step ${lastOlderStep.step}]: ${lastOlderStep.action.reasoning.substring(0, 300)}\n\n`;
+  out += `  [Context from step ${String(lastOlderStep.step)}]: ${lastOlderStep.action.reasoning.substring(0, 300)}\n\n`;
 
   for (const step of recent) {
     out += formatStep(step);
@@ -130,11 +130,11 @@ function truncateHistory(history: AgentStep[]): string {
 }
 
 function formatStep(step: AgentStep): string {
-  let line = `  Step ${step.step}: ${step.action.action} — ${step.action.reasoning}\n`;
-  if (step.action.error_feedback) {
+  let line = `  Step ${String(step.step)}: ${step.action.action} — ${step.action.reasoning}\n`;
+  if (step.action.error_feedback !== undefined) {
     line += `    ⚠ ACTION FAILED: ${step.action.error_feedback}\n`;
   }
-  if (step.user_response) {
+  if (step.user_response !== undefined) {
     line += `    User responded: "${step.user_response}"\n`;
   }
   return line;
@@ -147,27 +147,34 @@ interface BuildUserMessageOptions {
   stepsRemaining?: number;
 }
 
-function buildUserMessage(prompt: string, snapshot: string, history: AgentStep[], url: string, title: string, opts?: BuildUserMessageOptions): string {
+function buildUserMessage(
+  prompt: string,
+  snapshot: string,
+  history: AgentStep[],
+  url: string,
+  title: string,
+  opts?: BuildUserMessageOptions,
+): string {
   const { plan, tabCount, domainSkill, stepsRemaining } = opts ?? {};
   let message = `Task: ${prompt}\n`;
 
-  if (plan) {
+  if (plan !== undefined && plan !== null && plan !== '') {
     message += `\nPlan: ${plan}\n`;
   }
 
   if (stepsRemaining !== undefined && stepsRemaining <= 10) {
-    message += `\n⚠ WARNING: Only ${stepsRemaining} steps remaining. Wrap up now — summarize what you've found and use "done" or "fail".\n`;
+    message += `\n⚠ WARNING: Only ${String(stepsRemaining)} steps remaining. Wrap up now — summarize what you've found and use "done" or "fail".\n`;
   }
 
-  if (domainSkill) {
+  if (domainSkill !== undefined && domainSkill !== null) {
     message += '\n--- PLAYBOOK (proven workflow for this site) ---\n';
     message += `\n"${domainSkill.skill.title}" — ${domainSkill.skill.description}\n`;
     for (const step of domainSkill.skill.steps) {
-      let line = `  ${step.number}. [${step.action}] ${step.description}`;
-      if (step.details) line += ` — ${step.details}`;
+      let line = `  ${String(step.number)}. [${step.action}] ${step.description}`;
+      if (step.details !== undefined && step.details !== '') line += ` — ${step.details}`;
       message += `${line}\n`;
     }
-    if (domainSkill.skill.tips && domainSkill.skill.tips.length > 0) {
+    if (domainSkill.skill.tips.length > 0) {
       message += '\nTips for this site:\n';
       for (const tip of domainSkill.skill.tips) {
         message += `  - ${tip}\n`;
@@ -177,8 +184,8 @@ function buildUserMessage(prompt: string, snapshot: string, history: AgentStep[]
   }
 
   message += `\nCurrent page: ${title}\nURL: ${url}\n`;
-  if (tabCount && tabCount > 1) {
-    message += `Open tabs: ${tabCount}\n`;
+  if (tabCount !== undefined && tabCount > 1) {
+    message += `Open tabs: ${String(tabCount)}\n`;
   }
   message += '\n';
 
@@ -189,8 +196,8 @@ function buildUserMessage(prompt: string, snapshot: string, history: AgentStep[]
 
   const alertLines = snapshot
     .split('\n')
-    .filter(line => /\b(alert|status|dialog|banner|toast|notification|error|warning)\b/i.test(line))
-    .map(line => line.trim())
+    .filter((line) => /\b(alert|status|dialog|banner|toast|notification|error|warning)\b/i.test(line))
+    .map((line) => line.trim())
     .filter(Boolean);
 
   if (alertLines.length > 0) {
@@ -226,18 +233,18 @@ function parseAction(parsed: Record<string, unknown>): AgentAction {
 async function executeAction(action: AgentAction, page: CrawlPage): Promise<void> {
   switch (action.action) {
     case 'click':
-      if (!action.ref) throw new Error('click action requires ref');
+      if (action.ref === undefined || action.ref === '') throw new Error('click action requires ref');
       await page.click(action.ref);
       break;
 
     case 'type':
-      if (!action.ref) throw new Error('type action requires ref');
-      if (!action.text) throw new Error('type action requires text');
+      if (action.ref === undefined || action.ref === '') throw new Error('type action requires ref');
+      if (action.text === undefined || action.text === '') throw new Error('type action requires text');
       await page.type(action.ref, action.text, { submit: false });
       break;
 
     case 'navigate':
-      if (!action.url) throw new Error('navigate action requires url');
+      if (action.url === undefined || action.url === '') throw new Error('navigate action requires url');
       await page.goto(action.url);
       break;
 
@@ -246,21 +253,22 @@ async function executeAction(action: AgentAction, page: CrawlPage): Promise<void
       break;
 
     case 'keyboard':
-      if (!action.key) throw new Error('keyboard action requires key');
+      if (action.key === undefined || action.key === '') throw new Error('keyboard action requires key');
       await page.press(action.key);
       break;
 
     case 'select':
-      if (!action.ref) throw new Error('select action requires ref');
-      if (!action.options || action.options.length === 0) throw new Error('select action requires options');
+      if (action.ref === undefined || action.ref === '') throw new Error('select action requires ref');
+      if (action.options === undefined || action.options.length === 0)
+        throw new Error('select action requires options');
       await page.select(action.ref, ...action.options);
       break;
 
     case 'scroll':
       await page.evaluate(
         action.direction === 'up'
-          ? `window.scrollBy(0, -${SCROLL_PIXELS})`
-          : `window.scrollBy(0, ${SCROLL_PIXELS})`,
+          ? `window.scrollBy(0, -${String(SCROLL_PIXELS)})`
+          : `window.scrollBy(0, ${String(SCROLL_PIXELS)})`,
       );
       break;
 
@@ -271,18 +279,30 @@ async function executeAction(action: AgentAction, page: CrawlPage): Promise<void
     case 'done':
     case 'fail':
     case 'ask_user':
+    case 'press_and_hold':
+    case 'click_cloudflare':
       break;
-
-    default:
-      throw new Error(`Unknown action: ${action.action}`);
   }
 }
 
 function getWaitMs(action: AgentAction['action']): number {
   switch (action) {
-    case 'type':  return WAIT_AFTER_TYPE_MS;
-    case 'click': return WAIT_AFTER_CLICK_MS;
-    default:      return WAIT_AFTER_OTHER_MS;
+    case 'type':
+      return WAIT_AFTER_TYPE_MS;
+    case 'click':
+      return WAIT_AFTER_CLICK_MS;
+    case 'navigate':
+    case 'back':
+    case 'select':
+    case 'scroll':
+    case 'keyboard':
+    case 'wait':
+    case 'press_and_hold':
+    case 'click_cloudflare':
+    case 'done':
+    case 'fail':
+    case 'ask_user':
+      return WAIT_AFTER_OTHER_MS;
   }
 }
 
@@ -298,14 +318,14 @@ export async function runAgentLoop(
 ): Promise<AgentLoopResult> {
   const history: AgentStep[] = [];
   const startTime = Date.now();
-  const tabManager = browser ? new TabManager(page) : null;
+  const tabManager = browser !== undefined ? new TabManager(page) : null;
   let consecutiveParseFailures = 0;
   const MAX_PARSE_FAILURES = 3;
 
   let planText: string | null = null;
   try {
     let planMessage = `User prompt: ${prompt}`;
-    if (domainSkill) {
+    if (domainSkill !== undefined && domainSkill !== null) {
       planMessage += `\n\nWe have a proven skill for this site: "${domainSkill.skill.title}" — ${domainSkill.skill.description}`;
       planMessage += '\nLeverage it — no need to rediscover what already works.';
     }
@@ -322,7 +342,7 @@ Respond with JSON: {"plan": "your plan here"}`,
       message: planMessage,
       maxTokens: 256,
     });
-    if (plan.plan) {
+    if (plan.plan !== '') {
       planText = plan.plan;
       emit('plan', { prompt, plan: plan.plan });
     }
@@ -349,25 +369,30 @@ Respond with JSON: {"plan": "your plan here"}`,
     const title = await page.title();
 
     const domText = await getPageText(page);
-    const antiBotType = detectAntiBot(domText, snapshot);
-    if (antiBotType) {
+    const antiBotType = detectAntiBot(domText);
+    if (antiBotType !== null) {
       snapshot = enrichSnapshot(snapshot, domText, antiBotType);
     }
 
     emit('thinking', { step, message: `Analyzing page: ${title}` });
 
     let tabCount: number | undefined;
-    if (browser) {
+    if (browser !== undefined) {
       try {
         tabCount = (await browser.tabs()).length;
       } catch (err) {
         logger.warn({ err }, 'Failed to get tab count');
       }
     }
-    const skillForStep = (step <= SKILL_INJECT_MAX_STEP) ? domainSkill : undefined;
-    const planForStep = (step <= SKILL_INJECT_MAX_STEP) ? planText : null;
+    const skillForStep = step <= SKILL_INJECT_MAX_STEP ? domainSkill : undefined;
+    const planForStep = step <= SKILL_INJECT_MAX_STEP ? planText : null;
     const stepsRemaining = maxSteps - step - 1;
-    const userMessage = buildUserMessage(prompt, snapshot, history, url, title, { plan: planForStep, tabCount, domainSkill: skillForStep, stepsRemaining });
+    const userMessage = buildUserMessage(prompt, snapshot, history, url, title, {
+      plan: planForStep,
+      tabCount,
+      domainSkill: skillForStep,
+      stepsRemaining,
+    });
 
     let action: AgentAction;
     try {
@@ -388,13 +413,16 @@ Respond with JSON: {"plan": "your plan here"}`,
     } catch (err) {
       consecutiveParseFailures++;
       const message = err instanceof Error ? err.message : 'Failed to parse action';
-      logger.error({ step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES, error: message }, 'Failed to parse LLM response');
+      logger.error(
+        { step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES, error: message },
+        'Failed to parse LLM response',
+      );
       emit('step_error', { step, error: `LLM response error: ${message}` });
       if (consecutiveParseFailures >= MAX_PARSE_FAILURES) {
         return {
           success: false,
           steps: history,
-          error: `${MAX_PARSE_FAILURES} consecutive LLM failures — aborting`,
+          error: `${String(MAX_PARSE_FAILURES)} consecutive LLM failures — aborting`,
           duration_ms: Date.now() - startTime,
         };
       }
@@ -442,7 +470,7 @@ Respond with JSON: {"plan": "your plan here"}`,
     if (action.action === 'ask_user') {
       emit('ask_user', { step, question: action.text ?? action.reasoning });
 
-      if (!waitForUser) {
+      if (waitForUser === undefined) {
         return {
           success: false,
           steps: history,
@@ -493,14 +521,20 @@ Respond with JSON: {"plan": "your plan here"}`,
       }
     }
 
-    if (tabManager && browser && action.action === 'click') {
+    if (tabManager !== null && browser !== undefined && action.action === 'click') {
       const newPage = await tabManager.checkForNewTab(browser);
-      if (newPage) {
+      if (newPage !== null) {
         try {
           const newUrl = await newPage.url();
           const newTitle = await newPage.title();
           page = newPage;
-          history.push({ step, action: { action: 'navigate', reasoning: `Click opened a new tab: ${newTitle}` }, url: newUrl, page_title: newTitle, timestamp: new Date().toISOString() });
+          history.push({
+            step,
+            action: { action: 'navigate', reasoning: `Click opened a new tab: ${newTitle}` },
+            url: newUrl,
+            page_title: newTitle,
+            timestamp: new Date().toISOString(),
+          });
         } catch {
           logger.info('tab-manager: new tab not accessible, staying on current page');
         }
@@ -517,7 +551,7 @@ Respond with JSON: {"plan": "your plan here"}`,
   return {
     success: false,
     steps: history,
-    error: `Reached maximum step limit (${maxSteps}). Last reasoning: ${lastReasoning.substring(0, 200)}`,
+    error: `Reached maximum step limit (${String(maxSteps)}). Last reasoning: ${lastReasoning.substring(0, 200)}`,
     duration_ms: Date.now() - startTime,
     final_url: history.length > 0 ? history[history.length - 1].url : undefined,
   };

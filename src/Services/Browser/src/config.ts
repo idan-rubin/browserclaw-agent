@@ -3,7 +3,7 @@ import { logger } from './logger.js';
 
 export function requireEnv(name: string): string {
   const value = process.env[name];
-  if (!value) {
+  if (value === undefined || value === '') {
     logger.fatal({ envVar: name }, 'Required environment variable not set');
     process.exit(1);
   }
@@ -12,7 +12,7 @@ export function requireEnv(name: string): string {
 
 export function requireEnvInt(name: string): number {
   const raw = process.env[name];
-  if (!raw) {
+  if (raw === undefined || raw === '') {
     logger.fatal({ envVar: name }, 'Required environment variable not set');
     process.exit(1);
   }
@@ -31,8 +31,8 @@ export const WAIT_AFTER_OTHER_MS = requireEnvInt('WAIT_AFTER_OTHER_MS');
 export const WAIT_ACTION_MS = requireEnvInt('WAIT_ACTION_MS');
 export const SCROLL_PIXELS = 500;
 export const USER_RESPONSE_TIMEOUT_MS = requireEnvInt('USER_RESPONSE_TIMEOUT_MS');
-export const MAX_STEPS = parseInt(process.env.MAX_STEPS || '100', 10);
-export const LLM_MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS || '1024', 10);
+export const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? '100', 10);
+export const LLM_MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS ?? '1024', 10);
 
 export interface MinioConfig {
   endpoint: string;
@@ -63,7 +63,7 @@ export function validateConfig(): ServerConfig {
     logger.fatal('No AI providers available — set at least one provider API key');
     process.exit(1);
   }
-  logger.info({ providers: available.map(p => p.provider) }, 'Available providers');
+  logger.info({ providers: available.map((p) => p.provider) }, 'Available providers');
 
   // Validate LLM_PROVIDER + API key at startup so we fail fast
   const active = getActiveProvider();

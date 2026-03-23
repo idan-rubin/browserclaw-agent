@@ -16,7 +16,20 @@ export interface CreateSessionRequest {
   skip_moderation?: boolean;
 }
 
-export type AgentActionType = 'click' | 'type' | 'navigate' | 'back' | 'select' | 'scroll' | 'keyboard' | 'wait' | 'press_and_hold' | 'click_cloudflare' | 'done' | 'fail' | 'ask_user';
+export type AgentActionType =
+  | 'click'
+  | 'type'
+  | 'navigate'
+  | 'back'
+  | 'select'
+  | 'scroll'
+  | 'keyboard'
+  | 'wait'
+  | 'press_and_hold'
+  | 'click_cloudflare'
+  | 'done'
+  | 'fail'
+  | 'ask_user';
 
 export interface AgentAction {
   action: AgentActionType;

@@ -1,13 +1,11 @@
-import type { ConfigArray } from 'typescript-eslint';
-
 import nextConfig from 'eslint-config-next';
 import eslintConfigPrettier from 'eslint-config-prettier';
-import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
-const config: ConfigArray = tseslint.config(
+// eslint-disable-next-line @typescript-eslint/no-deprecated -- defineConfig() not available in ESLint 9.x
+const config = tseslint.config(
   {
-    ignores: ['.next/', 'node_modules/'],
+    ignores: ['.next/', 'node_modules/', 'postcss.config.mjs'],
   },
   ...nextConfig,
   ...tseslint.configs.strictTypeChecked,
@@ -19,9 +17,6 @@ const config: ConfigArray = tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
       sourceType: 'module',
-    },
-    plugins: {
-      'react-refresh': reactRefresh,
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
@@ -44,7 +39,6 @@ const config: ConfigArray = tseslint.config(
       '@typescript-eslint/require-await': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/switch-exhaustiveness-check': 'error',
-      'react-refresh/only-export-components': 'warn',
     },
   },
   eslintConfigPrettier,

@@ -8,7 +8,7 @@ const PRESS_HOLD_PATTERN = /press.*hold|hold.*to.*confirm/i;
 const CLOUDFLARE_PATTERN = /performing security verification|cloudflare|verify you are human|just a moment/i;
 const ANTI_BOT_PATTERN = /press.*hold|verify.*human|not a bot|captcha/i;
 
-const BLOCKED_PATTERNS: Record<AntiBotType & string, RegExp> = {
+const BLOCKED_PATTERNS: Record<'press_and_hold' | 'cloudflare_checkbox', RegExp> = {
   press_and_hold: /press.*hold|verify.*human|not a bot|access.*denied/i,
   cloudflare_checkbox: /performing security verification|verify you are human|just a moment/i,
 };
@@ -88,17 +88,38 @@ async function findButtonCoordinates(page: CrawlPage): Promise<{ x: number; y: n
     })()
   `);
 
-  if (!result) return null;
+  if (result === null || result === undefined || result === '') return null;
 
-  const parsed = JSON.parse(result as string);
-  logger.info({ found: parsed.found, candidateCount: parsed.candidates?.length, candidates: parsed.candidates?.map((c: { text: string; width: number; height: number; tag: string }) => ({ text: c.text, w: c.width, h: c.height, tag: c.tag })) }, 'press-and-hold: button search');
+  interface ButtonCandidate {
+    text: string;
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+    tag: string;
+    source: string;
+  }
+  interface ButtonSearchResult {
+    found: boolean;
+    best: ButtonCandidate | null;
+    candidates: ButtonCandidate[];
+  }
+  const parsed = JSON.parse(result as string) as ButtonSearchResult;
+  logger.info(
+    {
+      found: parsed.found,
+      candidateCount: parsed.candidates.length,
+      candidates: parsed.candidates.map((c) => ({ text: c.text, w: c.width, h: c.height, tag: c.tag })),
+    },
+    'press-and-hold: button search',
+  );
 
-  if (!parsed.found || !parsed.best) return null;
+  if (!parsed.found || parsed.best === null) return null;
   return { x: parsed.best.x, y: parsed.best.y };
 }
 
 export async function getPageText(page: CrawlPage): Promise<string> {
-  return await page.evaluate(`
+  return (await page.evaluate(`
     (function() {
       var text = document.body.innerText || '';
       var iframes = document.querySelectorAll('iframe');
@@ -111,16 +132,19 @@ export async function getPageText(page: CrawlPage): Promise<string> {
       }
       return text;
     })()
-  `) as string;
+  `)) as string;
 }
 
 export async function isStillBlocked(page: CrawlPage, type: AntiBotType): Promise<boolean> {
-  if (!type) return false;
+  if (type === null) return false;
   const pattern = BLOCKED_PATTERNS[type];
-  return !!(await page.evaluate(`!!(document.body && document.body.innerText && document.body.innerText.match(${pattern}))`));
+  const result = await page.evaluate(
+    `!!(document.body && document.body.innerText && document.body.innerText.match(${String(pattern)}))`,
+  );
+  return result === true;
 }
 
-export function detectAntiBot(domText: string, snapshot: string): AntiBotType {
+export function detectAntiBot(domText: string): AntiBotType {
   // Check press-and-hold first — if DOM mentions press/hold, it's a press-and-hold challenge
   // regardless of what the snapshot says
   if (PRESS_HOLD_PATTERN.test(domText)) {
@@ -142,10 +166,16 @@ export function detectAntiBot(domText: string, snapshot: string): AntiBotType {
 
 export function enrichSnapshot(snapshot: string, domText: string, type: AntiBotType): string {
   if (type === 'press_and_hold') {
-    return snapshot + `\n\n[ANTI-BOT OVERLAY DETECTED] The page has a press-and-hold verification overlay. The page text says: "${domText.substring(0, 200)}". Use press_and_hold to solve it.`;
+    return (
+      snapshot +
+      `\n\n[ANTI-BOT OVERLAY DETECTED] The page has a press-and-hold verification overlay. The page text says: "${domText.substring(0, 200)}". Use press_and_hold to solve it.`
+    );
   }
   if (type === 'cloudflare_checkbox') {
-    return snapshot + `\n\n[SECURITY VERIFICATION] The page has a Cloudflare or similar security check with a "Verify you are human" checkbox. Use click_cloudflare to solve it. If it fails after 2 attempts, use ask_user. Do NOT use press_and_hold.`;
+    return (
+      snapshot +
+      `\n\n[SECURITY VERIFICATION] The page has a Cloudflare or similar security check with a "Verify you are human" checkbox. Use click_cloudflare to solve it. If it fails after 2 attempts, use ask_user. Do NOT use press_and_hold.`
+    );
   }
   return snapshot;
 }

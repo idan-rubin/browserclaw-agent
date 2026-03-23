@@ -1,44 +1,47 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { isLocalBrowserMode } from "@/lib/env";
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { isLocalBrowserMode } from '@/lib/env';
 
 const RUN_BUTTON_CLASS =
-  "shrink-0 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none sm:px-6 sm:py-3 sm:text-base";
+  'shrink-0 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none sm:px-6 sm:py-3 sm:text-base';
 
 const EXAMPLES = [
   {
-    label: "Apartments in Chelsea",
-    prompt: "Search for pet-friendly apartments in Chelsea under $4,200 with laundry and elevator. List the top 5 buildings with price, address, and available units",
+    label: 'Apartments in Chelsea',
+    prompt:
+      'Search for pet-friendly apartments in Chelsea under $4,200 with laundry and elevator. List the top 5 buildings with price, address, and available units',
   },
   {
-    label: "Cheap flights to Barcelona",
-    prompt: "Find the cheapest round-trip flight from JFK to Barcelona for June 15-22 2026. Compare at least 3 airlines and show price, duration, and number of stops for each",
+    label: 'Cheap flights to Barcelona',
+    prompt:
+      'Find the cheapest round-trip flight from JFK to Barcelona for June 15-22 2026. Compare at least 3 airlines and show price, duration, and number of stops for each',
   },
   {
-    label: "Best 4K monitor under $400",
-    prompt: "Find a 4K monitor under $400 with USB-C, at least 27 inches, and 4+ star rating. Compare the top 3 options by price, screen size, refresh rate, and number of reviews",
+    label: 'Best 4K monitor under $400',
+    prompt:
+      'Find a 4K monitor under $400 with USB-C, at least 27 inches, and 4+ star rating. Compare the top 3 options by price, screen size, refresh rate, and number of reviews',
   },
   {
     label: "Renew my NY driver's license",
-    prompt: "Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
+    prompt:
+      "Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
   },
   {
-    label: "Compare Medicare plans",
-    prompt: "Compare Medicare Advantage plans available in zip code 10001. List the top 3 plans by monthly premium, showing plan name, insurer, monthly cost, and whether they cover dental",
+    label: 'Compare Medicare plans',
+    prompt:
+      'Compare Medicare Advantage plans available in zip code 10001. List the top 3 plans by monthly premium, showing plan name, insurer, monthly cost, and whether they cover dental',
   },
 ];
 
-type ModalStep = "checking" | "launching" | null;
-type ModalState =
-  | { type: "processing"; step: ModalStep }
-  | { type: "blocked"; reason: string }
-  | null;
+type ModalStep = 'checking' | 'launching' | null;
+type ModalState = { type: 'processing'; step: ModalStep } | { type: 'blocked'; reason: string } | null;
 
 export default function HomePage() {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState('');
   const [modal, setModal] = useState<ModalState>(null);
   const [modalElapsed, setModalElapsed] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -46,15 +49,21 @@ export default function HomePage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (modal?.type !== "processing") {
-      setModalElapsed(0);
-      return;
+    if (modal?.type !== 'processing') {
+      const resetTimer = setTimeout(() => {
+        setModalElapsed(0);
+      }, 0);
+      return () => {
+        clearTimeout(resetTimer);
+      };
     }
     const start = Date.now();
     const interval = setInterval(() => {
       setModalElapsed(Math.floor((Date.now() - start) / 1000));
     }, 1000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+    };
   }, [modal?.type]);
 
   const autoResize = useCallback(() => {
@@ -69,31 +78,35 @@ export default function HomePage() {
       const threeRows = lineHeight * 3 + paddingY;
 
       // Measure content height by temporarily collapsing
-      el.style.transition = "none";
-      el.style.height = "0";
+      el.style.transition = 'none';
+      el.style.height = '0';
       const contentHeight = el.scrollHeight; // includes padding
 
       // Determine target: 1 row if empty, at least 3 rows if has text, or content height if more
       const hasText = el.value.length > 0;
-      const target = hasText
-        ? Math.min(Math.max(contentHeight, threeRows), 200)
-        : oneRow;
+      const target = hasText ? Math.min(Math.max(contentHeight, threeRows), 200) : oneRow;
 
       // Restore previous height, force reflow, then animate to target
-      el.style.height = el.dataset.prevHeight || oneRow + "px";
+      el.style.height = el.dataset.prevHeight ?? String(oneRow) + 'px';
       void el.offsetHeight; // force reflow before re-enabling transition
-      el.style.transition = "";
-      el.style.height = target + "px";
-      el.dataset.prevHeight = target + "px";
+      el.style.transition = '';
+      el.style.height = String(target) + 'px';
+      el.dataset.prevHeight = String(target) + 'px';
     });
   }, []);
 
   useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("prompt");
-    if (q) {
-      setPrompt(q);
-      requestAnimationFrame(autoResize);
+    const q = new URLSearchParams(window.location.search).get('prompt');
+    if (q != null && q !== '') {
+      const timer = setTimeout(() => {
+        setPrompt(q);
+        requestAnimationFrame(autoResize);
+      }, 0);
+      return () => {
+        clearTimeout(timer);
+      };
     }
+    return undefined;
   }, [autoResize]);
 
   async function handleRun(skipModeration = false) {
@@ -104,12 +117,12 @@ export default function HomePage() {
     const abort = new AbortController();
     abortRef.current = abort;
 
-    setModal({ type: "processing", step: isLocalBrowserMode() ? "launching" : "checking" });
+    setModal({ type: 'processing', step: isLocalBrowserMode() ? 'launching' : 'checking' });
 
     try {
-      const res = await fetch("/api/v1/runs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/v1/runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: trimmed,
           skip_moderation: isLocalBrowserMode() || skipModeration,
@@ -117,30 +130,32 @@ export default function HomePage() {
         signal: abort.signal,
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as Record<string, unknown>;
 
       if (!res.ok) {
-        const msg = data.message ?? data.error ?? "Something went wrong";
-        if (msg.toLowerCase().includes("blocked") || msg.toLowerCase().includes("policy")) {
-          setModal({ type: "blocked", reason: msg });
+        const rawMsg = data.message ?? data.error;
+        const msg = typeof rawMsg === 'string' ? rawMsg : 'Something went wrong';
+        if (msg.toLowerCase().includes('blocked') || msg.toLowerCase().includes('policy')) {
+          setModal({ type: 'blocked', reason: msg });
         } else {
           setModal(null);
           const params = new URLSearchParams({ error: msg, prompt: trimmed });
-          if (res.status === 503) params.set("detail", "The browser service is temporarily unavailable. Please try again in a moment.");
+          if (res.status === 503)
+            params.set('detail', 'The browser service is temporarily unavailable. Please try again in a moment.');
           router.push(`/run/error?${params.toString()}`);
         }
         return;
       }
 
-      setModal({ type: "processing", step: "launching" });
+      setModal({ type: 'processing', step: 'launching' });
       await new Promise((r) => setTimeout(r, 600));
-      router.push(`/run/${data.session_id}`);
+      router.push(`/run/${String(data.session_id)}`);
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       setModal(null);
       const params = new URLSearchParams({
-        error: "Failed to connect",
-        detail: "Could not reach the server. Check your connection and try again.",
+        error: 'Failed to connect',
+        detail: 'Could not reach the server. Check your connection and try again.',
         prompt: prompt.trim(),
       });
       router.push(`/run/error?${params.toString()}`);
@@ -153,14 +168,30 @@ export default function HomePage() {
 
       {/* Nav */}
       <nav className="relative z-10 flex items-center justify-between px-4 py-4 sm:px-10 sm:py-5">
-        <a href="/" className="font-[family-name:var(--font-heading)] text-lg sm:text-xl tracking-tight">
+        <Link href="/" className="font-[family-name:var(--font-heading)] text-lg sm:text-xl tracking-tight">
           browserclaw
-        </a>
+        </Link>
         <div className="flex items-center gap-2 sm:gap-8">
           <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground">
-            <a href="https://github.com/idan-rubin/browserclaw.agent" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-foreground">GitHub</a>
-            <a href="/docs" className="transition-colors hover:text-foreground">Docs</a>
-            <a href="https://mrrubin.substack.com" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-foreground">Blog</a>
+            <a
+              href="https://github.com/idan-rubin/browserclaw.agent"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-foreground"
+            >
+              GitHub
+            </a>
+            <a href="/docs" className="transition-colors hover:text-foreground">
+              Docs
+            </a>
+            <a
+              href="https://mrrubin.substack.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-foreground"
+            >
+              Blog
+            </a>
           </div>
           <ThemeToggle />
         </div>
@@ -170,8 +201,7 @@ export default function HomePage() {
       <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 sm:px-6">
         <div className="w-full max-w-3xl animate-page-in">
           <h1 className="text-center text-[2.5rem] font-bold leading-[1.1] tracking-tight sm:text-7xl lg:text-8xl">
-            Let the agent{" "}
-            <span className="italic text-primary">click&nbsp;through</span>
+            Let the agent <span className="italic text-primary">click&nbsp;through</span>
             <br />
             for you.
           </h1>
@@ -195,19 +225,21 @@ export default function HomePage() {
                     autoResize();
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      handleRun();
+                      void handleRun();
                     }
                   }}
                   placeholder="What do you want the browser to do?"
                   className="flex-1 resize-none overflow-hidden bg-transparent px-3 py-2.5 text-base text-foreground placeholder:text-muted-foreground/60 transition-[height] duration-200 ease-out focus:outline-none sm:px-4 sm:py-3 sm:text-lg"
-                  style={{ maxHeight: "200px" }}
+                  style={{ maxHeight: '200px' }}
                   disabled={!!modal}
                 />
                 {!prompt && (
                   <button
-                    onClick={() => handleRun()}
+                    onClick={() => {
+                      void handleRun();
+                    }}
                     disabled={!!modal || !prompt.trim()}
                     className={RUN_BUTTON_CLASS}
                   >
@@ -217,11 +249,11 @@ export default function HomePage() {
               </div>
               {prompt && (
                 <div className="flex items-center justify-end gap-3 px-2 pt-1">
-                  <span className="hidden text-sm text-muted-foreground/50 sm:inline">
-                    Shift+Enter for new line
-                  </span>
+                  <span className="hidden text-sm text-muted-foreground/50 sm:inline">Shift+Enter for new line</span>
                   <button
-                    onClick={() => handleRun()}
+                    onClick={() => {
+                      void handleRun();
+                    }}
                     disabled={!!modal || !prompt.trim()}
                     className={RUN_BUTTON_CLASS}
                   >
@@ -255,10 +287,24 @@ export default function HomePage() {
       <section className="relative z-10 py-10 sm:py-16">
         <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs sm:text-sm text-muted-foreground/50 sm:gap-x-8">
           <span>Built with</span>
-          <a href="https://github.com/idan-rubin/browserclaw" target="_blank" rel="noopener noreferrer" className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground">BrowserClaw</a>
+          <a
+            href="https://github.com/idan-rubin/browserclaw"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
+          >
+            BrowserClaw
+          </a>
           <span className="text-muted-foreground/30">&middot;</span>
           <span>Inspired by</span>
-          <a href="https://openclaw.ai" target="_blank" rel="noopener noreferrer" className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground">OpenClaw</a>
+          <a
+            href="https://openclaw.ai"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
+          >
+            OpenClaw
+          </a>
         </div>
       </section>
 
@@ -269,7 +315,16 @@ export default function HomePage() {
             title="Compare across sites"
             description="Open multiple pages, normalize messy info, and rank options by what actually matters — fees, policies, availability, not just price."
             icon={
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <rect x="2" y="3" width="20" height="14" rx="2" />
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
@@ -281,7 +336,16 @@ export default function HomePage() {
             title="Navigate the confusing"
             description="Government forms, insurance portals, visa workflows, building applications — the painful web tasks you keep putting off."
             icon={
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
                 <line x1="16" y1="13" x2="8" y2="13" />
@@ -293,7 +357,16 @@ export default function HomePage() {
             title="Get a reusable skill"
             description="Every run exports a structured skill file. Run it again tomorrow, share it with your team, or build on it."
             icon={
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <polyline points="16 18 22 12 16 6" />
                 <polyline points="8 6 2 12 8 18" />
                 <line x1="14" y1="4" x2="10" y2="20" />
@@ -305,12 +378,10 @@ export default function HomePage() {
 
       {/* Bottom CTA */}
       <section className="relative z-10 flex flex-col items-center gap-6 pb-20 pt-4 sm:gap-8 sm:pb-32 sm:pt-8">
-        <h2 className="text-center text-3xl font-bold tracking-tight sm:text-5xl">
-          Stop clicking. Start describing.
-        </h2>
+        <h2 className="text-center text-3xl font-bold tracking-tight sm:text-5xl">Stop clicking. Start describing.</h2>
         <button
           onClick={() => {
-            window.scrollTo({ top: 0, behavior: "smooth" });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             setTimeout(() => textareaRef.current?.focus(), 400);
           }}
           className="rounded-xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97]"
@@ -322,23 +393,33 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="relative z-10 border-t border-border/50 px-4 py-10 sm:px-10 sm:py-16">
         <div className="mx-auto grid max-w-6xl grid-cols-2 gap-8 sm:grid-cols-4 sm:gap-10">
-          <FooterColumn title="Product" links={[
-            { label: "Skills Library", href: "/skills" },
-            { label: "API Docs", href: "/docs#api-reference" },
-          ]} />
-          <FooterColumn title="Resources" links={[
-            { label: "Documentation", href: "/docs" },
-            { label: "Blog", href: "https://mrrubin.substack.com" },
-            { label: "Changelog", href: "/changelog" },
-          ]} />
-          <FooterColumn title="Open Source" links={[
-            { label: "BrowserClaw", href: "https://github.com/idan-rubin/browserclaw" },
-            { label: "OpenClaw", href: "https://openclaw.ai" },
-            { label: "npm", href: "https://www.npmjs.com/package/browserclaw" },
-          ]} />
-          <FooterColumn title="Connect" links={[
-            { label: "GitHub", href: "https://github.com/idan-rubin/browserclaw.agent" },
-          ]} />
+          <FooterColumn
+            title="Product"
+            links={[
+              { label: 'Skills Library', href: '/skills' },
+              { label: 'API Docs', href: '/docs#api-reference' },
+            ]}
+          />
+          <FooterColumn
+            title="Resources"
+            links={[
+              { label: 'Documentation', href: '/docs' },
+              { label: 'Blog', href: 'https://mrrubin.substack.com' },
+              { label: 'Changelog', href: '/changelog' },
+            ]}
+          />
+          <FooterColumn
+            title="Open Source"
+            links={[
+              { label: 'BrowserClaw', href: 'https://github.com/idan-rubin/browserclaw' },
+              { label: 'OpenClaw', href: 'https://openclaw.ai' },
+              { label: 'npm', href: 'https://www.npmjs.com/package/browserclaw' },
+            ]}
+          />
+          <FooterColumn
+            title="Connect"
+            links={[{ label: 'GitHub', href: 'https://github.com/idan-rubin/browserclaw.agent' }]}
+          />
         </div>
         <div className="mx-auto mt-12 max-w-6xl text-sm text-muted-foreground/40">
           &copy; {new Date().getFullYear()} browserclaw.org
@@ -346,27 +427,27 @@ export default function HomePage() {
       </footer>
 
       {/* Processing Modal */}
-      {modal?.type === "processing" && (
+      {modal?.type === 'processing' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-xl">
             <h3 className="text-lg font-semibold">Starting run</h3>
             <div className="mt-5 space-y-4">
               <ModalStepRow
                 label="Checking prompt..."
-                state={modal.step === "checking" ? "active" : "done"}
-                elapsedSeconds={modal.step === "checking" ? modalElapsed : undefined}
+                state={modal.step === 'checking' ? 'active' : 'done'}
+                elapsedSeconds={modal.step === 'checking' ? modalElapsed : undefined}
               />
               <ModalStepRow
                 label="Launching browser..."
                 state={launchStepState(modal.step)}
-                elapsedSeconds={modal.step === "launching" ? modalElapsed : undefined}
+                elapsedSeconds={modal.step === 'launching' ? modalElapsed : undefined}
               />
             </div>
             <button
               onClick={() => {
                 abortRef.current?.abort();
                 setModal(null);
-                const params = new URLSearchParams({ error: "Run cancelled", prompt: prompt.trim() });
+                const params = new URLSearchParams({ error: 'Run cancelled', prompt: prompt.trim() });
                 router.push(`/run/error?${params.toString()}`);
               }}
               className="mt-5 w-full rounded-xl border-2 border-red-600 bg-red-600/10 py-2 text-sm font-semibold text-red-500 transition-all hover:bg-red-600/20"
@@ -378,12 +459,21 @@ export default function HomePage() {
       )}
 
       {/* Blocked Modal */}
-      {modal?.type === "blocked" && (
+      {modal?.type === 'blocked' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 shrink-0 rounded-full bg-amber-500/10 p-2 text-amber-500">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                   <line x1="12" y1="9" x2="12" y2="13" />
                   <line x1="12" y1="17" x2="12.01" y2="17" />
@@ -399,13 +489,17 @@ export default function HomePage() {
             </p>
             <div className="mt-5 flex gap-3 justify-end">
               <button
-                onClick={() => setModal(null)}
+                onClick={() => {
+                  setModal(null);
+                }}
                 className="rounded-lg border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-secondary"
               >
                 Cancel
               </button>
               <button
-                onClick={() => handleRun(true)}
+                onClick={() => {
+                  void handleRun(true);
+                }}
                 className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700"
               >
                 Proceed anyway
@@ -418,40 +512,56 @@ export default function HomePage() {
   );
 }
 
-function launchStepState(currentStep: ModalStep): "pending" | "active" | "done" {
-  if (currentStep === "launching") return "active";
-  if (currentStep === "checking") return "pending";
-  return "done";
+function launchStepState(currentStep: ModalStep): 'pending' | 'active' | 'done' {
+  if (currentStep === 'launching') return 'active';
+  if (currentStep === 'checking') return 'pending';
+  return 'done';
 }
 
-function stepTextColor(state: "pending" | "active" | "done"): string {
+function stepTextColor(state: 'pending' | 'active' | 'done'): string {
   switch (state) {
-    case "pending": return "text-muted-foreground/50";
-    case "active":  return "text-foreground";
-    case "done":    return "text-muted-foreground";
+    case 'pending':
+      return 'text-muted-foreground/50';
+    case 'active':
+      return 'text-foreground';
+    case 'done':
+      return 'text-muted-foreground';
   }
 }
 
-function ModalStepRow({ label, state, elapsedSeconds }: { label: string; state: "pending" | "active" | "done"; elapsedSeconds?: number }) {
+function ModalStepRow({
+  label,
+  state,
+  elapsedSeconds,
+}: {
+  label: string;
+  state: 'pending' | 'active' | 'done';
+  elapsedSeconds?: number;
+}) {
   return (
     <div className="flex items-center gap-3 py-1.5">
-      {state === "pending" && (
-        <div className="h-5 w-5 rounded-full border-2 border-border" />
-      )}
-      {state === "active" && (
+      {state === 'pending' && <div className="h-5 w-5 rounded-full border-2 border-border" />}
+      {state === 'active' && (
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       )}
-      {state === "done" && (
+      {state === 'done' && (
         <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500/20 text-green-500">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
       )}
-      <span className={`text-sm ${stepTextColor(state)}`}>
-        {label}
-      </span>
-      {state === "active" && elapsedSeconds != null && elapsedSeconds > 0 && (
+      <span className={`text-sm ${stepTextColor(state)}`}>{label}</span>
+      {state === 'active' && elapsedSeconds != null && elapsedSeconds > 0 && (
         <span className="ms-auto font-[family-name:var(--font-jetbrains-mono)] text-xs tabular-nums text-muted-foreground">
           {elapsedSeconds}s
         </span>
@@ -481,8 +591,8 @@ function FooterColumn({ title, links }: { title: string; links: { label: string;
           <li key={link.label}>
             <a
               href={link.href}
-              target={link.href.startsWith("http") ? "_blank" : undefined}
-              rel={link.href.startsWith("http") ? "noopener noreferrer" : undefined}
+              target={link.href.startsWith('http') ? '_blank' : undefined}
+              rel={link.href.startsWith('http') ? 'noopener noreferrer' : undefined}
               className="text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               {link.label}

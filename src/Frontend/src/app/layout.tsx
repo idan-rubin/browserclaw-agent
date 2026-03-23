@@ -1,52 +1,48 @@
-import type { Metadata } from "next";
-import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
-import { ThemeProvider } from "next-themes";
-import { Toaster } from "sonner";
-import Script from "next/script";
-import "./globals.css";
+import type { Metadata } from 'next';
+import { Inter, Source_Serif_4, JetBrains_Mono } from 'next/font/google';
+import { ThemeProvider } from 'next-themes';
+import { Toaster } from 'sonner';
+import Script from 'next/script';
+import './globals.css';
 
 const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-inter",
-  display: "swap",
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-inter',
+  display: 'swap',
 });
 
 const sourceSerif = Source_Serif_4({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-  variable: "--font-heading",
-  display: "swap",
+  subsets: ['latin'],
+  weight: ['600', '700', '800'],
+  variable: '--font-heading',
+  display: 'swap',
 });
 
 const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
-  display: "swap",
+  subsets: ['latin'],
+  variable: '--font-jetbrains-mono',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | browserclaw.org",
-    default: "browserclaw.org — AI that browses for you",
+    template: '%s | browserclaw.org',
+    default: 'browserclaw.org — AI that browses for you',
   },
-  description: "Type what you want done. Watch AI do it in a real browser. Get a reusable skill.",
+  description: 'Type what you want done. Watch AI do it in a real browser. Get a reusable skill.',
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
   },
 };
 
 const gaId = process.env.NEXT_PUBLIC_GA_ID;
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {gaId && (
+        {gaId != null && gaId !== '' && (
           <>
             <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
             <Script id="gtag-init" strategy="afterInteractive">
@@ -67,7 +63,7 @@ gtag('config', '${gaId}');`}
             position="top-right"
             richColors
             closeButton
-            toastOptions={{ style: { borderRadius: "var(--radius-xl)" } }}
+            toastOptions={{ style: { borderRadius: 'var(--radius-xl)' } }}
           />
         </ThemeProvider>
       </body>

@@ -23,15 +23,15 @@ interface PromptLogEntry {
 let ensureDirPromise: Promise<void> | null = null;
 
 function ensureDir(): Promise<void> {
-  if (!ensureDirPromise) {
-    ensureDirPromise = mkdir(LOG_DIR, { recursive: true }).then(
-      () => {},
-      (err) => {
-        ensureDirPromise = null;
-        throw err;
-      },
-    );
-  }
+  ensureDirPromise ??= mkdir(LOG_DIR, { recursive: true }).then(
+    () => {
+      /* dir created */
+    },
+    (err: unknown) => {
+      ensureDirPromise = null;
+      throw err;
+    },
+  );
   return ensureDirPromise;
 }
 

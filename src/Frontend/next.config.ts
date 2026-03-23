@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  headers: async () => [
+  headers: () => Promise.resolve([
     {
       source: "/:path*",
       headers: [
@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
         { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
       ],
     },
-  ],
+  ]),
 };
 
 export default nextConfig;

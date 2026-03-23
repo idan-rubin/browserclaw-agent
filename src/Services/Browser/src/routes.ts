@@ -77,12 +77,13 @@ const routes: Route[] = [
     method: 'GET',
     pattern: /^\/health$/,
     paramNames: [],
-    handler: async ({ res }) => {
+    handler: ({ res }) => {
       json(res, 200, {
         status: 'healthy',
         service: 'browserclaw-browser',
         sessions: sessionCount(),
       });
+      return Promise.resolve();
     },
   },
 
@@ -93,22 +94,19 @@ const routes: Route[] = [
     handler: async ({ req, res, clientIp }) => {
       const body = await parseBody<CreateSessionRequest>(req);
 
-      if (!body.prompt || body.prompt.trim().length === 0) {
+      if (body.prompt.trim().length === 0) {
         sendError(res, 400, 'prompt is required');
         return;
       }
 
-      const url = body.url ? validateUrl(body.url) : undefined;
+      const url = body.url !== undefined && body.url !== '' ? validateUrl(body.url) : undefined;
       const envForcesVisible = process.env.BROWSER_HEADLESS === 'false';
       const headless = envForcesVisible ? false : body.headless;
 
-      const hasValidToken = Boolean(req.headers['authorization']);
+      const hasValidToken = req.headers.authorization !== undefined;
       const skipModeration = hasValidToken && body.skip_moderation === true;
 
-      const { session } = await createSession(
-        body.prompt, url, headless, clientIp,
-        skipModeration,
-      );
+      const { session } = await createSession(body.prompt, url, headless, clientIp, skipModeration);
 
       json(res, 201, {
         session_id: session.id,
@@ -122,14 +120,14 @@ const routes: Route[] = [
     method: 'GET',
     pattern: /^\/api\/v1\/sessions\/([^/]+)\/stream$/,
     paramNames: ['id'],
-    handler: async ({ res, params }) => {
+    handler: ({ res, params }) => {
       const sessionId = params.id;
       getSession(sessionId); // throws 404 if session doesn't exist
 
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
       });
 
@@ -143,6 +141,7 @@ const routes: Route[] = [
       res.on('close', () => {
         clearInterval(heartbeat);
       });
+      return Promise.resolve();
     },
   },
 
@@ -150,23 +149,27 @@ const routes: Route[] = [
     method: 'GET',
     pattern: /^\/api\/v1\/sessions\/([^/]+)$/,
     paramNames: ['id'],
-    handler: async ({ res, params }) => {
+    handler: ({ res, params }) => {
       const sessionId = params.id;
       const session = getSession(sessionId);
       const { result, skill, domain_skills } = getSessionResult(sessionId);
 
       json(res, 200, {
         ...session,
-        result: result ? {
-          success: result.success,
-          steps_completed: result.steps.length,
-          duration_ms: result.duration_ms,
-          error: result.error,
-          final_url: result.final_url,
-        } : null,
+        result:
+          result !== null
+            ? {
+                success: result.success,
+                steps_completed: result.steps.length,
+                duration_ms: result.duration_ms,
+                error: result.error,
+                final_url: result.final_url,
+              }
+            : null,
         skill,
         domain_skills,
       });
+      return Promise.resolve();
     },
   },
 
@@ -176,7 +179,7 @@ const routes: Route[] = [
     paramNames: ['id'],
     handler: async ({ req, res, params }) => {
       const body = await parseBody<{ text: string }>(req);
-      const text = (body.text || '').trim();
+      const text = body.text.trim();
       if (text.length === 0) {
         sendError(res, 400, 'text is required');
         return;
@@ -202,11 +205,7 @@ const routes: Route[] = [
   },
 ];
 
-export async function handleRequest(
-  req: IncomingMessage,
-  res: ServerResponse,
-  clientIp: string = '127.0.0.1',
-): Promise<void> {
+export async function handleRequest(req: IncomingMessage, res: ServerResponse, clientIp = '127.0.0.1'): Promise<void> {
   const method = req.method ?? 'GET';
   const path = req.url?.split('?')[0] ?? '/';
 

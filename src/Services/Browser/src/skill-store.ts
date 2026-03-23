@@ -45,12 +45,12 @@ export function extractDomain(url: string): string {
 }
 
 export async function getSkillForDomain(domain: string): Promise<CatalogSkill | null> {
-  if (!domain) return null;
+  if (domain === '') return null;
 
   try {
     const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: `skills/${domain}.json` }));
     const raw = await res.Body?.transformToString();
-    if (!raw) return null;
+    if (raw === undefined || raw === '') return null;
     return JSON.parse(raw) as CatalogSkill;
   } catch {
     return null;
@@ -71,13 +71,8 @@ export async function getSkillsForDomains(domains: string[]): Promise<Map<string
   return results;
 }
 
-export async function saveSkill(
-  domain: string,
-  skill: SkillOutput,
-  tags: string[],
-  runCount?: number,
-): Promise<void> {
-  if (!domain) return;
+export async function saveSkill(domain: string, skill: SkillOutput, tags: string[], runCount?: number): Promise<void> {
+  if (domain === '') return;
 
   const now = new Date().toISOString();
 

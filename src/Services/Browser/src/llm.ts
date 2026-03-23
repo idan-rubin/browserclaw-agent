@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { parseJsonResponse } from './parse-json-response.js';
 import { logger } from './logger.js';
 
-const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS || '30000', 10);
+const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS ?? '30000', 10);
 
 export interface ProviderConfig {
   provider: string;
@@ -11,7 +11,6 @@ export interface ProviderConfig {
   apiKeyEnv: string;
   useMaxCompletionTokens: boolean;
 }
-
 
 const PROVIDERS: ProviderConfig[] = [
   {
@@ -53,7 +52,7 @@ const PROVIDERS: ProviderConfig[] = [
 
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const TOKEN_URL = 'https://auth.openai.com/oauth/token';
-const TOKEN_LIFETIME_HOURS = parseInt(process.env.OPENAI_TOKEN_EXPIRATION_IN_HOURS || '0', 10);
+const TOKEN_LIFETIME_HOURS = parseInt(process.env.OPENAI_TOKEN_EXPIRATION_IN_HOURS ?? '0', 10);
 const TOKEN_LIFETIME_MS = TOKEN_LIFETIME_HOURS * 60 * 60 * 1000;
 const REFRESH_BUFFER_MS = 60 * 60 * 1000; // refresh 1 hour before expiry
 
@@ -62,7 +61,8 @@ const clientCache = new Map<string, OpenAI>();
 
 async function refreshOAuthToken(): Promise<void> {
   const refreshToken = process.env.OPENAI_REFRESH_TOKEN;
-  if (!refreshToken) throw new Error('OPENAI_REFRESH_TOKEN is required to refresh the access token');
+  if (refreshToken === undefined || refreshToken === '')
+    throw new Error('OPENAI_REFRESH_TOKEN is required to refresh the access token');
 
   logger.info('Refreshing OpenAI OAuth token');
   const res = await fetch(TOKEN_URL, {
@@ -77,12 +77,12 @@ async function refreshOAuthToken(): Promise<void> {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OAuth token refresh failed (${res.status}): ${text}`);
+    throw new Error(`OAuth token refresh failed (${String(res.status)}): ${text}`);
   }
 
-  const token = await res.json() as { access_token: string; refresh_token?: string };
+  const token = (await res.json()) as { access_token: string; refresh_token?: string };
   process.env.OPENAI_OAUTH_TOKEN = token.access_token;
-  if (token.refresh_token) {
+  if (token.refresh_token !== undefined) {
     process.env.OPENAI_REFRESH_TOKEN = token.refresh_token;
   }
   oauthTokenIssuedAt = Date.now();
@@ -91,15 +91,15 @@ async function refreshOAuthToken(): Promise<void> {
 }
 
 function shouldRefreshOAuthToken(): boolean {
-  if (!oauthTokenIssuedAt || TOKEN_LIFETIME_MS === 0) return false;
+  if (oauthTokenIssuedAt === null || TOKEN_LIFETIME_MS === 0) return false;
   return Date.now() - oauthTokenIssuedAt > TOKEN_LIFETIME_MS - REFRESH_BUFFER_MS;
 }
 
 function resolveProvider(name: string): ProviderConfig {
-  const found = PROVIDERS.find(p => p.provider === name);
-  if (!found) throw new Error(`Unknown provider: ${name}. Valid: ${PROVIDERS.map(p => p.provider).join(', ')}`);
+  const found = PROVIDERS.find((p) => p.provider === name);
+  if (!found) throw new Error(`Unknown provider: ${name}. Valid: ${PROVIDERS.map((p) => p.provider).join(', ')}`);
   const apiKey = process.env[found.apiKeyEnv];
-  if (!apiKey) throw new Error(`${found.apiKeyEnv} is required for provider "${name}"`);
+  if (apiKey === undefined || apiKey === '') throw new Error(`${found.apiKeyEnv} is required for provider "${name}"`);
   return found;
 }
 
@@ -116,18 +116,19 @@ function getClient(config: ProviderConfig): OpenAI {
 }
 
 export function getAvailableProviders(): ProviderConfig[] {
-  return PROVIDERS.filter(p => Boolean(process.env[p.apiKeyEnv]));
+  return PROVIDERS.filter((p) => Boolean(process.env[p.apiKeyEnv]));
 }
 
 export function getActiveProvider(): ProviderConfig {
   const name = process.env.LLM_PROVIDER;
-  if (!name) throw new Error(`LLM_PROVIDER is required. Valid: ${PROVIDERS.map(p => p.provider).join(', ')}`);
+  if (name === undefined || name === '')
+    throw new Error(`LLM_PROVIDER is required. Valid: ${PROVIDERS.map((p) => p.provider).join(', ')}`);
   return resolveProvider(name);
 }
 
 export function getModel(): string {
   const model = process.env.LLM_MODEL;
-  if (!model) {
+  if (model === undefined || model === '') {
     logger.fatal('LLM_MODEL is required but not set');
     process.exit(1);
   }
@@ -145,15 +146,15 @@ interface LLMResponse {
 }
 
 async function callCodexResponsesAPI(provider: ProviderConfig, model: string, req: LLMRequest): Promise<LLMResponse> {
-  const apiKey = process.env[provider.apiKeyEnv];
+  const apiKey = process.env[provider.apiKeyEnv] ?? '';
   const url = `${provider.baseURL}/codex/responses`;
 
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'originator': 'openclaw',
+      originator: 'openclaw',
       'User-Agent': 'openclaw/1.0',
     },
     body: JSON.stringify({
@@ -166,8 +167,8 @@ async function callCodexResponsesAPI(provider: ProviderConfig, model: string, re
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status} ${text}`);
+    const errText = await res.text();
+    throw new Error(`${String(res.status)} ${errText}`);
   }
 
   const body = await res.text();
@@ -176,7 +177,7 @@ async function callCodexResponsesAPI(provider: ProviderConfig, model: string, re
     if (line.startsWith('data: ')) {
       let data: Record<string, unknown>;
       try {
-        data = JSON.parse(line.slice(6));
+        data = JSON.parse(line.slice(6)) as Record<string, unknown>;
       } catch {
         continue;
       }
@@ -184,8 +185,8 @@ async function callCodexResponsesAPI(provider: ProviderConfig, model: string, re
         const resp = data.response as Record<string, unknown> | undefined;
         const output = (resp?.output as Record<string, unknown>[] | undefined)?.[0];
         const content = (output?.content as Record<string, unknown>[] | undefined)?.[0];
-        const text = content?.text as string | undefined;
-        if (text) return { text };
+        const responseText = content?.text as string | undefined;
+        if (responseText !== undefined && responseText !== '') return { text: responseText };
       }
     }
   }
@@ -196,17 +197,15 @@ async function callCodexResponsesAPI(provider: ProviderConfig, model: string, re
 async function callChatCompletions(provider: ProviderConfig, model: string, req: LLMRequest): Promise<LLMResponse> {
   const response = await getClient(provider).chat.completions.create({
     model,
-    ...(provider.useMaxCompletionTokens
-      ? { max_completion_tokens: req.maxTokens }
-      : { max_tokens: req.maxTokens }),
+    ...(provider.useMaxCompletionTokens ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens }),
     messages: [
       { role: 'system', content: req.system },
       { role: 'user', content: req.message },
     ],
   });
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error('LLM returned empty response');
+  const content = response.choices[0]?.message.content ?? null;
+  if (content === null) throw new Error('LLM returned empty response');
   return { text: content };
 }
 
@@ -230,14 +229,16 @@ export function resetLLMCallCount(): void {
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   if (timeoutMs <= 0) return promise;
-  let timer: ReturnType<typeof setTimeout>;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${String(timeoutMs)}ms`));
+    }, timeoutMs);
   });
   try {
     return await Promise.race([promise, timeout]);
   } finally {
-    clearTimeout(timer!);
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -264,5 +265,5 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
 
 export async function llmJson<T>(req: LLMRequest): Promise<T> {
   const { text } = await llm(req);
-  return parseJsonResponse<T>(text);
+  return parseJsonResponse(text) as T;
 }

@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useEffect } from "react";
+import { useEffect } from 'react';
 
 interface ConfirmDialogProps {
   title: string;
@@ -16,22 +16,26 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
-  cancelLabel = "Cancel",
+  cancelLabel = 'Cancel',
   destructive = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === 'Escape') onCancel();
     };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [onCancel]);
 
   useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, []);
 
   return (
@@ -49,9 +53,7 @@ export function ConfirmDialog({
           <button
             onClick={onConfirm}
             className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors ${
-              destructive
-                ? "bg-red-600 hover:bg-red-700"
-                : "bg-primary hover:brightness-110"
+              destructive ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:brightness-110'
             }`}
           >
             {confirmLabel}

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from 'next/link';
 
 interface NavLink {
   label: string;
@@ -6,9 +6,9 @@ interface NavLink {
 }
 
 const NAV_LINKS: NavLink[] = [
-  { label: "Skills", href: "/skills" },
-  { label: "Docs", href: "/docs" },
-  { label: "Changelog", href: "/changelog" },
+  { label: 'Skills', href: '/skills' },
+  { label: 'Docs', href: '/docs' },
+  { label: 'Changelog', href: '/changelog' },
 ];
 
 interface PageShellProps {
@@ -28,11 +28,7 @@ export function PageShell({ activePath, children }: PageShellProps) {
             <Link
               key={link.href}
               href={link.href}
-              className={
-                link.href === activePath
-                  ? "text-foreground"
-                  : "transition-colors hover:text-foreground"
-              }
+              className={link.href === activePath ? 'text-foreground' : 'transition-colors hover:text-foreground'}
             >
               {link.label}
             </Link>

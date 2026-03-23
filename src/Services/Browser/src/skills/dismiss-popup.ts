@@ -2,7 +2,7 @@ import type { CrawlPage } from 'browserclaw';
 import { logger } from '../logger.js';
 
 export async function detectPopup(page: CrawlPage): Promise<boolean> {
-  return await page.evaluate(`
+  return (await page.evaluate(`
     (function() {
       var all = document.querySelectorAll('[role="dialog"], [role="alertdialog"], [class*="modal"], [class*="popup"], [class*="overlay"], [class*="banner"], [class*="consent"], form[action*="consent"]');
       for (var i = 0; i < all.length; i++) {
@@ -14,12 +14,12 @@ export async function detectPopup(page: CrawlPage): Promise<boolean> {
       }
       return false;
     })()
-  `) as boolean;
+  `)) as boolean;
 }
 
 export async function dismissPopup(page: CrawlPage): Promise<boolean> {
   try {
-    const dismissed = await page.evaluate(`
+    const dismissed = (await page.evaluate(`
       (function() {
         var closePatterns = [
           '[aria-label="Close"]',
@@ -88,7 +88,7 @@ export async function dismissPopup(page: CrawlPage): Promise<boolean> {
 
         return false;
       })()
-    `) as boolean;
+    `)) as boolean;
 
     if (dismissed) {
       logger.info('dismiss-popup: closed a popup');

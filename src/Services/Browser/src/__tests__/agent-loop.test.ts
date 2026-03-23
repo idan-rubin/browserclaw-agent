@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AgentLoopResult, CatalogSkill } from '../types.js';
+import type { CrawlPage } from 'browserclaw';
+import type { AgentLoopResult } from '../types.js';
 
 // Mock external dependencies
 vi.mock('../llm.js', () => ({
@@ -8,7 +9,7 @@ vi.mock('../llm.js', () => ({
 
 vi.mock('../skills/press-and-hold.js', () => ({
   pressAndHold: vi.fn().mockResolvedValue(true),
-  detectAntiBot: vi.fn().mockReturnValue(false),
+  detectAntiBot: vi.fn().mockReturnValue(null),
   enrichSnapshot: vi.fn((s: string) => s),
   getPageText: vi.fn().mockResolvedValue(''),
 }));
@@ -57,8 +58,22 @@ const { runAgentLoop } = await import('../agent-loop.js');
 const { llmJson } = await import('../llm.js');
 const mockedLlmJson = vi.mocked(llmJson);
 
-function mockPage() {
-  return {
+interface MockPage {
+  snapshot: ReturnType<typeof vi.fn>;
+  url: ReturnType<typeof vi.fn>;
+  title: ReturnType<typeof vi.fn>;
+  click: ReturnType<typeof vi.fn>;
+  type: ReturnType<typeof vi.fn>;
+  goto: ReturnType<typeof vi.fn>;
+  select: ReturnType<typeof vi.fn>;
+  evaluate: ReturnType<typeof vi.fn>;
+  press: ReturnType<typeof vi.fn>;
+  waitFor: ReturnType<typeof vi.fn>;
+  id: string;
+}
+
+function mockPage(): { page: CrawlPage; mock: MockPage } {
+  const mock: MockPage = {
     snapshot: vi.fn().mockResolvedValue({ snapshot: 'page content' }),
     url: vi.fn().mockResolvedValue('https://example.com'),
     title: vi.fn().mockResolvedValue('Example'),
@@ -70,7 +85,8 @@ function mockPage() {
     press: vi.fn().mockResolvedValue(undefined),
     waitFor: vi.fn().mockResolvedValue(undefined),
     id: 'test-page-id',
-  } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  };
+  return { page: mock as unknown as CrawlPage, mock };
 }
 
 describe('runAgentLoop', () => {
@@ -83,11 +99,11 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ plan: 'Navigate and complete' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Task complete', answer: 'Done!' });
 
-    const page = mockPage();
+    const { page } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
-    const result = await runAgentLoop('Do something', page, emit, controller.signal);
+    const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     expect(result.success).toBe(true);
     expect(result.answer).toBe('Done!');
@@ -100,11 +116,11 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ plan: 'Try something' })
       .mockResolvedValueOnce({ action: 'fail', reasoning: 'Cannot find the element' });
 
-    const page = mockPage();
+    const { page } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
-    const result = await runAgentLoop('Do something', page, emit, controller.signal);
+    const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Cannot find the element');
@@ -116,13 +132,13 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Click button', ref: '42' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Finished' });
 
-    const page = mockPage();
+    const { page, mock } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
-    const result = await runAgentLoop('Click the button', page, emit, controller.signal);
+    const result: AgentLoopResult = await runAgentLoop('Click the button', page, emit, controller.signal);
 
-    expect(page.click).toHaveBeenCalledWith('42');
+    expect(mock.click).toHaveBeenCalledWith('42');
     expect(result.success).toBe(true);
     expect(result.steps).toHaveLength(2);
   });
@@ -133,13 +149,13 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ action: 'type', reasoning: 'Type in field', ref: '10', text: 'hello' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
-    const page = mockPage();
+    const { page, mock } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
     await runAgentLoop('Type hello', page, emit, controller.signal);
 
-    expect(page.type).toHaveBeenCalledWith('10', 'hello', { submit: false });
+    expect(mock.type).toHaveBeenCalledWith('10', 'hello', { submit: false });
   });
 
   it('executes navigate action correctly', async () => {
@@ -148,13 +164,13 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ action: 'navigate', reasoning: 'Go to URL', url: 'https://test.com' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
-    const page = mockPage();
+    const { page, mock } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
     await runAgentLoop('Go to test.com', page, emit, controller.signal);
 
-    expect(page.goto).toHaveBeenCalledWith('https://test.com');
+    expect(mock.goto).toHaveBeenCalledWith('https://test.com');
   });
 
   it('aborts on signal', async () => {
@@ -163,10 +179,10 @@ describe('runAgentLoop', () => {
 
     mockedLlmJson.mockResolvedValueOnce({ plan: 'Do stuff' });
 
-    const page = mockPage();
+    const { page } = mockPage();
     const emit = vi.fn();
 
-    const result = await runAgentLoop('Do something', page, emit, controller.signal);
+    const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Session timed out');
@@ -179,11 +195,11 @@ describe('runAgentLoop', () => {
       .mockRejectedValueOnce(new Error('Parse error 2'))
       .mockRejectedValueOnce(new Error('Parse error 3'));
 
-    const page = mockPage();
+    const { page } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
-    const result = await runAgentLoop('Do something', page, emit, controller.signal);
+    const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('consecutive LLM failures');
@@ -195,13 +211,13 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Click it', ref: '1' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
-    const page = mockPage();
+    const { page } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
     await runAgentLoop('Click something', page, emit, controller.signal);
 
-    const stepEvents = emit.mock.calls.filter(([event]) => event === 'step');
+    const stepEvents = (emit.mock.calls as [string, Record<string, unknown>][]).filter(([event]) => event === 'step');
     expect(stepEvents).toHaveLength(2);
     expect(stepEvents[0][1].action).toBe('click');
     expect(stepEvents[1][1].action).toBe('done');
@@ -212,13 +228,13 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ plan: 'Go to site and click' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
-    const page = mockPage();
+    const { page } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
     await runAgentLoop('Do task', page, emit, controller.signal);
 
-    const planEvents = emit.mock.calls.filter(([event]) => event === 'plan');
+    const planEvents = (emit.mock.calls as [string, Record<string, unknown>][]).filter(([event]) => event === 'plan');
     expect(planEvents).toHaveLength(1);
     expect(planEvents[0][1].plan).toBe('Go to site and click');
   });
@@ -229,13 +245,13 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ action: 'keyboard', reasoning: 'Submit form', key: 'Enter' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
-    const page = mockPage();
+    const { page, mock } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
     await runAgentLoop('Submit the form', page, emit, controller.signal);
 
-    expect(page.press).toHaveBeenCalledWith('Enter');
+    expect(mock.press).toHaveBeenCalledWith('Enter');
   });
 
   it('executes back action correctly', async () => {
@@ -244,13 +260,13 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ action: 'back', reasoning: 'Return to previous page' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
-    const page = mockPage();
+    const { page, mock } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
     await runAgentLoop('Go back', page, emit, controller.signal);
 
-    expect(page.evaluate).toHaveBeenCalledWith('window.history.back()');
+    expect(mock.evaluate).toHaveBeenCalledWith('window.history.back()');
   });
 
   it('records error feedback when action fails', async () => {
@@ -259,12 +275,12 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Click button', ref: '42' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
-    const page = mockPage();
-    page.click.mockRejectedValueOnce(new Error('Element not found'));
+    const { page, mock } = mockPage();
+    mock.click.mockRejectedValueOnce(new Error('Element not found'));
     const emit = vi.fn();
     const controller = new AbortController();
 
-    const result = await runAgentLoop('Click button', page, emit, controller.signal);
+    const result: AgentLoopResult = await runAgentLoop('Click button', page, emit, controller.signal);
 
     expect(result.success).toBe(true);
     expect(result.steps[0].action.error_feedback).toBe('Element not found');
@@ -280,11 +296,11 @@ describe('runAgentLoop', () => {
       .mockRejectedValueOnce(new Error('Parse error'))
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
-    const page = mockPage();
+    const { page } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
-    const result = await runAgentLoop('Do something', page, emit, controller.signal);
+    const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     // Should succeed because parse failures were never 3 consecutive
     expect(result.success).toBe(true);
@@ -295,11 +311,20 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ plan: 'Scroll forever' })
       .mockResolvedValue({ action: 'scroll', reasoning: 'Keep scrolling', direction: 'down' });
 
-    const page = mockPage();
+    const { page } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
-    const result = await runAgentLoop('Scroll', page, emit, controller.signal, undefined, undefined, undefined, 3);
+    const result: AgentLoopResult = await runAgentLoop(
+      'Scroll',
+      page,
+      emit,
+      controller.signal,
+      undefined,
+      undefined,
+      undefined,
+      3,
+    );
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('maximum step limit');

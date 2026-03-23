@@ -55,36 +55,37 @@ Rules:
 function buildPrompt(userPrompt: string, result: AgentLoopResult): string {
   let message = `Original task: ${userPrompt}\n\n`;
   message += `Final URL: ${result.final_url ?? 'unknown'}\n`;
-  message += `Total steps executed: ${result.steps.length}\n`;
-  message += `Duration: ${result.duration_ms}ms\n\n`;
+  message += `Total steps executed: ${String(result.steps.length)}\n`;
+  message += `Duration: ${String(result.duration_ms)}ms\n\n`;
   message += 'Action history:\n';
 
   for (const step of result.steps) {
     const action = step.action;
-    let detail = `Step ${step.step}: ${action.action} — ${action.reasoning}`;
-    if (action.ref) detail += ` (ref: ${action.ref})`;
-    if (action.text) detail += ` (text: "${action.text}")`;
-    if (action.url) detail += ` (url: ${action.url})`;
-    if (step.page_title) detail += ` [page: ${step.page_title}]`;
+    let detail = `Step ${String(step.step)}: ${action.action} — ${action.reasoning}`;
+    if (action.ref !== undefined && action.ref !== '') detail += ` (ref: ${action.ref})`;
+    if (action.text !== undefined && action.text !== '') detail += ` (text: "${action.text}")`;
+    if (action.url !== undefined && action.url !== '') detail += ` (url: ${action.url})`;
+    if (step.page_title !== undefined && step.page_title !== '') detail += ` [page: ${step.page_title}]`;
     message += `  ${detail}\n`;
   }
 
   return message;
 }
 
-function toMarkdown(title: string, description: string, steps: SkillStep[], tips: string[], prompt: string, url: string, durationMs: number): string {
-  const lines: string[] = [
-    `# ${title}`,
-    '',
-    description,
-    '',
-    '## Steps',
-    '',
-  ];
+function toMarkdown(
+  title: string,
+  description: string,
+  steps: SkillStep[],
+  tips: string[],
+  prompt: string,
+  url: string,
+  durationMs: number,
+): string {
+  const lines: string[] = [`# ${title}`, '', description, '', '## Steps', ''];
 
   for (const step of steps) {
-    lines.push(`${step.number}. **${step.description}**`);
-    if (step.details) lines.push(`   ${step.details}`);
+    lines.push(`${String(step.number)}. **${step.description}**`);
+    if (step.details !== undefined && step.details !== '') lines.push(`   ${step.details}`);
   }
 
   if (tips.length > 0) {
@@ -126,6 +127,14 @@ export async function generateSkill(prompt: string, result: AgentLoopResult): Pr
     steps: parsed.steps,
     tips: parsed.tips ?? [],
     metadata,
-    markdown: toMarkdown(parsed.title, parsed.description, parsed.steps, parsed.tips ?? [], prompt, metadata.url, metadata.duration_ms),
+    markdown: toMarkdown(
+      parsed.title,
+      parsed.description,
+      parsed.steps,
+      parsed.tips ?? [],
+      prompt,
+      metadata.url,
+      metadata.duration_ms,
+    ),
   };
 }

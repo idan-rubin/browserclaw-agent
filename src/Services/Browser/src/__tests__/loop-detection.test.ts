@@ -23,29 +23,17 @@ describe('detectLoop', () => {
   });
 
   it('detects loop when last 3 steps match current action', () => {
-    const history = [
-      makeStep('click', '5', 0),
-      makeStep('click', '5', 1),
-      makeStep('click', '5', 2),
-    ];
+    const history = [makeStep('click', '5', 0), makeStep('click', '5', 1), makeStep('click', '5', 2)];
     expect(detectLoop({ action: 'click', ref: '5' }, history)).toBe(true);
   });
 
   it('returns false when actions differ', () => {
-    const history = [
-      makeStep('click', '5', 0),
-      makeStep('type', '5', 1),
-      makeStep('click', '5', 2),
-    ];
+    const history = [makeStep('click', '5', 0), makeStep('type', '5', 1), makeStep('click', '5', 2)];
     expect(detectLoop({ action: 'click', ref: '5' }, history)).toBe(false);
   });
 
   it('returns false when refs differ', () => {
-    const history = [
-      makeStep('click', '5', 0),
-      makeStep('click', '6', 1),
-      makeStep('click', '5', 2),
-    ];
+    const history = [makeStep('click', '5', 0), makeStep('click', '6', 1), makeStep('click', '5', 2)];
     expect(detectLoop({ action: 'click', ref: '5' }, history)).toBe(false);
   });
 

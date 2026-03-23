@@ -14,5 +14,5 @@ Respond with ONLY valid JSON:
     maxTokens: 128,
   });
 
-  return { allowed: Boolean(result.allowed), reason: result.reason };
+  return { allowed: result.allowed, reason: result.reason };
 }

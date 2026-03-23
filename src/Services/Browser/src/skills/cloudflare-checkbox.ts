@@ -9,15 +9,17 @@ const POLL_INTERVAL_MS = 1_000;
 async function findCloudflareTarget(page: CrawlPage): Promise<string | null> {
   const baseUrl = getCdpBaseUrl(page);
   const res = await fetch(baseUrl + '/json');
-  const targets = await res.json() as { id: string; url: string; type: string }[];
+  const targets = (await res.json()) as { id: string; url: string; type: string }[];
 
-  const cfTarget = targets.find(t =>
-    t.type === 'iframe' &&
-    (t.url.includes('challenges.cloudflare.com') || t.url.includes('turnstile'))
+  const cfTarget = targets.find(
+    (t) => t.type === 'iframe' && (t.url.includes('challenges.cloudflare.com') || t.url.includes('turnstile')),
   );
 
   if (cfTarget) {
-    logger.info({ targetId: cfTarget.id, url: cfTarget.url.substring(0, 100) }, 'cloudflare: found turnstile target via CDP');
+    logger.info(
+      { targetId: cfTarget.id, url: cfTarget.url.substring(0, 100) },
+      'cloudflare: found turnstile target via CDP',
+    );
     return cfTarget.id;
   }
 
@@ -28,7 +30,7 @@ async function findCloudflareTarget(page: CrawlPage): Promise<string | null> {
 async function getCheckboxPosition(page: CrawlPage): Promise<{ x: number; y: number } | null> {
   // The Cloudflare iframe isn't visible via document.querySelectorAll('iframe')
   // but its container div IS in the DOM. Find it by looking for the Turnstile widget wrapper.
-  const result = await page.evaluate(`
+  const result = (await page.evaluate(`
     (function() {
       // Turnstile renders inside a div with specific attributes
       var candidates = document.querySelectorAll('div[id^="cf-"], div[class*="cf-turnstile"], div[data-sitekey]');
@@ -63,10 +65,10 @@ async function getCheckboxPosition(page: CrawlPage): Promise<{ x: number; y: num
 
       return null;
     })()
-  `) as string | null;
+  `)) as string | null;
 
-  if (!result) return null;
-  const parsed = JSON.parse(result);
+  if (result === null) return null;
+  const parsed = JSON.parse(result) as { x: number; y: number };
   logger.info(parsed, 'cloudflare: found checkbox position');
   return { x: parsed.x, y: parsed.y };
 }
@@ -77,7 +79,7 @@ export async function clickCloudflareCheckbox(page: CrawlPage): Promise<boolean>
 
     // First verify the Cloudflare target exists via CDP
     const targetId = await findCloudflareTarget(page);
-    if (!targetId) {
+    if (targetId === null) {
       logger.info('cloudflare: no Cloudflare target found');
       return false;
     }

@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import { PageShell } from "@/components/page-shell";
+import type { Metadata } from 'next';
+import { PageShell } from '@/components/page-shell';
 
 export const metadata: Metadata = {
-  title: "Documentation",
-  description: "BrowserClaw API documentation — snapshot + ref browser automation for AI agents.",
+  title: 'Documentation',
+  description: 'BrowserClaw API documentation — snapshot + ref browser automation for AI agents.',
 };
 
 export default function DocsPage() {
@@ -13,14 +13,16 @@ export default function DocsPage() {
         <div className="mx-auto max-w-3xl">
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Documentation</h1>
           <p className="mt-4 text-lg text-muted-foreground">
-            BrowserClaw gives AI agents a text snapshot with numbered refs — the AI reads text, returns a ref, and the action is deterministic.
+            BrowserClaw gives AI agents a text snapshot with numbered refs — the AI reads text, returns a ref, and the
+            action is deterministic.
           </p>
 
           {/* Install */}
           <Section title="Install">
             <Code>{`npm install browserclaw`}</Code>
             <p className="mt-3 text-sm text-muted-foreground">
-              Requires a Chromium-based browser installed on the system (Chrome, Brave, Edge, or Chromium). BrowserClaw auto-detects your installed browser — no need to install Playwright browsers separately.
+              Requires a Chromium-based browser installed on the system (Chrome, Brave, Edge, or Chromium). BrowserClaw
+              auto-detects your installed browser — no need to install Playwright browsers separately.
             </p>
           </Section>
 
@@ -60,18 +62,35 @@ await browser.stop();`}</Code>
 └─────────────┘                    └─────────────────────────────────┘`}</pre>
             </div>
             <ol className="mt-4 space-y-2 text-sm text-muted-foreground">
-              <li><strong className="text-foreground">1. Snapshot</strong> a page — get an AI-readable text tree with numbered refs (e1, e2, e3...)</li>
-              <li><strong className="text-foreground">2. AI reads</strong> the snapshot text and picks a ref to act on</li>
-              <li><strong className="text-foreground">3. Actions target refs</strong> — BrowserClaw resolves each ref to a Playwright locator and executes the action</li>
+              <li>
+                <strong className="text-foreground">1. Snapshot</strong> a page — get an AI-readable text tree with
+                numbered refs (e1, e2, e3...)
+              </li>
+              <li>
+                <strong className="text-foreground">2. AI reads</strong> the snapshot text and picks a ref to act on
+              </li>
+              <li>
+                <strong className="text-foreground">3. Actions target refs</strong> — BrowserClaw resolves each ref to a
+                Playwright locator and executes the action
+              </li>
             </ol>
           </Section>
 
           {/* Why BrowserClaw */}
           <Section title="Why BrowserClaw?">
             <div className="space-y-3 text-sm text-muted-foreground">
-              <p><strong className="text-foreground">Vision-based tools</strong> (screenshot → click coordinates) are slow, expensive, and probabilistic.</p>
-              <p><strong className="text-foreground">Selector-based tools</strong> (CSS/XPath) are brittle and meaningless to an LLM.</p>
-              <p><strong className="text-foreground">BrowserClaw</strong> gives the AI a text snapshot with numbered refs — the AI reads text (what it&apos;s best at) and returns a ref ID (deterministic targeting).</p>
+              <p>
+                <strong className="text-foreground">Vision-based tools</strong> (screenshot → click coordinates) are
+                slow, expensive, and probabilistic.
+              </p>
+              <p>
+                <strong className="text-foreground">Selector-based tools</strong> (CSS/XPath) are brittle and
+                meaningless to an LLM.
+              </p>
+              <p>
+                <strong className="text-foreground">BrowserClaw</strong> gives the AI a text snapshot with numbered refs
+                — the AI reads text (what it&apos;s best at) and returns a ref ID (deterministic targeting).
+              </p>
             </div>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <Stat label="Deterministic" description="Refs resolve to exact elements via Playwright locators" />
@@ -175,13 +194,13 @@ const text = await page.evaluate('(el) => el.textContent', { ref: 'e1' });`}
                   </tr>
                 </thead>
                 <tbody className="text-muted-foreground">
-                  <ComparisonRow label="Ref → exact element" values={["yes", "partial", "no", "yes"]} />
-                  <ComparisonRow label="No vision model needed" values={["yes", "partial", "yes", "yes"]} />
-                  <ComparisonRow label="Survives redesigns" values={["yes", "partial", "yes", "yes"]} />
-                  <ComparisonRow label="Batch form filling" values={["yes", "no", "no", "no"]} />
-                  <ComparisonRow label="Cross-origin iframes" values={["yes", "yes", "no", "no"]} />
-                  <ComparisonRow label="Playwright engine" values={["yes", "no", "yes", "yes"]} />
-                  <ComparisonRow label="Embeddable library" values={["yes", "no", "partial", "no"]} />
+                  <ComparisonRow label="Ref → exact element" values={['yes', 'partial', 'no', 'yes']} />
+                  <ComparisonRow label="No vision model needed" values={['yes', 'partial', 'yes', 'yes']} />
+                  <ComparisonRow label="Survives redesigns" values={['yes', 'partial', 'yes', 'yes']} />
+                  <ComparisonRow label="Batch form filling" values={['yes', 'no', 'no', 'no']} />
+                  <ComparisonRow label="Cross-origin iframes" values={['yes', 'yes', 'no', 'no']} />
+                  <ComparisonRow label="Playwright engine" values={['yes', 'no', 'yes', 'yes']} />
+                  <ComparisonRow label="Embeddable library" values={['yes', 'no', 'partial', 'no']} />
                 </tbody>
               </table>
             </div>
@@ -242,7 +261,7 @@ function Stat({ label, description }: { label: string; description: string }) {
   );
 }
 
-function ComparisonRow({ label, values }: { label: string; values: ("yes" | "no" | "partial")[] }) {
+function ComparisonRow({ label, values }: { label: string; values: ('yes' | 'no' | 'partial')[] }) {
   return (
     <tr className="border-b border-border/30">
       <td className="px-4 py-2.5 text-foreground">{label}</td>
@@ -255,13 +274,13 @@ function ComparisonRow({ label, values }: { label: string; values: ("yes" | "no"
   );
 }
 
-function ComparisonIcon({ value }: { value: "yes" | "no" | "partial" }) {
+function ComparisonIcon({ value }: { value: 'yes' | 'no' | 'partial' }) {
   switch (value) {
-    case "yes":
+    case 'yes':
       return <span className="text-green-400">&#10003;</span>;
-    case "partial":
+    case 'partial':
       return <span className="text-yellow-400">~</span>;
-    case "no":
+    case 'no':
       return <span className="text-red-400">&#10005;</span>;
   }
 }
