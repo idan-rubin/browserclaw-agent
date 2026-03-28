@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint-browser:
-    name: Lint (Browser)
+    name: lint
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -25,7 +25,7 @@ jobs:
       - run: npm run format:check
 
   typecheck-browser:
-    name: Typecheck (Browser)
+    name: typecheck
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,7 +41,7 @@ jobs:
       - run: npm run typecheck
 
   build-browser:
-    name: Build (Browser)
+    name: build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -57,7 +57,7 @@ jobs:
       - run: npm run build
 
   lint-frontend:
-    name: Lint (Frontend)
+    name: lint-frontend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -73,7 +73,7 @@ jobs:
       - run: pnpm run format:check
 
   typecheck-frontend:
-    name: Typecheck (Frontend)
+    name: typecheck-frontend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -88,7 +88,7 @@ jobs:
       - run: pnpm run typecheck
 
   build-frontend:
-    name: Build (Frontend)
+    name: build-frontend
     runs-on: ubuntu-latest
     defaults:
       run:
