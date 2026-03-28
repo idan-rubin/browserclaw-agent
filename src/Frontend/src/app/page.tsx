@@ -111,9 +111,11 @@ export default function HomePage() {
     return undefined;
   }, [autoResize]);
 
+  const hasApiKey = !!llm.apiKey.trim();
+
   async function handleRun(skipModeration = false) {
     const trimmed = prompt.trim();
-    if (!trimmed) return;
+    if (!trimmed || !hasApiKey) return;
 
     abortRef.current?.abort();
     const abort = new AbortController();
@@ -231,7 +233,7 @@ export default function HomePage() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      void handleRun();
+                      if (hasApiKey) void handleRun();
                     }
                   }}
                   placeholder="What do you want the browser to do?"
@@ -244,7 +246,7 @@ export default function HomePage() {
                     onClick={() => {
                       void handleRun();
                     }}
-                    disabled={!!modal || !prompt.trim()}
+                    disabled={!!modal || !prompt.trim() || !hasApiKey}
                     className={RUN_BUTTON_CLASS}
                   >
                     Run
@@ -253,12 +255,16 @@ export default function HomePage() {
               </div>
               {prompt && (
                 <div className="flex items-center justify-end gap-3 px-2 pt-1">
-                  <span className="hidden text-sm text-muted-foreground/50 sm:inline">Shift+Enter for new line</span>
+                  {hasApiKey ? (
+                    <span className="hidden text-sm text-muted-foreground/50 sm:inline">Shift+Enter for new line</span>
+                  ) : (
+                    <span className="text-xs text-amber-500/80">Enter your API key below to run</span>
+                  )}
                   <button
                     onClick={() => {
                       void handleRun();
                     }}
-                    disabled={!!modal || !prompt.trim()}
+                    disabled={!!modal || !prompt.trim() || !hasApiKey}
                     className={RUN_BUTTON_CLASS}
                   >
                     Run
