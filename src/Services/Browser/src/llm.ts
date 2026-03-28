@@ -270,7 +270,6 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
 
 function resolveByokProvider(config: LlmConfig): ProviderConfig {
   const byok = BYOK_PROVIDERS[config.provider];
-  if (!byok) throw new Error(`Unsupported BYOK provider: ${config.provider}`);
   return {
     provider: config.provider,
     label: config.provider,

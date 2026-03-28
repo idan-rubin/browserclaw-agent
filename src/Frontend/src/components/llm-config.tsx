@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useMemo } from 'react';
 
 export interface LlmConfig {
   provider: 'anthropic' | 'openai' | 'gemini';
@@ -30,16 +30,25 @@ const MODELS: Record<string, { value: string; label: string }[]> = {
   ],
 };
 
+const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
 const STORAGE_KEY = 'browserclaw_llm_config';
 
-function loadConfig(): Partial<LlmConfig> {
-  if (typeof window === 'undefined') return {};
+function loadConfig(): { provider: LlmConfig['provider']; model: string } {
+  if (typeof window === 'undefined') return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return {};
-    return JSON.parse(raw) as Partial<LlmConfig>;
+    if (raw === null) return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value };
+    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
+    const provider =
+      parsed.provider !== undefined && parsed.provider !== '' ? parsed.provider : DEFAULT_PROVIDER;
+    const models = MODELS[provider] ?? [];
+    const model =
+      parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
+        ? parsed.model
+        : models[0]?.value ?? '';
+    return { provider, model };
   } catch {
-    return {};
+    return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value };
   }
 }
 
@@ -48,38 +57,33 @@ function saveConfig(provider: LlmConfig['provider'], model: string) {
 }
 
 export function useLlmConfig() {
-  const [provider, setProvider] = useState<LlmConfig['provider']>('anthropic');
-  const [model, setModel] = useState('');
+  const [provider, setProvider] = useState<LlmConfig['provider']>(() => loadConfig().provider);
+  const [model, setModel] = useState(() => loadConfig().model);
   const [apiKey, setApiKey] = useState('');
-  const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    const saved = loadConfig();
-    if (saved.provider !== undefined && saved.provider !== '') setProvider(saved.provider);
-    if (saved.model !== undefined && saved.model !== '') setModel(saved.model);
-    setLoaded(true);
-  }, []);
-
-  // When provider changes, reset model to first available if current model doesn't match
-  useEffect(() => {
-    if (!loaded) return;
+  // Resolve model when provider changes
+  const resolvedModel = useMemo(() => {
     const models = MODELS[provider] ?? [];
-    if (!models.some((m) => m.value === model)) {
-      setModel(models[0]?.value ?? '');
-    }
-  }, [provider, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (models.some((m) => m.value === model)) return model;
+    return models[0]?.value ?? '';
+  }, [provider, model]);
 
   useEffect(() => {
-    if (!loaded) return;
-    saveConfig(provider, model);
-  }, [provider, model, loaded]);
+    saveConfig(provider, resolvedModel);
+  }, [provider, resolvedModel]);
+
+  const handleSetProvider = useCallback((p: LlmConfig['provider']) => {
+    setProvider(p);
+    const models = MODELS[p] ?? [];
+    setModel(models[0]?.value ?? '');
+  }, []);
 
   const getConfig = useCallback((): LlmConfig | undefined => {
     if (apiKey.trim() === '') return undefined;
-    return { provider, model, api_key: apiKey.trim() };
-  }, [provider, model, apiKey]);
+    return { provider, model: resolvedModel, api_key: apiKey.trim() };
+  }, [provider, resolvedModel, apiKey]);
 
-  return { provider, setProvider, model, setModel, apiKey, setApiKey, getConfig, loaded };
+  return { provider, setProvider: handleSetProvider, model: resolvedModel, setModel, apiKey, setApiKey, getConfig };
 }
 
 const SELECT_CLASS =
@@ -107,7 +111,7 @@ export function LlmConfigPanel({
     <div className="w-full">
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => { setOpen(!open); }}
         className="flex items-center gap-1.5 text-xs text-muted-foreground/60 transition-colors hover:text-muted-foreground"
       >
         <svg
@@ -142,7 +146,7 @@ export function LlmConfigPanel({
           <div className="flex flex-col gap-3 sm:flex-row">
             <select
               value={provider}
-              onChange={(e) => setProvider(e.target.value as LlmConfig['provider'])}
+              onChange={(e) => { setProvider(e.target.value as LlmConfig['provider']); }}
               className={`${SELECT_CLASS} sm:w-40`}
             >
               {PROVIDERS.map((p) => (
@@ -154,7 +158,7 @@ export function LlmConfigPanel({
 
             <select
               value={model}
-              onChange={(e) => setModel(e.target.value)}
+              onChange={(e) => { setModel(e.target.value); }}
               className={`${SELECT_CLASS} sm:w-48`}
             >
               {models.map((m) => (
@@ -167,7 +171,7 @@ export function LlmConfigPanel({
             <input
               type="password"
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => { setApiKey(e.target.value); }}
               placeholder="API key"
               autoComplete="off"
               className="h-9 flex-1 rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/40 transition-colors focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20"
