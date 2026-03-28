@@ -102,7 +102,7 @@ export function LlmConfigPanel({
   apiKey: string;
   setApiKey: (k: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(!apiKey);
   const models = MODELS[provider] ?? [];
 
   return (
