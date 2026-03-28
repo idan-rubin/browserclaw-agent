@@ -241,36 +241,24 @@ export default function HomePage() {
                   style={{ maxHeight: '200px' }}
                   disabled={!!modal}
                 />
-                {!prompt && (
-                  <button
-                    onClick={() => {
-                      void handleRun();
-                    }}
-                    disabled={!!modal || !prompt.trim() || !hasApiKey}
-                    className={RUN_BUTTON_CLASS}
-                  >
-                    Run
-                  </button>
-                )}
               </div>
-              {prompt && (
-                <div className="flex items-center justify-end gap-3 px-2 pt-1">
-                  {hasApiKey ? (
-                    <span className="hidden text-sm text-muted-foreground/50 sm:inline">Shift+Enter for new line</span>
-                  ) : (
-                    <span className="text-xs text-amber-500/80">Enter your API key below to run</span>
-                  )}
-                  <button
-                    onClick={() => {
-                      void handleRun();
-                    }}
-                    disabled={!!modal || !prompt.trim() || !hasApiKey}
-                    className={RUN_BUTTON_CLASS}
-                  >
-                    Run
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center justify-end gap-3 px-2 pt-1">
+                {prompt && !hasApiKey && (
+                  <span className="text-xs text-amber-500/80">Enter your API key below to run</span>
+                )}
+                {prompt && hasApiKey && (
+                  <span className="hidden text-sm text-muted-foreground/50 sm:inline">Shift+Enter for new line</span>
+                )}
+                <button
+                  onClick={() => {
+                    void handleRun();
+                  }}
+                  disabled={!!modal || !prompt.trim() || !hasApiKey}
+                  className={RUN_BUTTON_CLASS}
+                >
+                  Run
+                </button>
+              </div>
             </div>
           </div>
 
