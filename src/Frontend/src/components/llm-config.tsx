@@ -3,7 +3,7 @@
 import { useEffect, useCallback, useState, useMemo } from 'react';
 
 export interface LlmConfig {
-  provider: 'anthropic' | 'openai' | 'gemini';
+  provider: 'anthropic' | 'openai' | 'openai-oauth' | 'gemini';
   model: string;
   api_key: string;
 }
@@ -11,6 +11,7 @@ export interface LlmConfig {
 const PROVIDERS = [
   { value: 'anthropic' as const, label: 'Anthropic' },
   { value: 'openai' as const, label: 'OpenAI' },
+  { value: 'openai-oauth' as const, label: 'OpenAI (ChatGPT Subscription)' },
   { value: 'gemini' as const, label: 'Google Gemini' },
 ];
 
@@ -20,6 +21,10 @@ const MODELS: Record<string, { value: string; label: string }[]> = {
     { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
   ],
   openai: [
+    { value: 'gpt-5.4', label: 'GPT-5.4' },
+    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+  ],
+  'openai-oauth': [
     { value: 'gpt-5.4', label: 'GPT-5.4' },
     { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
   ],
@@ -191,8 +196,8 @@ export function LlmConfigPanel({
               onChange={(e) => {
                 setApiKey(e.target.value);
               }}
-              placeholder="API key"
-              aria-label="API Key"
+              placeholder={provider === 'openai-oauth' ? 'OAuth token' : 'API key'}
+              aria-label={provider === 'openai-oauth' ? 'OAuth Token' : 'API Key'}
               autoComplete="off"
               className="h-9 flex-1 rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/40 transition-colors focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20"
             />

@@ -24,9 +24,10 @@ export function runWithLlmConfig<T>(config: LlmConfig, fn: () => Promise<T>): Pr
   return sessionLlmStore.run({ llmConfig: config, llmCallCount: 0 }, fn);
 }
 
-const BYOK_PROVIDERS: Record<string, { baseURL: string; useMaxCompletionTokens: boolean }> = {
+export const BYOK_PROVIDERS: Partial<Record<string, { baseURL: string; useMaxCompletionTokens: boolean }>> = {
   anthropic: { baseURL: 'https://api.anthropic.com/v1/', useMaxCompletionTokens: false },
   openai: { baseURL: 'https://api.openai.com/v1', useMaxCompletionTokens: true },
+  'openai-oauth': { baseURL: 'https://chatgpt.com/backend-api', useMaxCompletionTokens: true },
   gemini: { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', useMaxCompletionTokens: false },
 };
 
@@ -171,8 +172,13 @@ interface LLMResponse {
   text: string;
 }
 
-async function callCodexResponsesAPI(provider: ProviderConfig, model: string, req: LLMRequest): Promise<LLMResponse> {
-  const apiKey = process.env[provider.apiKeyEnv] ?? '';
+async function callCodexResponsesAPI(
+  provider: ProviderConfig,
+  model: string,
+  req: LLMRequest,
+  apiKeyOverride?: string,
+): Promise<LLMResponse> {
+  const apiKey = apiKeyOverride ?? process.env[provider.apiKeyEnv] ?? '';
   const url = `${provider.baseURL}/codex/responses`;
 
   const res = await fetch(url, {
@@ -283,6 +289,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
 
 function resolveByokProvider(config: LlmConfig): ProviderConfig {
   const byok = BYOK_PROVIDERS[config.provider];
+  if (!byok) throw new Error(`Unsupported BYOK provider: ${config.provider}`);
   return {
     provider: config.provider,
     label: config.provider,
@@ -311,6 +318,13 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
   if (ctx) {
     const byokConfig = ctx.llmConfig;
     const providerConfig = resolveByokProvider(byokConfig);
+    if (byokConfig.provider === 'openai-oauth') {
+      return await withTimeout(
+        callCodexResponsesAPI(providerConfig, byokConfig.model, req, byokConfig.api_key),
+        LLM_TIMEOUT_MS,
+        'LLM call (BYOK OAuth)',
+      );
+    }
     // Cache the BYOK client in the session context to avoid creating a new one per call
     ctx.byokClient ??= getByokClient(byokConfig, providerConfig);
     return await withTimeout(

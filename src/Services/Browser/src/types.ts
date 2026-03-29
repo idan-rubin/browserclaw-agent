@@ -9,7 +9,7 @@ export interface Session {
 
 export type SessionStatus = 'pending' | 'running' | 'waiting_for_user' | 'completed' | 'failed';
 
-export type LlmProvider = 'anthropic' | 'openai' | 'gemini';
+export type LlmProvider = 'anthropic' | 'openai' | 'openai-oauth' | 'gemini';
 
 export interface LlmConfig {
   provider: LlmProvider;

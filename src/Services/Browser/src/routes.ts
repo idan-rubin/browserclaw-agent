@@ -9,6 +9,7 @@ import {
   sessionCount,
   resolveUserResponse,
 } from './session-manager.js';
+import { BYOK_PROVIDERS } from './llm.js';
 import { HttpError } from './types.js';
 import type { CreateSessionRequest, LlmConfig } from './types.js';
 
@@ -115,9 +116,8 @@ const routes: Route[] = [
       let llmConfig: LlmConfig | undefined;
       if (body.llm_config !== undefined) {
         const { provider, model, api_key } = body.llm_config;
-        const validProviders = ['anthropic', 'openai', 'gemini'];
-        if (!validProviders.includes(provider)) {
-          sendError(res, 400, `Invalid provider. Must be one of: ${validProviders.join(', ')}`);
+        if (!(provider in BYOK_PROVIDERS)) {
+          sendError(res, 400, `Invalid provider. Must be one of: ${Object.keys(BYOK_PROVIDERS).join(', ')}`);
           return;
         }
         if (typeof model !== 'string' || model.trim() === '') {
