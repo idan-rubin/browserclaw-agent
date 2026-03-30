@@ -1,5 +1,4 @@
 import type { CrawlPage } from 'browserclaw';
-import { openCdpConnection, cdpClick } from './cdp-utils.js';
 import { logger } from '../logger.js';
 
 export type AntiBotType = 'press_and_hold' | 'cloudflare_checkbox' | null;
@@ -190,21 +189,16 @@ export async function pressAndHold(page: CrawlPage): Promise<boolean> {
       return false;
     }
     const { x, y } = coords;
-    logger.info({ x, y }, 'press-and-hold: found button, opening CDP');
+    logger.info({ x, y }, 'press-and-hold: found button');
 
     const urlBefore = await page.url();
-    const cdp = await openCdpConnection(page);
-    logger.info('press-and-hold: CDP connected');
-    try {
-      const jitterX = x + Math.floor(Math.random() * 20) - 10;
-      const jitterY = y + Math.floor(Math.random() * 10) - 5;
-      const holdMs = humanHoldMs();
-      logger.info({ x: jitterX, y: jitterY, holdMs }, 'press-and-hold: mousePressed');
-      await cdpClick(cdp, jitterX, jitterY, { delay: 100 + Math.floor(Math.random() * 200), holdMs });
-      logger.info({ holdMs }, 'press-and-hold: released');
-    } finally {
-      cdp.close();
-    }
+    const jitterX = x + Math.floor(Math.random() * 20) - 10;
+    const jitterY = y + Math.floor(Math.random() * 10) - 5;
+    const holdMs = humanHoldMs();
+    const delay = 100 + Math.floor(Math.random() * 200);
+    logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
+    await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
+    logger.info({ holdMs }, 'press-and-hold: released');
     await page.waitFor({ timeMs: 2000 });
 
     const stillBlocked = await isStillBlocked(page, 'press_and_hold');
