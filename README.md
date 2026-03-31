@@ -71,6 +71,15 @@ Swap Anthropic for OpenAI, Groq, Gemini, or a local model. The library just give
 
 See the full [browserclaw API docs](https://github.com/idan-rubin/browserclaw) for everything the library can do — `fill()`, `select()`, `drag()`, `screenshot()`, `pdf()`, `waitFor()`, and more.
 
+## Why not browser-use?
+
+[browser-use](https://github.com/browser-use/browser-use) is a great project. If you're working in Python, it's worth a look. Here's how browserclaw differs:
+
+- **Node.js / TypeScript** — browserclaw is built for the JS ecosystem. If your stack is TypeScript, browser-use isn't an option.
+- **Accessibility tree, not DOM** — browserclaw snapshots use the browser's accessibility tree — the same structure screen readers use. You get semantic roles, names, and states. browser-use serializes the DOM tree, which is structural (tags, attributes, text content). Accessibility snapshots are cleaner, smaller, and more meaningful to an LLM.
+- **Skill catalog** — browserclaw.agent learns from every run. A successful run generates a reusable playbook for that domain. browser-use starts from scratch each time.
+- **Built-in challenge handling** — Cloudflare Turnstile, press-and-hold anti-bot overlays, cookie banners — handled automatically via CDP. These are the things that make browser agents fail in the real world.
+
 ## Using the agent
 
 If you don't want to build your own agent, this project gives you one that handles real-world web complexity out of the box.
