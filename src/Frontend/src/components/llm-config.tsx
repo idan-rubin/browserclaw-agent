@@ -42,8 +42,7 @@ function loadConfig(): { provider: LlmConfig['provider']; model: string; apiKey:
     return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '' };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null)
-      return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '' };
+    if (raw === null) return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '' };
     const parsed = JSON.parse(raw) as Partial<LlmConfig & { api_key: string }>;
     const provider = parsed.provider ?? DEFAULT_PROVIDER;
     const models = MODELS[provider] ?? [];
@@ -207,8 +206,8 @@ export function LlmConfigPanel({
           </div>
 
           <p className="text-[11px] leading-relaxed text-muted-foreground/50">
-            Your key is saved in your browser&apos;s local storage and never sent to our servers except to make LLM calls
-            during your run.
+            Your key is saved in your browser&apos;s local storage and never sent to our servers except to make LLM
+            calls during your run.
           </p>
         </div>
       )}
