@@ -7,7 +7,7 @@
 
 An AI agent for [browserclaw](https://github.com/idan-rubin/browserclaw) — the browser automation library built for LLMs.
 
-Unlike browser-use, browserclaw separates the **browsing library** from the **brains**. [browserclaw](https://github.com/idan-rubin/browserclaw) is the engine: fast accessibility snapshots, numbered element refs, real browser control. You bring your own agent — any LLM, any framework, any logic. Or use this project to jumpstart your experience with a ready-made agent that learns from every run.
+[browserclaw](https://github.com/idan-rubin/browserclaw) is the engine: accessibility snapshots, numbered element refs, real browser control. You bring your own agent — any LLM, any framework, any logic. Or use **browserclaw.agent** (this project) to jumpstart with a ready-made agent that handles anti-bot challenges, learns reusable skills, and gets better with every run.
 
 ## browserclaw (the library)
 
@@ -138,19 +138,18 @@ const pdf = await page.pdf();
 const title = await page.evaluate('() => document.title');
 ```
 
-## Why browserclaw?
+## Why accessibility snapshots?
 
-|  | BrowserClaw | browser-use | Stagehand | Playwright MCP |
-|--|:-----------:|:-----------:|:---------:|:--------------:|
-| Ref → exact element | Yes | Partial | No | Yes |
-| No vision model needed | Yes | Partial | Yes | Yes |
-| Survives redesigns | Yes | Partial | Yes | Yes |
-| Batch form filling | Yes | No | No | No |
-| Cross-origin iframes | Yes | Yes | No | No |
-| Embeddable library | Yes | No | Partial | No |
-| Library / agent separated | Yes | No | No | No |
+Most browser automation tools give the AI either **screenshots** (expensive vision API calls, probabilistic coordinate targeting) or **raw DOM** (noisy, token-heavy, full of invisible elements).
 
-Vision-based tools send screenshots and click coordinates — slow, expensive, and probabilistic. Selector-based tools use CSS/XPath — brittle and meaningless to an LLM. BrowserClaw gives the AI a text snapshot with numbered refs. The AI reads text (what it's best at) and returns a ref ID (deterministic targeting). No vision API calls, just text in / text out.
+BrowserClaw takes a different approach: it gives the AI an **accessibility snapshot** — the same structured tree that screen readers use. The result is a clean text representation of what's actually on the page, with numbered refs that resolve to exact Playwright locators.
+
+- **Text in, text out** — no vision model needed, works with any LLM
+- **Small payloads** — accessibility trees are a fraction of the size of raw DOM or screenshots
+- **Deterministic targeting** — refs map to exact elements, not coordinates or selectors
+- **Semantic meaning** — the AI sees roles, names, and states, not CSS classes
+- **Batch form filling** — `page.fill()` sets multiple fields in one call
+- **Cross-origin iframes** — snapshots include content from embedded iframes
 
 ## browserclaw.agent (this project)
 
