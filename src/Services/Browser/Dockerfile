@@ -38,7 +38,7 @@ RUN npm prune --omit=dev
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 
-RUN groupadd -r browser && useradd -r -g browser -G audio,video browser \
+RUN groupadd -r browser && useradd -r -g browser -G audio,video -m browser \
     && chown -R browser:browser /var/log/supervisor /var/run /app
 
 USER browser
