@@ -1,5 +1,6 @@
 import type { CrawlPage } from 'browserclaw';
 import { logger } from '../logger.js';
+import { openCdpConnection, cdpClick } from './cdp-utils.js';
 
 export type AntiBotType = 'press_and_hold' | 'cloudflare_checkbox' | null;
 
@@ -197,7 +198,12 @@ export async function pressAndHold(page: CrawlPage): Promise<boolean> {
     const holdMs = humanHoldMs();
     const delay = 100 + Math.floor(Math.random() * 200);
     logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
-    await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
+    const cdp = await openCdpConnection(page);
+    try {
+      await cdpClick(cdp, jitterX, jitterY, { delay, holdMs });
+    } finally {
+      cdp.close();
+    }
     logger.info({ holdMs }, 'press-and-hold: released');
     await page.waitFor({ timeMs: 2000 });
 
