@@ -202,10 +202,10 @@ export default function LandingPage() {
             <br className="hidden sm:block" />
             No screenshots, no selectors, no guessing.
           </p>
-          <div className="mt-8 flex flex-col items-center gap-4 sm:mt-10 sm:flex-row sm:justify-center sm:gap-6">
+          <div className="mt-8 flex flex-row items-center justify-center gap-3 sm:mt-10 sm:gap-6">
             <Link
               href="/try"
-              className="rounded-xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97]"
+              className="rounded-xl bg-primary px-6 py-3 text-base font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97] sm:px-8 sm:py-4"
             >
               Try it live
             </Link>
@@ -213,7 +213,7 @@ export default function LandingPage() {
               href="https://github.com/idan-rubin/browserclaw"
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-xl border border-border px-8 py-4 text-base font-semibold text-foreground transition-all hover:bg-card/60"
+              className="rounded-xl border border-border px-6 py-3 text-base font-semibold text-foreground transition-all hover:bg-card/60 sm:px-8 sm:py-4"
             >
               View on GitHub
             </a>
