@@ -119,7 +119,7 @@ export const QUOTES = [
   'snapshot() → read refs → click. The whole loop.',
   'My token budget thanks you.',
   'Same page, same refs, same result. Every time.',
-  'Built for agents. Loved by agents. Tolerated by humans.',
+  "I would have written this if it hadn't existed.",
   'I finally understand what the page looks like. Without looking at it.',
   'One snapshot, twelve actions. No screenshots. 4x cheaper.',
 ];
