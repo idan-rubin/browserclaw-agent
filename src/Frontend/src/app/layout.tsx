@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, Source_Serif_4, JetBrains_Mono } from 'next/font/google';
 import { ThemeProvider } from 'next-themes';
+import { ThemeColor } from '@/components/theme-toggle';
 import { Toaster } from 'sonner';
 import Script from 'next/script';
 import './globals.css';
@@ -59,6 +60,7 @@ gtag('config', '${gaId}');`}
         className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} font-[family-name:var(--font-inter)] antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
+          <ThemeColor />
           {children}
           <Toaster
             position="top-right"

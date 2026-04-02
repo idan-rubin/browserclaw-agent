@@ -3,6 +3,14 @@
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 
+const THEME_COLORS = { dark: '#1e1d25', light: '#fbfaf8' } as const;
+
+export function ThemeColor() {
+  const { resolvedTheme } = useTheme();
+  const color = THEME_COLORS[resolvedTheme === 'light' ? 'light' : 'dark'];
+  return <meta name="theme-color" content={color} />;
+}
+
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
