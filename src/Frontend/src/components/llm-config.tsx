@@ -91,8 +91,8 @@ export function useLlmConfig() {
   return { provider, setProvider: handleSetProvider, model: resolvedModel, setModel, apiKey, setApiKey, getConfig };
 }
 
-const SELECT_CLASS =
-  'h-9 appearance-none rounded-lg border border-border bg-background px-3 text-sm text-foreground transition-colors focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20';
+const FIELD_CLASS =
+  'appearance-none rounded-lg border border-border bg-background px-3 py-2 text-sm leading-5 text-foreground transition-colors focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20';
 
 export function LlmConfigPanel({
   provider,
@@ -168,7 +168,7 @@ export function LlmConfigPanel({
                 setProvider(e.target.value as LlmConfig['provider']);
               }}
               aria-label="LLM Provider"
-              className={`${SELECT_CLASS} sm:w-40`}
+              className={`${FIELD_CLASS} sm:w-40`}
             >
               {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>
@@ -183,7 +183,7 @@ export function LlmConfigPanel({
                 setModel(e.target.value);
               }}
               aria-label="Model"
-              className={`${SELECT_CLASS} sm:w-48`}
+              className={`${FIELD_CLASS} sm:w-48`}
             >
               {models.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -201,7 +201,7 @@ export function LlmConfigPanel({
               placeholder={provider === 'openai-oauth' ? 'OAuth token' : 'API key'}
               aria-label={provider === 'openai-oauth' ? 'OAuth Token' : 'API Key'}
               autoComplete="off"
-              className="h-9 flex-1 rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/40 transition-colors focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20"
+              className={`${FIELD_CLASS} flex-1 placeholder:text-muted-foreground/40`}
             />
           </div>
 
