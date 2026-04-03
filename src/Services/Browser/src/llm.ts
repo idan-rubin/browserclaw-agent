@@ -328,7 +328,12 @@ async function retryTransient<T>(fn: () => Promise<T>, label: string): Promise<T
       if (attempt < LLM_MAX_RETRIES && isTransientError(err)) {
         const delayMs = LLM_RETRY_BASE_MS * 2 ** attempt;
         logger.warn(
-          { attempt: attempt + 1, maxRetries: LLM_MAX_RETRIES, delayMs, error: err instanceof Error ? err.message : 'unknown' },
+          {
+            attempt: attempt + 1,
+            maxRetries: LLM_MAX_RETRIES,
+            delayMs,
+            error: err instanceof Error ? err.message : 'unknown',
+          },
           `${label}: transient error, retrying`,
         );
         await new Promise((r) => setTimeout(r, delayMs));
@@ -373,7 +378,10 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
     const providerConfig = resolveByokProvider(byokConfig);
     if (byokConfig.provider === 'openai-oauth') {
       return await withTimeout(
-        retryTransient(() => callCodexResponsesAPI(providerConfig, byokConfig.model, req, byokConfig.api_key), 'BYOK Codex API'),
+        retryTransient(
+          () => callCodexResponsesAPI(providerConfig, byokConfig.model, req, byokConfig.api_key),
+          'BYOK Codex API',
+        ),
         LLM_TIMEOUT_MS,
         'LLM call (BYOK OAuth)',
       );
