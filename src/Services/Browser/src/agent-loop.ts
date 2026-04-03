@@ -56,7 +56,8 @@ Rules:
 - If something failed, try a different approach. Never repeat a failed action.
 - "type" clears the field first, then types.
 - After typing in any field, wait — then check for autocomplete dropdowns and click the matching option.
-- "keyboard" to press special keys: Enter (submit forms), Escape (close dropdowns/dialogs), Tab (move between fields), ArrowDown/ArrowUp (navigate dropdowns).
+- "keyboard" to press special keys: Enter (submit forms), Escape (close dropdowns/dialogs/popups/date pickers/calendars), Tab (move between fields), ArrowDown/ArrowUp (navigate dropdowns).
+- If a popup, modal, date picker, calendar widget, or overlay is blocking the UI, dismiss it immediately: click its "Cancel", "Close", or "X" button, or use "keyboard" with "Escape". Do NOT try to click elements behind a blocking overlay — dismiss the overlay first.
 - "back" to go back in browser history. Use this instead of manually tracking URLs when you need to return to the previous page.
 - "press_and_hold" for press-and-hold anti-bot challenges. Wait after, check if it worked. If the challenge cleared but the page still looks the same (no new content loaded), refresh the page by navigating to the current URL. Try twice before asking user.
 - "click_cloudflare" for Cloudflare security checks ("Verify you are human" checkbox). The system will find and click the checkbox. Wait after, check if it worked. Try twice before asking user.
@@ -528,8 +529,12 @@ Respond with JSON: {"plan": "your plan here"}`,
       };
     }
 
-    if (await detectPopup(holder.page)) {
-      await dismissPopup(holder.page);
+    // Dismiss popups/overlays before taking a snapshot. Loop to handle nested popups
+    // (e.g. a date picker on top of a "More filters" modal).
+    for (let dismissAttempt = 0; dismissAttempt < 3; dismissAttempt++) {
+      if (!(await detectPopup(holder.page))) break;
+      const closed = await dismissPopup(holder.page);
+      if (!closed) break; // nothing more we can do automatically
     }
 
     let snapshot = await safeSnapshot(holder.page);
@@ -750,8 +755,11 @@ Respond with JSON: {"plan": "your plan here"}`,
         agentStep.action.error_feedback = message;
         await holder.page.waitFor({ timeMs: 1000 });
 
-        if (await detectPopup(holder.page)) {
-          await dismissPopup(holder.page);
+        // Dismiss popups that may be blocking actions (loop for nested overlays)
+        for (let dismissAttempt = 0; dismissAttempt < 3; dismissAttempt++) {
+          if (!(await detectPopup(holder.page))) break;
+          const closed = await dismissPopup(holder.page);
+          if (!closed) break;
         }
         step++;
         break; // Break batch on failure — need new snapshot
