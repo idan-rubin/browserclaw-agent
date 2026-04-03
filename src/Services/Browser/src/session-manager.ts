@@ -46,7 +46,6 @@ interface ManagedSession {
 
 const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
 const SESSION_IDLE_TIMEOUT_MS = requireEnvInt('SESSION_IDLE_TIMEOUT_MS');
-const SESSION_MAX_DURATION_MS = requireEnvInt('SESSION_MAX_DURATION_MS');
 const BASE_CDP_PORT = 9222;
 const MIN_STEPS_FOR_SKILL = 3;
 const AUTO_CLOSE_DELAY_MS = 10_000;
@@ -97,27 +96,16 @@ export function addSSEClient(sessionId: string, res: ServerResponse): void {
 export function startCleanupLoop(): void {
   cleanupInterval = setInterval(() => {
     const now = Date.now();
-    const toClose: { id: string; reason: string }[] = [];
+    const toClose: string[] = [];
     for (const [id, session] of sessions) {
-      const age = now - session.createdAt.getTime();
       const idle = now - session.lastActivityAt.getTime();
-      if (age > SESSION_MAX_DURATION_MS) {
-        toClose.push({ id, reason: 'max_duration' });
-      } else if (idle > SESSION_IDLE_TIMEOUT_MS && session.status !== 'waiting_for_user') {
-        toClose.push({ id, reason: 'idle' });
+      if (idle > SESSION_IDLE_TIMEOUT_MS && session.status !== 'waiting_for_user') {
+        toClose.push(id);
       }
     }
     void (async () => {
-      for (const { id, reason } of toClose) {
-        if (reason === 'max_duration') {
-          const session = sessions.get(id);
-          if (session === undefined) continue;
-          const age = now - session.createdAt.getTime();
-          logger.info({ sessionId: id, ageSec: Math.round(age / 1000) }, 'Closing session — exceeded max duration');
-          emitSSE(id, 'timeout', { reason: 'Session time limit reached (5 minutes)' });
-        } else {
-          logger.info({ sessionId: id }, 'Closing idle session');
-        }
+      for (const id of toClose) {
+        logger.info({ sessionId: id }, 'Closing idle session');
         await closeSession(id);
       }
     })();
@@ -229,7 +217,6 @@ export async function createSession(
       created_at: now.toISOString(),
       last_activity_at: now.toISOString(),
       status: 'pending',
-      max_duration_ms: SESSION_MAX_DURATION_MS,
     },
   };
 }

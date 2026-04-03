@@ -26,7 +26,7 @@ export interface DomainSkillEntry {
   run_count: number;
 }
 
-export type RunStatus = 'running' | 'waiting_for_user' | 'completed' | 'failed' | 'timeout';
+export type RunStatus = 'running' | 'waiting_for_user' | 'completed' | 'failed';
 
 export const STATUS_CONFIG: Record<RunStatus, { badge: string; dot: string; label: string }> = {
   running: {
@@ -43,11 +43,6 @@ export const STATUS_CONFIG: Record<RunStatus, { badge: string; dot: string; labe
     badge: 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20',
     dot: 'bg-emerald-400',
     label: 'Run completed',
-  },
-  timeout: {
-    badge: 'bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20',
-    dot: 'bg-amber-400',
-    label: 'Run timed out',
   },
   failed: {
     badge: 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20',

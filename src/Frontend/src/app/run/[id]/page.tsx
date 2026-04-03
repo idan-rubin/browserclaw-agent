@@ -137,13 +137,6 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         es?.close();
       });
 
-      es.addEventListener('timeout', () => {
-        terminated = true;
-        setStatus('timeout');
-        setError('Session time limit reached (5 minutes)');
-        es?.close();
-      });
-
       es.addEventListener('skill_generated', (e: MessageEvent) => {
         const data = parseEventData(e);
         if (!data) return;
