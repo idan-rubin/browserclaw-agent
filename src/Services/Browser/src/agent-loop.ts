@@ -732,12 +732,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       if (err instanceof LlmParseError) {
         // LLM responded but not with valid JSON — burn a step, the call was made
         consecutiveParseFailures++;
-        // lgtm[js/clear-text-logging]
         logger.warn(
-          { step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES, parseError: err.message },
+          { step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES },
           'LLM returned non-JSON response',
         );
-        emit('step_error', { step, error: `LLM response was not valid JSON: ${err.message}`, type: 'parse_error' });
+        emit('step_error', { step, error: 'LLM response was not valid JSON', type: 'parse_error' });
         if (consecutiveParseFailures >= MAX_PARSE_FAILURES) {
           const answer = await getFinalSummary(refinedPrompt, history);
           return {
