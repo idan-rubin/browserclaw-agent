@@ -732,6 +732,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       if (err instanceof LlmParseError) {
         // LLM responded but not with valid JSON — burn a step, the call was made
         consecutiveParseFailures++;
+        // lgtm[js/clear-text-logging]
         logger.warn(
           { step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES, parseError: err.message },
           'LLM returned non-JSON response',
