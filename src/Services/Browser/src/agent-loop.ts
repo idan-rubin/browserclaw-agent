@@ -90,6 +90,12 @@ Strategy:
 - At each step, know where you are in that flow and what comes next.
 - Every action should move you closer to the goal. If it doesn't, you're wasting steps.
 
+Blocking overlays (popups, modals, date pickers, calendars, cookie banners):
+- If a popup, modal, date picker, calendar, or overlay is covering the page and blocking your clicks, you MUST dismiss it before doing anything else.
+- To dismiss: click the overlay's "Cancel", "Close", "X", or "No thanks" button using "click" with its ref number. If there's no visible close button, use "keyboard" with "Escape".
+- After dismissing, check the next snapshot — there may be another overlay underneath (e.g. a date picker on top of a filters modal). Dismiss each layer one at a time.
+- Do NOT repeatedly click elements behind an overlay. If a click fails and the snapshot still shows an overlay, dismiss the overlay first.
+
 When you hit a wall:
 - Stop. Don't retry the same thing.
 - Evaluate: what actually went wrong? Is it the page, the element, or your approach?
@@ -529,12 +535,8 @@ Respond with JSON: {"plan": "your plan here"}`,
       };
     }
 
-    // Dismiss popups/overlays before taking a snapshot. Loop to handle nested popups
-    // (e.g. a date picker on top of a "More filters" modal).
-    for (let dismissAttempt = 0; dismissAttempt < 3; dismissAttempt++) {
-      if (!(await detectPopup(holder.page))) break;
-      const closed = await dismissPopup(holder.page);
-      if (!closed) break; // nothing more we can do automatically
+    if (await detectPopup(holder.page)) {
+      await dismissPopup(holder.page);
     }
 
     let snapshot = await safeSnapshot(holder.page);
@@ -755,11 +757,8 @@ Respond with JSON: {"plan": "your plan here"}`,
         agentStep.action.error_feedback = message;
         await holder.page.waitFor({ timeMs: 1000 });
 
-        // Dismiss popups that may be blocking actions (loop for nested overlays)
-        for (let dismissAttempt = 0; dismissAttempt < 3; dismissAttempt++) {
-          if (!(await detectPopup(holder.page))) break;
-          const closed = await dismissPopup(holder.page);
-          if (!closed) break;
+        if (await detectPopup(holder.page)) {
+          await dismissPopup(holder.page);
         }
         step++;
         break; // Break batch on failure — need new snapshot

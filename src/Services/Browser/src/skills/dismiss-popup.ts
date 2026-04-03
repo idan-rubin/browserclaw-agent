@@ -4,7 +4,7 @@ import { logger } from '../logger.js';
 export async function detectPopup(page: CrawlPage): Promise<boolean> {
   return (await page.evaluate(`
     (function() {
-      var all = document.querySelectorAll('[role="dialog"], [role="alertdialog"], [class*="modal"], [class*="popup"], [class*="overlay"], [class*="banner"], [class*="consent"], [class*="picker"], [class*="datepicker"], [class*="date-picker"], [class*="calendar"], [role="listbox"], form[action*="consent"]');
+      var all = document.querySelectorAll('[role="dialog"], [role="alertdialog"], [class*="modal"], [class*="popup"], [class*="overlay"], [class*="banner"], [class*="consent"], form[action*="consent"]');
       for (var i = 0; i < all.length; i++) {
         var el = all[i];
         var style = window.getComputedStyle(el);
