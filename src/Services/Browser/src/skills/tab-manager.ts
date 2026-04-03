@@ -38,6 +38,22 @@ export class TabManager {
 
       await activateCdpTarget(this.cdpBaseUrl, newTab.id);
 
+      // Wait for the tab to finish its initial load before switching
+      try {
+        await newPage.waitFor({ loadState: 'load', timeoutMs: 5000 });
+      } catch {
+        logger.info({ id: newTab.id }, 'tab-manager: new tab did not load in time, staying on current page');
+        this.knownTabIds = new Set(targets.map((t) => t.id));
+        return null;
+      }
+
+      const url = await newPage.url();
+      if (url === '' || url === 'about:blank') {
+        logger.info({ id: newTab.id }, 'tab-manager: new tab has blank URL after load, staying on current page');
+        this.knownTabIds = new Set(targets.map((t) => t.id));
+        return null;
+      }
+
       this.knownTabIds = new Set(targets.map((t) => t.id));
       logger.info({ title: newTab.title, url: newTab.url }, 'tab-manager: switched to new tab');
       return newPage;
