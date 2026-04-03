@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { parseJsonResponse } from './parse-json-response.js';
 import { logger } from './logger.js';
+import { LlmParseError } from './types.js';
 import type { LlmConfig } from './types.js';
 
 const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS ?? '30000', 10);
@@ -249,8 +250,10 @@ async function callChatCompletions(
 
 async function callLLM(provider: ProviderConfig, model: string, req: LLMRequest): Promise<LLMResponse> {
   if (provider.provider === 'openai-oauth') {
-    return callCodexResponsesAPI(provider, model, req);
+    // Raw fetch — no SDK retries, so we add our own
+    return retryTransient(() => callCodexResponsesAPI(provider, model, req), 'Codex API');
   }
+  // OpenAI SDK handles its own retries for chat completions
   return callChatCompletions(provider, model, req);
 }
 
@@ -287,6 +290,56 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
   }
 }
 
+// ── Transient error retry (for raw-fetch paths without SDK retries) ──────────
+
+const LLM_MAX_RETRIES = 2;
+const LLM_RETRY_BASE_MS = 1000;
+
+function isTransientError(err: unknown): boolean {
+  if (err instanceof OpenAI.APIError) {
+    const status = err.status as number | undefined;
+    return status === 429 || status === 408 || status === 409 || (status !== undefined && status >= 500);
+  }
+  if (err instanceof OpenAI.APIConnectionError) return true;
+
+  // Raw fetch errors (callCodexResponsesAPI)
+  if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('network'))) return true;
+
+  // Our own timeout wrapper or HTTP status codes from callCodexResponsesAPI ("429 ...")
+  if (err instanceof Error) {
+    if (err.message.includes('timed out after')) return true;
+    const match = /^(\d{3})\s/.exec(err.message);
+    if (match) {
+      const status = parseInt(match[1], 10);
+      return status === 429 || status === 408 || status >= 500;
+    }
+  }
+
+  return false;
+}
+
+async function retryTransient<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < LLM_MAX_RETRIES && isTransientError(err)) {
+        const delayMs = LLM_RETRY_BASE_MS * 2 ** attempt;
+        logger.warn(
+          { attempt: attempt + 1, maxRetries: LLM_MAX_RETRIES, delayMs, error: err instanceof Error ? err.message : 'unknown' },
+          `${label}: transient error, retrying`,
+        );
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 function resolveByokProvider(config: LlmConfig): ProviderConfig {
   const byok = BYOK_PROVIDERS[config.provider];
   if (!byok) throw new Error(`Unsupported BYOK provider: ${config.provider}`);
@@ -320,7 +373,7 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
     const providerConfig = resolveByokProvider(byokConfig);
     if (byokConfig.provider === 'openai-oauth') {
       return await withTimeout(
-        callCodexResponsesAPI(providerConfig, byokConfig.model, req, byokConfig.api_key),
+        retryTransient(() => callCodexResponsesAPI(providerConfig, byokConfig.model, req, byokConfig.api_key), 'BYOK Codex API'),
         LLM_TIMEOUT_MS,
         'LLM call (BYOK OAuth)',
       );
@@ -356,5 +409,12 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
 
 export async function llmJson<T>(req: LLMRequest): Promise<T> {
   const { text } = await llm(req);
-  return parseJsonResponse(text) as T;
+  try {
+    return parseJsonResponse(text) as T;
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      throw new LlmParseError(err.message, text);
+    }
+    throw err;
+  }
 }

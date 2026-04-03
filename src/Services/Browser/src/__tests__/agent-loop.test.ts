@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { CrawlPage } from 'browserclaw';
+import { LlmParseError } from '../types.js';
 import type { AgentLoopResult } from '../types.js';
 
 // Mock external dependencies
@@ -20,14 +21,7 @@ vi.mock('../skills/dismiss-popup.js', () => ({
 }));
 
 vi.mock('../skills/loop-detection.js', () => ({
-  detectLoop: vi.fn().mockReturnValue(false),
-  loopRecoveryStep: vi.fn().mockReturnValue({
-    step: 0,
-    action: { action: 'wait', reasoning: 'loop recovery' },
-    url: '',
-    page_title: '',
-    timestamp: new Date().toISOString(),
-  }),
+  detectLoop: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock('../skills/tab-manager.js', () => ({
@@ -191,9 +185,11 @@ describe('runAgentLoop', () => {
   it('fails after max consecutive parse failures', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Try something' })
-      .mockRejectedValueOnce(new Error('Parse error 1'))
-      .mockRejectedValueOnce(new Error('Parse error 2'))
-      .mockRejectedValueOnce(new Error('Parse error 3'));
+      .mockRejectedValueOnce(new LlmParseError('No JSON object found in response', 'I could not parse the page'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON object found in response', 'Still confused'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON object found in response', 'Giving up'))
+      // getFinalSummary call after abort
+      .mockResolvedValueOnce({ answer: 'Partial findings' });
 
     const { page } = mockPage();
     const emit = vi.fn();
@@ -202,7 +198,25 @@ describe('runAgentLoop', () => {
     const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('consecutive LLM failures');
+    expect(result.error).toContain('could not process this page correctly');
+    expect(result.answer).toBe('Partial findings');
+  });
+
+  it('fails after max consecutive API failures without burning steps', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Try something' })
+      .mockRejectedValueOnce(new Error('429 Rate limited'))
+      .mockRejectedValueOnce(new Error('500 Internal server error'))
+      .mockRejectedValueOnce(new Error('Connection refused'));
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Unable to reach the AI service');
   });
 
   it('emits step events', async () => {
@@ -289,11 +303,11 @@ describe('runAgentLoop', () => {
   it('resets parse failure counter on successful parse', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Plan' })
-      .mockRejectedValueOnce(new Error('Parse error'))
-      .mockRejectedValueOnce(new Error('Parse error'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Click', ref: '1' })
-      .mockRejectedValueOnce(new Error('Parse error'))
-      .mockRejectedValueOnce(new Error('Parse error'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
     const { page } = mockPage();

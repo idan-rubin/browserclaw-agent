@@ -5,6 +5,7 @@ import { detectPopup, dismissPopup } from './skills/dismiss-popup.js';
 import { detectLoop } from './skills/loop-detection.js';
 import { TabManager } from './skills/tab-manager.js';
 import { llmJson } from './llm.js';
+import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, CatalogSkill } from './types.js';
 import { logger } from './logger.js';
 import {
@@ -484,7 +485,9 @@ export async function runAgentLoop(
   const startTime = Date.now();
   const tabManager = browser !== undefined ? new TabManager(holder.page) : null;
   let consecutiveParseFailures = 0;
+  let consecutiveApiFailures = 0;
   const MAX_PARSE_FAILURES = 3;
+  const MAX_API_FAILURES = 3;
 
   let planText: string | null = null;
   try {
@@ -571,8 +574,16 @@ Respond with JSON: {"plan": "your plan here"}`,
         message: userMessage,
         maxTokens: LLM_MAX_TOKENS,
       });
-      actions = parseActions(parsed);
+      try {
+        actions = parseActions(parsed);
+      } catch (parseErr) {
+        throw new LlmParseError(
+          parseErr instanceof Error ? parseErr.message : 'Invalid action structure',
+          JSON.stringify(parsed).slice(0, 200),
+        );
+      }
       consecutiveParseFailures = 0;
+      consecutiveApiFailures = 0;
       logger.info(
         { step, actionCount: actions.length, firstAction: actions[0].action, reasoning: actions[0].reasoning },
         'Agent step',
@@ -584,22 +595,44 @@ Respond with JSON: {"plan": "your plan here"}`,
         actions[0].error_feedback = loopNudge.message;
       }
     } catch (err) {
-      consecutiveParseFailures++;
-      const message = err instanceof Error ? err.message : 'Failed to parse action';
+      if (err instanceof LlmParseError) {
+        // LLM responded but not with valid JSON — burn a step, the call was made
+        consecutiveParseFailures++;
+        logger.warn(
+          { step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES, snippet: err.responseSnippet },
+          'LLM returned non-JSON response',
+        );
+        emit('step_error', { step, error: `LLM response was not valid JSON: ${err.message}`, type: 'parse_error' });
+        if (consecutiveParseFailures >= MAX_PARSE_FAILURES) {
+          const answer = await getFinalSummary(prompt, history);
+          return {
+            success: false,
+            steps: history,
+            answer,
+            error: 'The AI could not process this page correctly. Partial findings may be available above.',
+            duration_ms: Date.now() - startTime,
+          };
+        }
+        step++;
+        continue;
+      }
+
+      // API/network error — don't burn a step, the agent never got to act
+      consecutiveApiFailures++;
+      const message = err instanceof Error ? err.message : 'LLM API call failed';
       logger.error(
-        { step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES, error: message },
-        'Failed to parse LLM response',
+        { step, attempt: consecutiveApiFailures, maxAttempts: MAX_API_FAILURES, error: message },
+        'LLM API error',
       );
-      emit('step_error', { step, error: `LLM response error: ${message}` });
-      if (consecutiveParseFailures >= MAX_PARSE_FAILURES) {
+      emit('step_error', { step, error: `AI service error: ${message}`, type: 'api_error' });
+      if (consecutiveApiFailures >= MAX_API_FAILURES) {
         return {
           success: false,
           steps: history,
-          error: `${String(MAX_PARSE_FAILURES)} consecutive LLM failures — aborting`,
+          error: `Unable to reach the AI service after ${String(MAX_API_FAILURES)} attempts. Please try again.`,
           duration_ms: Date.now() - startTime,
         };
       }
-      step++;
       continue;
     }
 
@@ -735,14 +768,18 @@ Respond with JSON: {"plan": "your plan here"}`,
           try {
             const newUrl = await newPage.url();
             const newTitle = await newPage.title();
-            holder.page = newPage;
-            history.push({
-              step,
-              action: { action: 'navigate', reasoning: `Click opened a new tab: ${newTitle}` },
-              url: newUrl,
-              page_title: newTitle,
-              timestamp: new Date().toISOString(),
-            });
+            if (newUrl === '' || newUrl === 'about:blank') {
+              logger.info('tab-manager: new tab URL is empty — staying on current page');
+            } else {
+              holder.page = newPage;
+              history.push({
+                step,
+                action: { action: 'navigate', reasoning: `Click opened a new tab: ${newTitle}` },
+                url: newUrl,
+                page_title: newTitle,
+                timestamp: new Date().toISOString(),
+              });
+            }
           } catch (tabErr) {
             logger.info(
               { error: tabErr instanceof Error ? tabErr.message : 'unknown' },
