@@ -490,11 +490,8 @@ async function getFinalSummary(prompt: string, history: AgentStep[]): Promise<st
       maxTokens: 512,
     });
     return result.answer;
-  } catch (summaryErr) {
-    logger.warn(
-      { errorType: summaryErr instanceof Error ? summaryErr.constructor.name : 'unknown' },
-      'Failed to generate final summary',
-    );
+  } catch {
+    logger.warn('Failed to generate final summary');
     return undefined;
   }
 }
@@ -551,8 +548,8 @@ Respond with JSON: {"plan": "your plan here"}`,
       planText = plan.plan;
       emit('plan', { prompt, plan: plan.plan });
     }
-  } catch (err) {
-    logger.error({ errorType: err instanceof Error ? err.constructor.name : 'unknown' }, 'Failed to generate plan');
+  } catch {
+    logger.error('Failed to generate plan');
   }
 
   let step = 0;
@@ -614,8 +611,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             emit('replan', { step, plan: replan.plan });
             logger.info({ step }, 'Agent re-planned');
           }
-        } catch (err) {
-          logger.warn({ errorType: err instanceof Error ? err.constructor.name : 'unknown' }, 'Re-planning failed');
+        } catch {
+          logger.warn('Re-planning failed');
         }
       }
     }
