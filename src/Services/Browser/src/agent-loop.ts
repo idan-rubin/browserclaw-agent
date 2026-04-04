@@ -589,7 +589,10 @@ Respond with JSON: {"plan": "your plan here"}`,
           const lastMemory = getLastMemory(history);
           const recentSummary = history
             .slice(-6)
-            .map((s) => `${s.action.action}${s.action.error_feedback !== undefined ? '(FAILED)' : ''}: ${s.action.reasoning}`)
+            .map(
+              (s) =>
+                `${s.action.action}${s.action.error_feedback !== undefined ? '(FAILED)' : ''}: ${s.action.reasoning}`,
+            )
             .join('\n');
 
           const replan = await llmJson<{ plan: string }>({

@@ -55,10 +55,10 @@ function detectAlternatingFailures(recent: AgentStep[]): RecoveryStrategy | null
       diagnosis: 'You are alternating between approaches that all fail.',
       suggestions: [
         'STOP trying variations of the same approach.',
-        'Scroll the page to find different interactive elements you haven\'t tried.',
+        "Scroll the page to find different interactive elements you haven't tried.",
         'Try navigating to the page via a different URL or site section.',
         'If elements exist but clicks fail, there may be an overlay blocking them — try pressing Escape first.',
-        'Use the site\'s main navigation menu or search bar instead of the current approach.',
+        "Use the site's main navigation menu or search bar instead of the current approach.",
       ],
     };
   }
@@ -125,7 +125,7 @@ function detectStagnation(recent: AgentStep[], currentUrl: string): RecoveryStra
       diagnosis: `You have been on this same page for ${String(sameUrlSteps.length)}+ steps without making progress.`,
       suggestions: [
         'This page may not have what you need. Navigate to a different section of the site.',
-        'Try using the site\'s search functionality to find the content directly.',
+        "Try using the site's search functionality to find the content directly.",
         'Check if the page requires scrolling to reveal the content you need.',
         'The page may require interaction in a specific order (e.g., select a category before results appear).',
         'Consider starting fresh: navigate directly to the target URL if you can construct it.',
@@ -156,7 +156,7 @@ function detectNavigationLoop(recent: AgentStep[]): RecoveryStrategy | null {
         suggestions: [
           'Pick ONE of the two pages and commit to completing your task there.',
           `Stay on the page that has the content you need and work through it systematically.`,
-          'If going back resets the page state (filters, scroll position), try a different approach that doesn\'t require going back.',
+          "If going back resets the page state (filters, scroll position), try a different approach that doesn't require going back.",
           'Extract all needed information from each page before navigating away.',
         ],
       };
