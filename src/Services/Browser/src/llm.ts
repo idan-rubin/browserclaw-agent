@@ -7,6 +7,16 @@ import type { LlmConfig } from './types.js';
 
 const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS ?? '30000', 10);
 
+// ── Sanitization ─────────────────────────────────────────────────────────────
+
+/** Redact tokens, keys, and credentials from error text before logging. */
+const SENSITIVE_PATTERN =
+  /(?:eyJ[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|xox[bpas]-[A-Za-z0-9-]{20,}|AIza[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|[A-Za-z0-9+/]{40,}={0,2})/g;
+
+function sanitizeErrorText(text: string): string {
+  return text.replace(SENSITIVE_PATTERN, '[REDACTED]').slice(0, 500);
+}
+
 // ── Per-session context via AsyncLocalStorage ──────────────────────────────
 interface SessionLlmContext {
   llmConfig: LlmConfig;
@@ -105,7 +115,7 @@ async function refreshOAuthToken(): Promise<void> {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OAuth token refresh failed (${String(res.status)}): ${text}`);
+    throw new Error(`OAuth token refresh failed (${String(res.status)}): ${sanitizeErrorText(text)}`);
   }
 
   const token = (await res.json()) as { access_token: string; refresh_token?: string };
@@ -201,7 +211,7 @@ async function callCodexResponsesAPI(
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`${String(res.status)} ${errText}`);
+    throw new Error(`${String(res.status)} ${sanitizeErrorText(errText)}`);
   }
 
   const body = await res.text();
@@ -332,7 +342,7 @@ async function retryTransient<T>(fn: () => Promise<T>, label: string): Promise<T
             attempt: attempt + 1,
             maxRetries: LLM_MAX_RETRIES,
             delayMs,
-            error: err instanceof Error ? err.message : 'unknown',
+            error: err instanceof Error ? sanitizeErrorText(err.message) : 'unknown',
           },
           `${label}: transient error, retrying`,
         );
