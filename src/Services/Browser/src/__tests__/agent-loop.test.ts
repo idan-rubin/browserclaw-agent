@@ -320,6 +320,46 @@ describe('runAgentLoop', () => {
     expect(result.success).toBe(true);
   });
 
+  it('refines vague prompts into SMART tasks', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({
+        task: 'Search for apartments in Chelsea. Collect listings with details.',
+        plan: 'Go to site',
+      })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Found results', answer: '3 listings found' });
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('find apartments in Chelsea', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    const goalEvents = (emit.mock.calls as [string, Record<string, unknown>][]).filter(
+      ([event]) => event === 'goal_refined',
+    );
+    expect(goalEvents).toHaveLength(1);
+    expect(goalEvents[0][1].original).toBe('find apartments in Chelsea');
+    expect(goalEvents[0][1].refined).toBe('Search for apartments in Chelsea. Collect listings with details.');
+  });
+
+  it('does not refine already specific prompts', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Go to Nobu and book' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Booked', answer: 'Table booked' });
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    await runAgentLoop('book a table at Nobu for 2 at 7pm', page, emit, controller.signal);
+
+    const goalEvents = (emit.mock.calls as [string, Record<string, unknown>][]).filter(
+      ([event]) => event === 'goal_refined',
+    );
+    expect(goalEvents).toHaveLength(0);
+  });
+
   it('fails when MAX_STEPS is reached', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Scroll forever' })

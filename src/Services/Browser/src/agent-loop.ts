@@ -549,7 +549,7 @@ export async function runAgentLoop(
 
   // ── Planning + goal refinement (single LLM call) ──────────────────────────
   // If the prompt is vague (e.g. "find apartments in Chelsea"), the planner
-  // also produces a SMART task with bounded scope (collect top 5 results).
+  // also produces a SMART task with clear scope and stopping criteria.
   let refinedPrompt = prompt;
   let planText: string | null = null;
   try {
@@ -566,7 +566,7 @@ Step 1 — Refine the goal into a SMART task:
   • Specify what details to extract for each result (price, name, URL, key attributes)
   • Scope to one site or one search
   • Define a clear stopping point: collect results until new ones stop being relevant or distinct, then present findings
-  • If the user specified a count, use it. Otherwise, don't hardcode a number — let the agent decide when it has enough.
+  • If the user specified a count, use it. Otherwise, don't pick an arbitrary number — the agent should stop when diminishing returns kick in.
 - If the prompt is already specific ("book a flight from NYC to LAX on Dec 15"), return it unchanged.
 - Examples:
   • "find apartments in Chelsea" → "Search for apartments in Chelsea on a major listings site. Collect listings with: name/address, price, bedrooms, and URL. Stop when results start repeating or losing relevance."
@@ -581,7 +581,7 @@ Step 2 — Create an action plan:
 
 Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       message: planMessage,
-      maxTokens: 256,
+      maxTokens: 512,
     });
     if (plan.task !== undefined && plan.task !== '' && plan.task !== prompt) {
       refinedPrompt = plan.task;
