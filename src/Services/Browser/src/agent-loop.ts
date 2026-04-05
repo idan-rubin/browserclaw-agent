@@ -840,6 +840,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let contextSummary = '';
   let lastProgress: AgentProgress | null = null;
   let lastDomain = '';
+  let lastScreenshotStep = -3; // throttle: skip if fired within last 3 steps
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -866,7 +867,14 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 
     // #5 Screenshot fallback: when a11y snapshot and DOM text are both sparse,
     // take a screenshot and use vision to extract what's visually present.
-    if (antiBotType === null && isPageReady(snapshot) === 'skeleton' && domText.trim().length < DOM_TEXT_SPARSE_THRESHOLD) {
+    // Throttled to at most once every 3 steps to avoid expensive repeated calls.
+    if (
+      antiBotType === null &&
+      isPageReady(snapshot) === 'skeleton' &&
+      domText.trim().length < DOM_TEXT_SPARSE_THRESHOLD &&
+      step - lastScreenshotStep >= 3
+    ) {
+      lastScreenshotStep = step;
       snapshot = await screenshotFallback(holder.page, snapshot);
     }
 
@@ -1035,16 +1043,12 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
         // #4 Smarter loop recovery: on urgent/warning loops, inject DOM text extract
         // so the agent has raw page content to work with instead of spinning on stale refs.
+        // domText was already captured at the top of this step — no need to re-fetch.
         if (loopNudge.level === 'urgent' || loopNudge.level === 'warning') {
-          try {
-            const freshDomText = await getPageText(holder.page);
-            if (freshDomText.trim().length > 100) {
-              const domPreview = freshDomText.slice(0, 800);
-              nudgeMessage += `\n\nDOM TEXT (extracted directly — use this to find the data you need):\n${domPreview}${freshDomText.length > 800 ? '\n…(truncated)' : ''}`;
-              nudgeMessage += '\n\nIf you have partial results, use "done" now with what you have. A partial answer is better than getting stuck.';
-            }
-          } catch {
-            // ignore — nudge still fires without DOM text
+          if (domText.trim().length > 100) {
+            const domPreview = domText.slice(0, 800);
+            nudgeMessage += `\n\nDOM TEXT (extracted directly — use this to find the data you need):\n${domPreview}${domText.length > 800 ? '\n…(truncated)' : ''}`;
+            nudgeMessage += '\n\nIf you have partial results, use "done" now with what you have. A partial answer is better than getting stuck.';
           }
         }
 
@@ -1212,9 +1216,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             logger.info({ step, tab_id: action.tab_id }, 'Switched tab');
           } catch (tabErr) {
             agentStep.action.error_feedback = `Failed to switch tab: ${tabErr instanceof Error ? tabErr.message : 'unknown'}`;
+            recentFailureCount++;
           }
         } else {
           agentStep.action.error_feedback = 'switch_tab requires tab_id and browser context';
+          recentFailureCount++;
         }
         step++;
         break;
@@ -1222,14 +1228,22 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
       if (action.action === 'close_tab') {
         if (browser !== undefined && action.tab_id !== undefined && action.tab_id !== '') {
-          try {
-            await browser.close(action.tab_id);
-            logger.info({ step, tab_id: action.tab_id }, 'Closed tab');
-          } catch (tabErr) {
-            agentStep.action.error_feedback = `Failed to close tab: ${tabErr instanceof Error ? tabErr.message : 'unknown'}`;
+          if (action.tab_id === holder.page.id) {
+            agentStep.action.error_feedback =
+              'close_tab: cannot close the active tab; switch to another tab first, then close this one';
+            recentFailureCount++;
+          } else {
+            try {
+              await browser.close(action.tab_id);
+              logger.info({ step, tab_id: action.tab_id }, 'Closed tab');
+            } catch (tabErr) {
+              agentStep.action.error_feedback = `Failed to close tab: ${tabErr instanceof Error ? tabErr.message : 'unknown'}`;
+              recentFailureCount++;
+            }
           }
         } else {
           agentStep.action.error_feedback = 'close_tab requires tab_id and browser context';
+          recentFailureCount++;
         }
         step++;
         break;

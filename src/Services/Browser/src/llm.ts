@@ -439,10 +439,14 @@ export async function llmJson<T>(req: LLMRequest): Promise<T> {
 
 /**
  * Call the LLM with a screenshot image for visual extraction.
- * Falls back to text-only if the provider or model doesn't support vision.
  */
 export async function llmVision(system: string, message: string, imageBase64: string): Promise<string> {
   const ctx = sessionLlmStore.getStore();
+  if (ctx) {
+    ctx.llmCallCount++;
+  } else {
+    _fallbackLlmCallCount++;
+  }
 
   let provider: ProviderConfig;
   let model: string;
@@ -459,22 +463,26 @@ export async function llmVision(system: string, message: string, imageBase64: st
     client = getClient(provider);
   }
 
-  const response = await withTimeout(
-    client.chat.completions.create({
-      model,
-      max_tokens: 512,
-      messages: [
-        { role: 'system', content: system },
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } },
-            { type: 'text', text: message },
+  const response = await retryTransient(
+    () =>
+      withTimeout(
+        client.chat.completions.create({
+          model,
+          max_tokens: 2048,
+          messages: [
+            { role: 'system', content: system },
+            {
+              role: 'user',
+              content: [
+                { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } },
+                { type: 'text', text: message },
+              ],
+            },
           ],
-        },
-      ],
-    }),
-    LLM_TIMEOUT_MS,
+        }),
+        LLM_TIMEOUT_MS,
+        'LLM vision call',
+      ),
     'LLM vision call',
   );
 
