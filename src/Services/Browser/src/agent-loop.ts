@@ -75,7 +75,6 @@ Rules:
 - "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
 - "close_tab" to close a tab by tab_id. Use only when a tab is no longer needed.
 - Perception ladder: use the cheapest sufficient method first — accessibility snapshot -> DOM text -> extract -> screenshot fallback -> ask_user.
-- Confidence policy: set confidence to high/medium/low. If confidence is low, gather or verify before acting aggressively. Use high only when the page state and target are clear.
 - "ask_user" only when you need info you can't get from the page (MFA codes, credentials, preferences).
 - "done" when finished. Include "answer" if the task asked a question — be specific with what you found. Before done, verify you actually satisfied the task.
 - "fail" when the task is impossible. In reasoning, give a SHORT summary: what you tried, why it failed, and any partial results you found. Don't dump your full scratchpad — the user sees this.
@@ -554,10 +553,6 @@ function parseActions(parsed: Record<string, unknown>): AgentAction[] {
       direction: item.direction as AgentAction['direction'],
       expression: item.expression,
       tab_id: item.tab_id,
-      confidence:
-        item.confidence === 'high' || item.confidence === 'medium' || item.confidence === 'low'
-          ? item.confidence
-          : undefined,
     };
   });
 }

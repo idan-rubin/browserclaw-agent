@@ -62,8 +62,6 @@ export interface AgentAction {
   expression?: string;
   /** Tab ID to switch to or close (for switch_tab / close_tab actions) */
   tab_id?: string;
-  /** Confidence in the proposed action */
-  confidence?: 'high' | 'medium' | 'low';
   /** Result of extract action — set by the agent loop, shown in next step's history */
   extract_result?: string;
   /** Set by the agent loop when action execution fails — fed back to LLM in next step */
