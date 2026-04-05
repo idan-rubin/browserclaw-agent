@@ -736,12 +736,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           { step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES },
           'LLM returned non-JSON response',
         );
-        emit('step_error', {
-          step,
-          error: 'LLM response was not valid JSON',
-          type: 'parse_error',
-          rawText: err.responseSnippet,
-        });
+        emit('step_error', { step, error: 'LLM response was not valid JSON', type: 'parse_error' });
         if (consecutiveParseFailures >= MAX_PARSE_FAILURES) {
           const answer = await getFinalSummary(refinedPrompt, history);
           return {
