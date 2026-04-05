@@ -452,7 +452,7 @@ async function tryGenerateSkill(
     // Save failure notes on existing skill so future runs know about this failure mode
     if (existing && managed.domain !== null) {
       try {
-        const failureNotes = existing.skill.failure_notes ?? [];
+        const failureNotes = [...(existing.skill.failure_notes ?? [])];
         failureNotes.push(`[${new Date().toISOString().slice(0, 10)}] ${verdict.reasoning.slice(0, 200)}`);
         // Keep only the last 5 failure notes
         const trimmedNotes = failureNotes.slice(-5);

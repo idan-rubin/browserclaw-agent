@@ -205,11 +205,10 @@ export async function mergeSkills(
     }
   }
 
-  // Use new steps only if existing is significantly longer (1.5× or 3+ more steps)
-  const newSteps = newSkill.steps.length;
-  const oldSteps = existing.steps.length;
-  const useNewSteps = oldSteps > Math.max(newSteps * 1.5, newSteps + 3);
-  const steps = useNewSteps ? newSkill.steps : existing.steps;
+  // Always keep the shorter (more efficient) steps. mergeSkills is called when
+  // the new run took more steps, so existing steps are usually shorter — but
+  // we check explicitly in case the new run found a shorter path.
+  const steps = newSkill.steps.length < existing.steps.length ? newSkill.steps : existing.steps;
 
   return {
     title: existing.title,

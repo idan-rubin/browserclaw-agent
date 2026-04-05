@@ -132,4 +132,93 @@ describe('generateSkill', () => {
     const call = mockedLlmJson.mock.calls[0][0];
     expect(call.message).toContain('Final URL: https://foo.com/bar');
   });
+
+  it('includes failed steps and outcomes in prompt', async () => {
+    mockedLlmJson.mockResolvedValue({
+      title: 'Skill',
+      description: 'Desc',
+      steps: [],
+    });
+
+    const result = makeResult();
+    result.steps[1].action.error_feedback = 'Element not found';
+    result.steps[2].outcome = 'Page content changed after click';
+
+    await generateSkill('test', result);
+
+    const call = mockedLlmJson.mock.calls[0][0];
+    expect(call.message).toContain('FAILED: Element not found');
+    expect(call.message).toContain('Page content changed after click');
+  });
+
+  it('merges what_to_avoid and site_quirks into tips', async () => {
+    mockedLlmJson.mockResolvedValue({
+      title: 'Skill',
+      description: 'Desc',
+      steps: [{ number: 1, description: 'Step', action: 'click' }],
+      tips: ['Original tip'],
+      what_worked: ['Direct URL navigation was fast'],
+      what_to_avoid: ['Search bar autocomplete is unreliable'],
+      site_quirks: ['Page loads slowly after first interaction'],
+    });
+
+    const result = await generateSkill('test', makeResult());
+
+    expect(result.tips).toContain('Original tip');
+    expect(result.tips).toContainEqual(expect.stringContaining('Avoid:'));
+    expect(result.tips).toContainEqual(expect.stringContaining('Site quirk:'));
+    expect(result.what_worked).toEqual(['Direct URL navigation was fast']);
+    expect(result.markdown).toContain('## What Worked');
+  });
+});
+
+describe('mergeSkills', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('keeps shorter steps and merges tips', async () => {
+    const { mergeSkills } = await import('../skill-generator.js');
+
+    mockedLlmJson.mockResolvedValue({
+      title: 'New Skill',
+      description: 'New desc',
+      steps: [
+        { number: 1, description: 'Step A', action: 'navigate' },
+        { number: 2, description: 'Step B', action: 'click' },
+        { number: 3, description: 'Step C', action: 'click' },
+        { number: 4, description: 'Step D', action: 'type' },
+        { number: 5, description: 'Step E', action: 'done' },
+      ],
+      tips: ['New tip'],
+      what_worked: ['New pattern'],
+    });
+
+    const existing = {
+      title: 'Existing Skill',
+      description: 'Existing desc',
+      steps: [
+        { number: 1, description: 'Short A', action: 'navigate' as const },
+        { number: 2, description: 'Short B', action: 'click' as const },
+      ],
+      tips: ['Existing tip'],
+      what_worked: ['Existing pattern'],
+      metadata: { prompt: 'old', url: 'old', total_steps: 2, duration_ms: 1000, generated_at: '' },
+      markdown: '',
+    };
+
+    const merged = await mergeSkills(existing, 'test', makeResult());
+
+    // Keeps existing (shorter) steps
+    expect(merged.steps).toHaveLength(2);
+    expect(merged.steps[0].description).toBe('Short A');
+    // Merges tips from both
+    expect(merged.tips).toContain('Existing tip');
+    expect(merged.tips).toContain('New tip');
+    // Merges what_worked
+    expect(merged.what_worked).toContain('Existing pattern');
+    expect(merged.what_worked).toContain('New pattern');
+    // Preserves existing title
+    expect(merged.title).toBe('Existing Skill');
+  });
 });

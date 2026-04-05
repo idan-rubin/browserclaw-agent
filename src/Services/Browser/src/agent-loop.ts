@@ -584,13 +584,18 @@ function validateAction(
   action: AgentAction,
   preUrl: string,
   postUrl: string,
+  preSnapshotLength: number,
+  postSnapshotLength: number,
 ): string | undefined {
   const urlChanged = preUrl !== postUrl;
+  const sizeDelta = postSnapshotLength - preSnapshotLength;
+  const significantChange = Math.abs(sizeDelta) > preSnapshotLength * 0.1;
 
   switch (action.action) {
     case 'click':
       if (urlChanged) return `Navigated to new page: ${postUrl}`;
-      return undefined;
+      if (significantChange) return 'Page content changed after click';
+      return 'Click executed — no visible page change detected. Element may have toggled state, or the click had no effect.';
     case 'type':
       return undefined; // Autocomplete detection already handles type validation
     case 'navigate':
@@ -602,6 +607,7 @@ function validateAction(
       return 'Selection made';
     case 'keyboard':
       if (urlChanged) return `Key press triggered navigation to: ${postUrl}`;
+      if (significantChange) return 'Page content changed after key press';
       return undefined;
     case 'back':
     case 'wait':
@@ -1093,12 +1099,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         // Validate action outcome — provide natural language feedback
         try {
           const postActionUrl = await holder.page.url();
-          const outcome = validateAction(action, preActionUrl, postActionUrl);
+          const postSnapshot = (await holder.page.snapshot({ interactive: true, compact: true })).snapshot;
+          const outcome = validateAction(action, preActionUrl, postActionUrl, snapshot.length, postSnapshot.length);
           if (outcome !== undefined) {
             agentStep.outcome = outcome;
           }
         } catch {
-          // Validation failed — not critical, skip
+          // Validation snapshot failed — not critical, skip
         }
       } catch (err) {
         const feedback = describeActionError(action, err);
