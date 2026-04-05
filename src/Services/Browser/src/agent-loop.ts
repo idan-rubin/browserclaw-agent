@@ -224,10 +224,7 @@ async function screenshotFallback(page: CrawlPage, snapshot: string): Promise<st
       return `${snapshot}\n\n[VISION EXTRACTED — snapshot was sparse, data below from screenshot]\n${extracted}`;
     }
   } catch (err) {
-    logger.warn(
-      { error: sanitizeErrorText(err instanceof Error ? err.message : 'unknown') },
-      'Screenshot fallback failed',
-    );
+    logger.warn({ error: err instanceof Error ? err.constructor.name : 'unknown' }, 'Screenshot fallback failed');
   }
   return snapshot;
 }
