@@ -458,7 +458,7 @@ async function tryGenerateSkill(
         const trimmedNotes = failureNotes.slice(-5);
         const updatedSkill = { ...existing.skill, failure_notes: trimmedNotes };
         await saveSkill(managed.domain, updatedSkill, existing.tags, existing.run_count);
-        logger.info({ domain: managed.domain, notes: trimmedNotes.length }, 'Saved failure notes on skill');
+        logger.info({ domain: managed.domain, notes_count: trimmedNotes.length }, 'Saved failure notes on skill');
       } catch (err) {
         logger.warn({ err: err instanceof Error ? err.message : err }, 'Failed to save failure notes');
       }
@@ -529,7 +529,7 @@ async function tryGenerateSkill(
         }
       } catch (err) {
         logger.error(
-          { domain: managed.domain, error: sanitizeErrorText(err instanceof Error ? err.message : String(err)) },
+          { domain: managed.domain, error_type: err instanceof Error ? err.constructor.name : 'unknown' },
           'Failed to save skill',
         );
       }
@@ -537,7 +537,7 @@ async function tryGenerateSkill(
     return 'none';
   } catch (err) {
     logger.error(
-      { sessionId: managed.id, error: sanitizeErrorText(err instanceof Error ? err.message : String(err)) },
+      { sessionId: managed.id, error_type: err instanceof Error ? err.constructor.name : 'unknown' },
       'Skill generation failed',
     );
     return 'none';

@@ -1,4 +1,4 @@
-import { llmJson, sanitizeErrorText } from './llm.js';
+import { llmJson } from './llm.js';
 import type { AgentLoopResult } from './types.js';
 import { logger } from './logger.js';
 
@@ -59,7 +59,7 @@ export async function judgeRun(prompt: string, result: AgentLoopResult): Promise
     return verdict;
   } catch (err) {
     logger.warn(
-      { error: err instanceof Error ? sanitizeErrorText(err.message) : 'unknown' },
+      { error_type: err instanceof Error ? err.constructor.name : 'unknown' },
       'Judge evaluation failed — defaulting to agent result',
     );
     return { success: result.success, reasoning: 'Judge evaluation failed' };
