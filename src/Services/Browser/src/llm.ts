@@ -436,3 +436,55 @@ export async function llmJson<T>(req: LLMRequest): Promise<T> {
     throw err;
   }
 }
+
+/**
+ * Call the LLM with a screenshot image for visual extraction.
+ */
+export async function llmVision(system: string, message: string, imageBase64: string): Promise<string> {
+  const ctx = sessionLlmStore.getStore();
+  if (ctx) {
+    ctx.llmCallCount++;
+  } else {
+    _fallbackLlmCallCount++;
+  }
+
+  let provider: ProviderConfig;
+  let model: string;
+  let client: OpenAI;
+
+  if (ctx) {
+    provider = resolveByokProvider(ctx.llmConfig);
+    model = ctx.llmConfig.model;
+    ctx.byokClient ??= getByokClient(ctx.llmConfig, provider);
+    client = ctx.byokClient;
+  } else {
+    provider = getActiveProvider();
+    model = getModel();
+    client = getClient(provider);
+  }
+
+  const response = await retryTransient(
+    () =>
+      withTimeout(
+        client.chat.completions.create({
+          model,
+          max_tokens: 2048,
+          messages: [
+            { role: 'system', content: system },
+            {
+              role: 'user',
+              content: [
+                { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } },
+                { type: 'text', text: message },
+              ],
+            },
+          ],
+        }),
+        LLM_TIMEOUT_MS,
+        'LLM vision call',
+      ),
+    'LLM vision call',
+  );
+
+  return response.choices[0]?.message.content ?? '';
+}

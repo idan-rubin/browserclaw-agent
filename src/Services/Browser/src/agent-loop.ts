@@ -3,9 +3,11 @@ import { pressAndHold, detectAntiBot, enrichSnapshot, getPageText } from './skil
 import { clickCloudflareCheckbox } from './skills/cloudflare-checkbox.js';
 import { detectPopup, dismissPopup } from './skills/dismiss-popup.js';
 import { detectLoop } from './skills/loop-detection.js';
+import { detectPageState, shouldBlockDone } from './skills/page-state.js';
 import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
 import { TabManager } from './skills/tab-manager.js';
-import { llmJson, sanitizeErrorText } from './llm.js';
+import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
+import { llmJson, llmVision, sanitizeErrorText } from './llm.js';
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill } from './types.js';
 import { logger } from './logger.js';
@@ -34,13 +36,15 @@ Respond with valid JSON:
   "reasoning": "Brief explanation of what you're doing right now",
   "actions": [
     {
-      "action": "click" | "type" | "navigate" | "back" | "select" | "scroll" | "keyboard" | "wait" | "press_and_hold" | "click_cloudflare" | "ask_user" | "done" | "fail",
+      "action": "click" | "type" | "navigate" | "back" | "select" | "scroll" | "keyboard" | "wait" | "press_and_hold" | "click_cloudflare" | "extract" | "switch_tab" | "close_tab" | "ask_user" | "done" | "fail",
       "ref": "element ref number (for click, type, select)",
       "text": "text to type (for type) or question (for ask_user)",
       "url": "URL (for navigate)",
       "key": "key name (for keyboard) — e.g. Enter, Escape, Tab, ArrowDown, ArrowUp",
       "options": ["values (for select)"],
       "direction": "up" | "down" (for scroll),
+      "expression": "JavaScript expression to evaluate (for extract) — e.g. 'Array.from(document.querySelectorAll(\".price\")).map(el => el.textContent)'",
+      "tab_id": "target ID of the tab to switch to or close (for switch_tab / close_tab)",
       "answer": "direct answer to the user's question (for done)"
     }
   ]
@@ -67,8 +71,12 @@ Rules:
 - "back" to go back in browser history. Use this instead of manually tracking URLs when you need to return to the previous page.
 - "press_and_hold" for press-and-hold anti-bot challenges. Wait after, check if it worked. If the challenge cleared but the page still looks the same (no new content loaded), refresh the page by navigating to the current URL. Try twice before asking user.
 - "click_cloudflare" for Cloudflare security checks ("Verify you are human" checkbox). The system will find and click the checkbox. Wait after, check if it worked. Try twice before asking user.
+- "extract" when the accessibility snapshot is missing data you need — prices, descriptions, table values, form field values, counts, or any text that's visually on the page but absent from the snapshot. Provide a JavaScript expression; the result appears in the next step. Examples: 'document.querySelector(".price")?.textContent', 'Array.from(document.querySelectorAll("td")).map(el=>el.textContent.trim())'. Use this like a human would: when you can see there's content but can't read it from the snapshot.
+- "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
+- "close_tab" to close a tab by tab_id. Use only when a tab is no longer needed.
+- Perception ladder: use the cheapest sufficient method first — accessibility snapshot -> DOM text -> extract -> screenshot fallback -> ask_user.
 - "ask_user" only when you need info you can't get from the page (MFA codes, credentials, preferences).
-- "done" when finished. Include "answer" if the task asked a question — be specific with what you found.
+- "done" when finished. Include "answer" if the task asked a question — be specific with what you found. Before done, verify you actually satisfied the task.
 - "fail" when the task is impossible. In reasoning, give a SHORT summary: what you tried, why it failed, and any partial results you found. Don't dump your full scratchpad — the user sees this.
 - If a PLAYBOOK is provided, follow it. Deviate only if a step fails.
 
@@ -197,6 +205,32 @@ async function safeSnapshot(page: CrawlPage): Promise<string> {
   return snapshot;
 }
 
+const DOM_TEXT_SPARSE_THRESHOLD = 400;
+
+/**
+ * Last-resort fallback: when both the a11y snapshot and DOM text are sparse
+ * (canvas-rendered, cross-origin iframes, unusual rendering), take a screenshot
+ * and use vision to extract visible text and data.
+ */
+async function screenshotFallback(page: CrawlPage, snapshot: string): Promise<string> {
+  try {
+    const buf = await page.screenshot();
+    const base64 = buf.toString('base64');
+    const extracted = await llmVision(
+      'Extract all visible text, data, prices, labels, and content from this screenshot. Return plain text — no commentary, no formatting, just what you see.',
+      'What text and data is visible on this page?',
+      base64,
+    );
+    if (extracted.trim().length > 50) {
+      logger.info('Screenshot fallback: injecting vision-extracted content into snapshot');
+      return `${snapshot}\n\n[VISION EXTRACTED — snapshot was sparse, data below from screenshot]\n${extracted}`;
+    }
+  } catch {
+    logger.warn('Screenshot fallback failed');
+  }
+  return snapshot;
+}
+
 const SKILL_INJECT_MAX_STEP = 2;
 const PLAN_INJECT_MAX_STEP = 8;
 const HISTORY_RECENT_WINDOW = 8;
@@ -254,6 +288,11 @@ function truncateHistory(history: AgentStep[], contextSummary?: string): string 
 
 function formatStep(step: AgentStep): string {
   let line = `  Step ${String(step.step)}: ${step.action.action} — ${step.action.reasoning}\n`;
+  if (step.action.extract_result !== undefined) {
+    const preview = step.action.extract_result.slice(0, 500);
+    const truncated = step.action.extract_result.length > 500 ? '…(truncated)' : '';
+    line += `    📊 Extracted: ${preview}${truncated}\n`;
+  }
   if (step.outcome !== undefined) {
     line += `    → Outcome: ${step.outcome}\n`;
   }
@@ -275,9 +314,19 @@ function getLastMemory(history: AgentStep[]): string | undefined {
   return undefined;
 }
 
+type ContextLevel = 'full' | 'reduced' | 'minimal';
+
+interface TabInfo {
+  targetId: string;
+  title: string;
+  url: string;
+}
+
 interface BuildUserMessageOptions {
   plan?: string | null;
   tabCount?: number;
+  tabs?: TabInfo[];
+  pageState?: string;
   domainSkill?: CatalogSkill | null;
   stepsRemaining?: number;
   maxSteps?: number;
@@ -285,6 +334,7 @@ interface BuildUserMessageOptions {
   originalPrompt?: string;
   contextSummary?: string;
   progress?: AgentProgress | null;
+  contextLevel?: ContextLevel;
 }
 
 function buildUserMessage(
@@ -298,6 +348,8 @@ function buildUserMessage(
   const {
     plan,
     tabCount,
+    tabs,
+    pageState,
     domainSkill,
     stepsRemaining,
     maxSteps: totalSteps,
@@ -305,6 +357,7 @@ function buildUserMessage(
     originalPrompt,
     contextSummary,
     progress,
+    contextLevel = 'full',
   } = opts ?? {};
   let message = '';
   if (originalPrompt !== undefined && originalPrompt !== task) {
@@ -388,13 +441,32 @@ function buildUserMessage(
   }
 
   message += `\nCurrent page: ${title}\nURL: ${url}\n`;
-  if (tabCount !== undefined && tabCount > 1) {
+  if (tabs !== undefined && tabs.length > 1) {
+    message += `Open tabs (${String(tabs.length)}):\n`;
+    for (const tab of tabs) {
+      message += `  [${tab.targetId}] ${tab.title} — ${tab.url}\n`;
+    }
+  } else if (tabCount !== undefined && tabCount > 1) {
     message += `Open tabs: ${String(tabCount)}\n`;
+  }
+  if (pageState !== undefined && pageState !== '') {
+    message += `Detected page state: ${pageState}\n`;
   }
   message += '\n';
 
-  if (history.length > 0) {
-    message += truncateHistory(history, contextSummary);
+  if (contextLevel === 'minimal') {
+    // Strip history entirely — just task + snapshot
+  } else if (history.length > 0) {
+    if (contextLevel === 'reduced') {
+      // Show history but strip error_feedback noise to reduce context
+      const stripped = history.map((s) => ({
+        ...s,
+        action: { ...s.action, error_feedback: undefined },
+      }));
+      message += truncateHistory(stripped as typeof history, contextSummary);
+    } else {
+      message += truncateHistory(history, contextSummary);
+    }
     message += '\n';
   }
 
@@ -421,6 +493,9 @@ interface ParsedActionItem {
   key?: string;
   options?: string[];
   direction?: string;
+  expression?: string;
+  tab_id?: string;
+  confidence?: string;
   answer?: string;
 }
 
@@ -476,6 +551,8 @@ function parseActions(parsed: Record<string, unknown>): AgentAction[] {
       key: item.key,
       options: item.options,
       direction: item.direction as AgentAction['direction'],
+      expression: item.expression,
+      tab_id: item.tab_id,
     };
   });
 }
@@ -531,6 +608,9 @@ async function executeAction(action: AgentAction, page: CrawlPage): Promise<void
     case 'ask_user':
     case 'press_and_hold':
     case 'click_cloudflare':
+    case 'extract':
+    case 'switch_tab':
+    case 'close_tab':
       break;
   }
 }
@@ -549,6 +629,9 @@ function getWaitMs(action: AgentAction['action']): number {
     case 'wait':
     case 'press_and_hold':
     case 'click_cloudflare':
+    case 'extract':
+    case 'switch_tab':
+    case 'close_tab':
     case 'done':
     case 'fail':
     case 'ask_user':
@@ -616,6 +699,9 @@ function validateAction(
     case 'ask_user':
     case 'press_and_hold':
     case 'click_cloudflare':
+    case 'extract':
+    case 'switch_tab':
+    case 'close_tab':
       return undefined;
   }
 }
@@ -759,6 +845,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let contextSummary = '';
   let lastProgress: AgentProgress | null = null;
   let lastDomain = '';
+  let lastScreenshotStep = -3; // throttle: skip if fired within last 3 steps
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -781,6 +868,20 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     const antiBotType = detectAntiBot(domText);
     if (antiBotType !== null) {
       snapshot = enrichSnapshot(snapshot, domText, antiBotType);
+    }
+    const pageState = detectPageState({ snapshot, domText, title, url, antiBotType });
+
+    // #5 Screenshot fallback: when a11y snapshot and DOM text are both sparse,
+    // take a screenshot and use vision to extract what's visually present.
+    // Throttled to at most once every 3 steps to avoid expensive repeated calls.
+    if (
+      antiBotType === null &&
+      isPageReady(snapshot) === 'skeleton' &&
+      domText.trim().length < DOM_TEXT_SPARSE_THRESHOLD &&
+      step - lastScreenshotStep >= 3
+    ) {
+      lastScreenshotStep = step;
+      snapshot = await screenshotFallback(holder.page, snapshot);
     }
 
     emit('thinking', { step, message: `Analyzing page: ${title}` });
@@ -872,9 +973,12 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     }
 
     let tabCount: number | undefined;
+    let tabs: TabInfo[] | undefined;
     if (browser !== undefined) {
       try {
-        tabCount = (await browser.tabs()).length;
+        const allTabs = (await browser.tabs()) as TabInfo[];
+        tabCount = allTabs.length;
+        if (tabCount > 1) tabs = allTabs;
       } catch (err) {
         logger.warn(
           { error: sanitizeErrorText(err instanceof Error ? err.message : 'unknown') },
@@ -886,9 +990,17 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     // Keep plan available for longer — it's cheap context and prevents drift
     const planForStep = step <= PLAN_INJECT_MAX_STEP ? planText : null;
     const stepsRemaining = maxSteps - step - 1;
+
+    // #3 Progressive context simplification on consecutive parse failures:
+    // first failure = full, second = reduced (strip error_feedback noise), third = minimal
+    const contextLevel: ContextLevel =
+      consecutiveParseFailures >= 2 ? 'minimal' : consecutiveParseFailures >= 1 ? 'reduced' : 'full';
+
     const userMessage = buildUserMessage(refinedPrompt, snapshot, history, url, title, {
       plan: planForStep,
       tabCount,
+      tabs,
+      pageState,
       domainSkill: skillForStep,
       stepsRemaining,
       maxSteps,
@@ -896,6 +1008,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       originalPrompt: prompt,
       contextSummary,
       progress: lastProgress,
+      contextLevel,
     });
 
     // On the last step, force the agent to produce a final answer
@@ -933,7 +1046,21 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       const loopNudge = detectLoop(actions[0], history);
       if (loopNudge !== null) {
         logger.warn({ step, level: loopNudge.level }, 'Loop nudge');
-        actions[0].error_feedback = loopNudge.message;
+        let nudgeMessage = loopNudge.message;
+
+        // #4 Smarter loop recovery: on urgent/warning loops, inject DOM text extract
+        // so the agent has raw page content to work with instead of spinning on stale refs.
+        // domText was already captured at the top of this step — no need to re-fetch.
+        if (loopNudge.level === 'urgent' || loopNudge.level === 'warning') {
+          if (domText.trim().length > 100) {
+            const domPreview = domText.slice(0, 800);
+            nudgeMessage += `\n\nDOM TEXT (extracted directly — use this to find the data you need):\n${domPreview}${domText.length > 800 ? '\n…(truncated)' : ''}`;
+            nudgeMessage +=
+              '\n\nIf you have partial results, use "done" now with what you have. A partial answer is better than getting stuck.';
+          }
+        }
+
+        actions[0].error_feedback = nudgeMessage;
         recentFailureCount++;
       }
     } catch (err) {
@@ -1002,6 +1129,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       // --- Terminal actions ---
 
       if (action.action === 'done') {
+        const doneBlockReason = shouldBlockDone(pageState, history.length, action.answer);
+        if (doneBlockReason !== null) {
+          agentStep.action.error_feedback = doneBlockReason;
+          recentFailureCount++;
+          step++;
+          break;
+        }
         return {
           success: true,
           steps: history,
@@ -1061,6 +1195,71 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
       if (action.action === 'click_cloudflare') {
         await clickCloudflareCheckbox(holder.page);
+        step++;
+        break;
+      }
+
+      // #1 Evaluate fallback: LLM-requested JS extraction
+      if (action.action === 'extract') {
+        if (action.expression !== undefined && action.expression !== '') {
+          try {
+            const raw = await holder.page.evaluate(action.expression);
+            const result = typeof raw === 'string' ? raw : JSON.stringify(raw);
+            agentStep.action.extract_result = result.slice(0, 2000);
+            if (result.length > 2000) {
+              agentStep.action.extract_result += '\n…(truncated)';
+            }
+          } catch (evalErr) {
+            agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
+          }
+        } else {
+          agentStep.action.extract_result = 'Error: no expression provided';
+        }
+        logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
+        step++;
+        break;
+      }
+
+      // #2 Tab switching
+      if (action.action === 'switch_tab') {
+        if (browser !== undefined && action.tab_id !== undefined && action.tab_id !== '') {
+          try {
+            const newPage = browser.page(action.tab_id);
+            const cdpBase = getCdpBaseUrl(holder.page);
+            await activateCdpTarget(cdpBase, action.tab_id);
+            holder.page = newPage;
+            logger.info({ step, tab_id: action.tab_id }, 'Switched tab');
+          } catch (tabErr) {
+            agentStep.action.error_feedback = `Failed to switch tab: ${tabErr instanceof Error ? tabErr.message : 'unknown'}`;
+            recentFailureCount++;
+          }
+        } else {
+          agentStep.action.error_feedback = 'switch_tab requires tab_id and browser context';
+          recentFailureCount++;
+        }
+        step++;
+        break;
+      }
+
+      if (action.action === 'close_tab') {
+        if (browser !== undefined && action.tab_id !== undefined && action.tab_id !== '') {
+          if (action.tab_id === holder.page.id) {
+            agentStep.action.error_feedback =
+              'close_tab: cannot close the active tab; switch to another tab first, then close this one';
+            recentFailureCount++;
+          } else {
+            try {
+              await browser.close(action.tab_id);
+              logger.info({ step, tab_id: action.tab_id }, 'Closed tab');
+            } catch (tabErr) {
+              agentStep.action.error_feedback = `Failed to close tab: ${tabErr instanceof Error ? tabErr.message : 'unknown'}`;
+              recentFailureCount++;
+            }
+          }
+        } else {
+          agentStep.action.error_feedback = 'close_tab requires tab_id and browser context';
+          recentFailureCount++;
+        }
         step++;
         break;
       }

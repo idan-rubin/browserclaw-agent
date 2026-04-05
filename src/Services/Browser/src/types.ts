@@ -35,6 +35,9 @@ export type AgentActionType =
   | 'wait'
   | 'press_and_hold'
   | 'click_cloudflare'
+  | 'extract'
+  | 'switch_tab'
+  | 'close_tab'
   | 'done'
   | 'fail'
   | 'ask_user';
@@ -55,6 +58,12 @@ export interface AgentAction {
   key?: string;
   options?: string[];
   direction?: 'up' | 'down';
+  /** JavaScript expression to evaluate in the page (for extract action) */
+  expression?: string;
+  /** Tab ID to switch to or close (for switch_tab / close_tab actions) */
+  tab_id?: string;
+  /** Result of extract action — set by the agent loop, shown in next step's history */
+  extract_result?: string;
   /** Set by the agent loop when action execution fails — fed back to LLM in next step */
   error_feedback?: string;
 }
