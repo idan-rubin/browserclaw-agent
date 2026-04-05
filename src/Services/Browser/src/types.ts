@@ -130,12 +130,12 @@ export class HttpError extends Error {
 }
 
 export class LlmParseError extends Error {
-  /** First 200 chars of the raw LLM response for diagnostics */
+  /** First 500 chars of the raw LLM response for diagnostics */
   readonly responseSnippet: string;
 
   constructor(message: string, rawResponse: string) {
     super(message);
     this.name = 'LlmParseError';
-    this.responseSnippet = rawResponse.slice(0, 200);
+    this.responseSnippet = rawResponse.slice(0, 500);
   }
 }
