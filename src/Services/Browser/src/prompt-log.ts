@@ -17,7 +17,7 @@ interface PromptLogEntry {
   error?: string;
   domain?: string;
   skills_loaded?: number;
-  skill_outcome?: 'saved' | 'improved' | 'validated' | 'none';
+  skill_outcome?: 'saved' | 'improved' | 'refined' | 'validated' | 'none';
 }
 
 let ensureDirPromise: Promise<void> | null = null;

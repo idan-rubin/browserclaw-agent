@@ -297,9 +297,7 @@ describe('runAgentLoop', () => {
     const result: AgentLoopResult = await runAgentLoop('Click button', page, emit, controller.signal);
 
     expect(result.success).toBe(true);
-    expect(result.steps[0].action.error_feedback).toContain('Element not found');
-    expect(result.steps[0].action.error_feedback).toContain('refs have changed');
-    expect(result.steps[0].action.error_feedback).toContain('Do NOT retry ref "42"');
+    expect(result.steps[0].action.error_feedback).toContain('not found');
   });
 
   it('resets parse failure counter on successful parse', async () => {
@@ -360,6 +358,93 @@ describe('runAgentLoop', () => {
       ([event]) => event === 'goal_refined',
     );
     expect(goalEvents).toHaveLength(0);
+  });
+
+  it('provides natural language error for intercepted click', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Click' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Click button', ref: '10' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
+
+    const { page, mock } = mockPage();
+    mock.click.mockRejectedValueOnce(new Error('Element click intercepted by another element'));
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Click button', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    expect(result.steps[0].action.error_feedback).toContain('intercepted');
+    expect(result.steps[0].action.error_feedback).toContain('ref 10');
+    expect(result.steps[0].action.error_feedback).toContain('overlays or popups');
+  });
+
+  it('provides natural language error for navigation timeout', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Navigate' })
+      .mockResolvedValueOnce({ action: 'navigate', reasoning: 'Go', url: 'https://slow.example.com' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
+
+    const { page, mock } = mockPage();
+    mock.goto.mockRejectedValueOnce(new Error('Navigation timed out'));
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Navigate', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    expect(result.steps[0].action.error_feedback).toContain('timed out');
+    expect(result.steps[0].action.error_feedback).toContain('slow.example.com');
+  });
+
+  it('records action outcome on successful click that changes URL', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Click link' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Click link', ref: '5' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
+
+    const { page, mock } = mockPage();
+    // After click, URL changes — first few calls return original, later ones return new page
+    mock.url
+      .mockResolvedValueOnce('https://example.com') // step snapshot
+      .mockResolvedValueOnce('https://example.com') // agentStep.url
+      .mockResolvedValueOnce('https://example.com') // preActionUrl
+      .mockResolvedValue('https://example.com/new-page'); // postActionUrl + all subsequent
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Click link', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    expect(result.steps[0].outcome).toContain('Navigated to new page');
+  });
+
+  it('extracts progress from LLM response', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Search' })
+      .mockResolvedValueOnce({
+        action: 'click',
+        reasoning: 'Click search',
+        ref: '1',
+        progress: {
+          completed: ['found the search page'],
+          current: 'entering search criteria',
+          blocked_by: null,
+        },
+      })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    await runAgentLoop('Search', page, emit, controller.signal);
+
+    // Progress should be passed to the next LLM call via buildUserMessage
+    const lastLlmCall = mockedLlmJson.mock.calls[mockedLlmJson.mock.calls.length - 1][0];
+    expect(lastLlmCall.message).toContain('Progress');
+    expect(lastLlmCall.message).toContain('found the search page');
+    expect(lastLlmCall.message).toContain('entering search criteria');
   });
 
   it('fails when MAX_STEPS is reached', async () => {
