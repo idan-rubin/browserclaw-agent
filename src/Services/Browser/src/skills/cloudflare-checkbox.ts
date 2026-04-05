@@ -11,9 +11,15 @@ async function findCloudflareTarget(page: CrawlPage): Promise<string | null> {
   const res = await fetch(baseUrl + '/json');
   const targets = (await res.json()) as { id: string; url: string; type: string }[];
 
-  const cfTarget = targets.find(
-    (t) => t.type === 'iframe' && (t.url.includes('challenges.cloudflare.com') || t.url.includes('turnstile')),
-  );
+  const cfTarget = targets.find((t) => {
+    if (t.type !== 'iframe') return false;
+    try {
+      const host = new URL(t.url).hostname;
+      return host === 'challenges.cloudflare.com' || host.endsWith('.cloudflare.com') || t.url.includes('turnstile');
+    } catch {
+      return false;
+    }
+  });
 
   if (cfTarget) {
     logger.info(

@@ -336,7 +336,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
   } catch (err) {
     managed.status = 'failed';
     const message = err instanceof Error ? err.message : 'Agent loop crashed';
-    logger.error({ sessionId, error: message }, 'Agent loop crashed');
+    logger.error({ sessionId, crashed: true }, 'Agent loop crashed');
     emitter('failed', { step: 0, error: message });
   }
 
@@ -458,7 +458,7 @@ async function tryGenerateSkill(
         const trimmedNotes = failureNotes.slice(-5);
         const updatedSkill = { ...existing.skill, failure_notes: trimmedNotes };
         await saveSkill(managed.domain, updatedSkill, existing.tags, existing.run_count);
-        logger.info({ domain: managed.domain, notes: trimmedNotes.length }, 'Saved failure notes on skill');
+        logger.info({ domain: managed.domain, notes_count: trimmedNotes.length }, 'Saved failure notes on skill');
       } catch (err) {
         logger.warn({ err: err instanceof Error ? err.message : err }, 'Failed to save failure notes');
       }
@@ -527,13 +527,13 @@ async function tryGenerateSkill(
           emitter('skill_saved', { domain: managed.domain, title: skill.title, tags });
           return 'saved';
         }
-      } catch (err) {
-        logger.error({ domain: managed.domain, err }, 'Failed to save skill');
+      } catch {
+        logger.error({ domain: managed.domain, save_failed: true }, 'Failed to save skill');
       }
     }
     return 'none';
-  } catch (err) {
-    logger.error({ sessionId: managed.id, err }, 'Skill generation failed');
+  } catch {
+    logger.error({ sessionId: managed.id, skill_generation_failed: true }, 'Skill generation failed');
     return 'none';
   }
 }
