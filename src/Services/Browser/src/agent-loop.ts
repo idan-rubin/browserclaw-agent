@@ -816,9 +816,43 @@ export async function runAgentLoop(
   const startTime = Date.now();
   const tabManager = browser !== undefined ? new TabManager(holder.page) : null;
   let consecutiveParseFailures = 0;
+  let crossSiteParseFailures = 0;
   let consecutiveApiFailures = 0;
-  const MAX_PARSE_FAILURES = 3;
+  const MAX_PARSE_FAILURES_PER_SITE = 5;
+  const MAX_CROSS_SITE_PARSE_FAILURES = 8;
   const MAX_API_FAILURES = 3;
+  const MAX_SITE_SWITCHES = 3;
+  let siteSwitchCount = 0;
+  let consecutiveRecoveryCount = 0;
+  let lastRecoveryDomain: string | null = null;
+  let pendingSiteSwitch: string | null = null;
+  let duplicateMemoryCount = 0;
+
+  const forceComplete = async (reason: string): Promise<AgentLoopResult> => {
+    logger.warn({ step, reason }, 'Force-completing run');
+    const answer = await getFinalSummary(refinedPrompt, history);
+    const doneAction: AgentAction = {
+      action: 'done',
+      reasoning: reason,
+      answer,
+    };
+    const currentUrl = await holder.page.url();
+    history.push({
+      step,
+      action: doneAction,
+      url: currentUrl,
+      page_title: await holder.page.title(),
+      timestamp: new Date().toISOString(),
+    });
+    emit('step', { step, action: 'done', reasoning: reason, answer });
+    return {
+      success: true,
+      steps: history,
+      answer,
+      duration_ms: Date.now() - startTime,
+      final_url: currentUrl,
+    };
+  };
 
   // ── Load task lessons ──────────────────────────────────────────────────────
   let taskLesson: TaskLesson | null = null;
@@ -1032,7 +1066,46 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       if (recovery !== null) {
         recoveryMessage = formatRecovery(recovery);
         logger.info({ step, diagnosis: recovery.diagnosis }, 'Recovery strategy triggered');
+
+        let currentDomain: string;
+        try {
+          currentDomain = new URL(url).hostname;
+        } catch {
+          currentDomain = url;
+        }
+        if (currentDomain === lastRecoveryDomain) {
+          consecutiveRecoveryCount++;
+        } else {
+          consecutiveRecoveryCount = 1;
+          lastRecoveryDomain = currentDomain;
+        }
+
+        if (consecutiveRecoveryCount >= 3) {
+          siteSwitchCount++;
+          logger.warn(
+            { step, domain: currentDomain, recoveries: consecutiveRecoveryCount, switchCount: siteSwitchCount },
+            'Switching sites: repeated recovery on same domain',
+          );
+          if (siteSwitchCount > MAX_SITE_SWITCHES) {
+            return await forceComplete(
+              `Exhausted ${String(MAX_SITE_SWITCHES)} site switches — presenting partial results`,
+            );
+          }
+          consecutiveRecoveryCount = 0;
+          lastRecoveryDomain = null;
+          recoveryMessage += `\n\n🔄 SITE SWITCH REQUIRED: You have been stuck on ${currentDomain} for too long. You MUST navigate to a COMPLETELY DIFFERENT website to accomplish this task. Do NOT return to ${currentDomain}. Choose a well-known alternative site and try a fresh approach.\n`;
+          emit('site_switch', { step, reason: 'recovery', domain: currentDomain, switchCount: siteSwitchCount });
+        }
+      } else {
+        consecutiveRecoveryCount = 0;
+        lastRecoveryDomain = null;
       }
+    }
+
+    // Consume pending site switch message from previous iteration (e.g. after parse failure navigation)
+    if (pendingSiteSwitch !== null) {
+      recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + pendingSiteSwitch;
+      pendingSiteSwitch = null;
     }
 
     let tabCount: number | undefined;
@@ -1096,6 +1169,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         );
       }
       consecutiveParseFailures = 0;
+      crossSiteParseFailures = 0;
       consecutiveApiFailures = 0;
 
       // Extract progress tracking (backward compatible — falls back to null if not provided)
@@ -1128,24 +1202,66 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         actions[0].error_feedback = nudgeMessage;
         recentFailureCount++;
       }
+
+      // Detect stale extraction: same memory content as previous step
+      if (actions[0].memory !== undefined && actions[0].memory !== '' && history.length > 0) {
+        const prevMemory = getLastMemory(history);
+        if (prevMemory === actions[0].memory) {
+          duplicateMemoryCount++;
+          let feedback: string;
+          if (duplicateMemoryCount >= 3) {
+            feedback =
+              'STALE EXTRACTION (3x): You have failed to make progress 3 times in a row. You MUST try a fundamentally different approach NOW: navigate to a completely different page or site section, simplify your search, or use a different interaction pattern. Do NOT repeat any extraction you have already tried.';
+          } else {
+            feedback =
+              'DUPLICATE MEMORY: Your memory is identical to the previous step — you are not making new progress with this approach. Try a DIFFERENT extraction method: navigate to a different page that has the same data, scroll to a different section, or try extracting from individual detail pages instead of a listing page. Do NOT repeat the same extraction.';
+          }
+          actions[0].error_feedback =
+            actions[0].error_feedback !== undefined ? `${actions[0].error_feedback}\n${feedback}` : feedback;
+        } else {
+          duplicateMemoryCount = 0;
+        }
+      }
     } catch (err) {
       if (err instanceof LlmParseError) {
         // LLM responded but not with valid JSON — burn a step, the call was made
         consecutiveParseFailures++;
+        crossSiteParseFailures++;
         logger.warn(
-          { step, attempt: consecutiveParseFailures, maxAttempts: MAX_PARSE_FAILURES },
+          { step, consecutive: consecutiveParseFailures, crossSite: crossSiteParseFailures },
           'LLM returned non-JSON response',
         );
-        emit('step_error', { step, error: 'LLM response was not valid JSON', type: 'parse_error' });
-        if (consecutiveParseFailures >= MAX_PARSE_FAILURES) {
-          const answer = await getFinalSummary(refinedPrompt, history);
-          return {
-            success: false,
-            steps: history,
-            answer,
-            error: 'The AI could not process this page correctly. Partial findings may be available above.',
-            duration_ms: Date.now() - startTime,
-          };
+        emit('step_error', {
+          step,
+          error: 'LLM response was not valid JSON',
+          type: 'parse_error',
+          rawText: err.responseSnippet,
+        });
+
+        // Absolute last resort: too many parse failures across all sites
+        if (crossSiteParseFailures >= MAX_CROSS_SITE_PARSE_FAILURES) {
+          return await forceComplete(
+            `${String(crossSiteParseFailures)} parse failures across sites — presenting partial results`,
+          );
+        }
+
+        // Per-site threshold: switch to a different site
+        if (consecutiveParseFailures >= MAX_PARSE_FAILURES_PER_SITE) {
+          siteSwitchCount++;
+          if (siteSwitchCount > MAX_SITE_SWITCHES) {
+            return await forceComplete(
+              `Exhausted ${String(MAX_SITE_SWITCHES)} site switches — presenting partial results`,
+            );
+          }
+          logger.warn({ step, switchCount: siteSwitchCount }, 'Switching sites: repeated parse failures');
+          consecutiveParseFailures = 0;
+          try {
+            await holder.page.goto('about:blank');
+          } catch {
+            /* ignore navigation error */
+          }
+          pendingSiteSwitch = `🔄 SITE SWITCH REQUIRED: The previous site caused ${String(MAX_PARSE_FAILURES_PER_SITE)} consecutive parsing failures. Navigate to a COMPLETELY DIFFERENT website to accomplish this task. Choose a well-known, major site and try a fresh approach.`;
+          emit('site_switch', { step, reason: 'parse_failures', switchCount: siteSwitchCount });
         }
         step++;
         continue;
