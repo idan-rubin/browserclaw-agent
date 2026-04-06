@@ -378,7 +378,8 @@ function buildUserMessage(
     message += `Task: ${task}\n`;
   }
 
-  if (plan !== undefined && plan !== null && plan !== '') {
+  // In reduced/minimal mode, drop plan and playbook to shrink context
+  if (contextLevel === 'full' && plan !== undefined && plan !== null && plan !== '') {
     message += `\nPlan: ${plan}\n`;
   }
 
@@ -413,7 +414,7 @@ function buildUserMessage(
     message += recoveryMessage;
   }
 
-  if (domainSkill !== undefined && domainSkill !== null) {
+  if (contextLevel === 'full' && domainSkill !== undefined && domainSkill !== null) {
     message += '\n--- PLAYBOOK (proven workflow for this site) ---\n';
     message += `\n"${domainSkill.skill.title}" — ${domainSkill.skill.description}\n`;
     for (const step of domainSkill.skill.steps) {
@@ -489,14 +490,16 @@ function buildUserMessage(
     message += '\n';
   }
 
-  const alertLines = snapshot
-    .split('\n')
-    .filter((line) => /\b(alert|status|dialog|banner|toast|notification|error|warning)\b/i.test(line))
-    .map((line) => line.trim())
-    .filter(Boolean);
+  if (contextLevel !== 'minimal') {
+    const alertLines = snapshot
+      .split('\n')
+      .filter((line) => /\b(alert|status|dialog|banner|toast|notification|error|warning)\b/i.test(line))
+      .map((line) => line.trim())
+      .filter(Boolean);
 
-  if (alertLines.length > 0) {
-    message += `⚠ Active alerts/notifications on page:\n${alertLines.join('\n')}\n\n`;
+    if (alertLines.length > 0) {
+      message += `⚠ Active alerts/notifications on page:\n${alertLines.join('\n')}\n\n`;
+    }
   }
 
   message += `Page snapshot:\n${snapshot}`;
