@@ -187,24 +187,62 @@ describe('runAgentLoop', () => {
     expect(result.error).toBe('Session aborted');
   });
 
-  it('fails after max consecutive parse failures', async () => {
+  it('switches sites after 5 parse failures, force-completes at 8 cross-site', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Try something' })
-      .mockRejectedValueOnce(new LlmParseError('No JSON object found in response', 'I could not parse the page'))
-      .mockRejectedValueOnce(new LlmParseError('No JSON object found in response', 'Still confused'))
-      .mockRejectedValueOnce(new LlmParseError('No JSON object found in response', 'Giving up'))
-      // getFinalSummary call after abort
+      // Site 1: 5 parse failures → site switch
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 1'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 2'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 3'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 4'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 5'))
+      // Site 2: 3 more parse failures → 8 total → force-done
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 6'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 7'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 8'))
+      // getFinalSummary call
       .mockResolvedValueOnce({ answer: 'Partial findings' });
 
-    const { page } = mockPage();
+    const { page, mock } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
     const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('could not process this page correctly');
+    expect(result.success).toBe(true);
     expect(result.answer).toBe('Partial findings');
+    // Should have navigated to about:blank on site switch
+    expect(mock.goto).toHaveBeenCalledWith('about:blank');
+    // Should emit site_switch event
+    const switchEvents = (emit.mock.calls as [string, unknown][]).filter(([e]) => e === 'site_switch');
+    expect(switchEvents).toHaveLength(1);
+  });
+
+  it('recovers from parse failures after site switch', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Try something' })
+      // Site 1: 5 parse failures → site switch
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 1'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 2'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 3'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 4'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad 5'))
+      // Site 2: succeeds
+      .mockResolvedValueOnce({
+        action: 'done',
+        reasoning: 'Found it on another site',
+        answer: 'Found the result successfully on an alternative website after switching.',
+      });
+
+    const { page, mock } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    expect(result.answer).toBe('Found the result successfully on an alternative website after switching.');
+    expect(mock.goto).toHaveBeenCalledWith('about:blank');
   });
 
   it('fails after max consecutive API failures without burning steps', async () => {
@@ -310,7 +348,11 @@ describe('runAgentLoop', () => {
       .mockResolvedValueOnce({ plan: 'Plan' })
       .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
       .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Click', ref: '1' })
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
       .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
       .mockRejectedValueOnce(new LlmParseError('No JSON', 'bad'))
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
@@ -321,7 +363,7 @@ describe('runAgentLoop', () => {
 
     const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
-    // Should succeed because parse failures were never 3 consecutive
+    // Should succeed because parse failures were never 5 consecutive
     expect(result.success).toBe(true);
   });
 
@@ -456,6 +498,57 @@ describe('runAgentLoop', () => {
     expect(lastLlmCall.message).toContain('Progress');
     expect(lastLlmCall.message).toContain('found the search page');
     expect(lastLlmCall.message).toContain('entering search criteria');
+  });
+
+  it('injects feedback when memory is duplicated across steps', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Research' })
+      .mockResolvedValueOnce({
+        action: 'scroll',
+        reasoning: 'Scrolling for data',
+        memory: 'Found: Hotel A $100, Hotel B $200',
+        direction: 'down',
+      })
+      .mockResolvedValueOnce({
+        action: 'scroll',
+        reasoning: 'Looking for more',
+        memory: 'Found: Hotel A $100, Hotel B $200',
+        direction: 'down',
+      })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done', answer: 'Hotels found' });
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Find hotels', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    // The second scroll step should have duplicate memory feedback
+    const scrollSteps = result.steps.filter((s) => s.action.action === 'scroll');
+    expect(scrollSteps[1].action.error_feedback).toContain('DUPLICATE MEMORY');
+  });
+
+  it('escalates duplicate memory feedback after 3 consecutive duplicates', async () => {
+    const staleMemory = 'Found: Hotel A $100';
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Research' })
+      .mockResolvedValueOnce({ action: 'scroll', reasoning: 'First', memory: staleMemory, direction: 'down' })
+      .mockResolvedValueOnce({ action: 'scroll', reasoning: 'Second', memory: staleMemory, direction: 'down' })
+      .mockResolvedValueOnce({ action: 'scroll', reasoning: 'Third', memory: staleMemory, direction: 'down' })
+      .mockResolvedValueOnce({ action: 'scroll', reasoning: 'Fourth', memory: staleMemory, direction: 'down' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done', answer: 'Hotels' });
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Find hotels', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    // After 3 duplicates (4th scroll step), feedback should escalate to STALE EXTRACTION
+    const scrollSteps = result.steps.filter((s) => s.action.action === 'scroll');
+    expect(scrollSteps[3].action.error_feedback).toContain('STALE EXTRACTION');
   });
 
   it('fails when MAX_STEPS is reached', async () => {
