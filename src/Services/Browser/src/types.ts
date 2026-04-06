@@ -140,6 +140,20 @@ export interface DomainSkillEntry {
   run_count: number;
 }
 
+export interface DomainLesson {
+  domain: string;
+  status: 'blocked' | 'worked';
+  reason: string;
+  last_seen: string;
+}
+
+export interface TaskLesson {
+  task_hash: string;
+  task_terms: string[];
+  domains: DomainLesson[];
+  updated_at: string;
+}
+
 export class HttpError extends Error {
   constructor(
     public readonly statusCode: number,
