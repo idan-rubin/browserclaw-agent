@@ -40,6 +40,10 @@ export function diagnoseStuckAgent(history: AgentStep[], currentUrl: string): Re
   const navLoop = detectNavigationLoop(recent);
   if (navLoop !== null) return navLoop;
 
+  // Pattern 6: Site is blocking automation (anti-bot actions or repeated access failures)
+  const siteBlocking = detectSiteBlocking(recent, currentUrl);
+  if (siteBlocking !== null) return siteBlocking;
+
   return null;
 }
 
@@ -179,6 +183,48 @@ function detectNavigationLoop(recent: AgentStep[]): RecoveryStrategy | null {
         ],
       };
     }
+  }
+
+  return null;
+}
+
+function detectSiteBlocking(recent: AgentStep[], currentUrl: string): RecoveryStrategy | null {
+  const antiBotActions = recent.filter(
+    (s) => s.action.action === 'press_and_hold' || s.action.action === 'click_cloudflare',
+  );
+  if (antiBotActions.length >= 2) {
+    let domain = '';
+    try {
+      domain = new URL(currentUrl).hostname;
+    } catch {
+      /* ignore */
+    }
+    return {
+      diagnosis: `The site${domain !== '' ? ` (${domain})` : ''} is actively blocking automation — you've triggered anti-bot challenges ${String(antiBotActions.length)} times.`,
+      suggestions: [
+        'STOP trying this site. It is blocking you and you will waste more steps.',
+        'Navigate to a DIFFERENT site that has the same information.',
+        'Go directly to the alternative site with your search terms in the URL (e.g. apartments.com/chelsea-new-york-ny).',
+        'If you already have partial results from this site, combine them with results from the next site.',
+      ],
+    };
+  }
+
+  // Detect repeated access-denied / empty page patterns
+  const errorSteps = recent.filter(
+    (s) =>
+      s.action.error_feedback !== undefined &&
+      /denied|forbidden|blocked|captcha|robot|bot.*detected/i.test(s.action.error_feedback),
+  );
+  if (errorSteps.length >= 3) {
+    return {
+      diagnosis: 'The site is returning access-denied or bot-detection errors.',
+      suggestions: [
+        'This site has detected automation. Do not continue here.',
+        'Navigate to an alternative site that has the same information.',
+        'Try a well-known, automation-friendly alternative.',
+      ],
+    };
   }
 
   return null;
