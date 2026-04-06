@@ -8,8 +8,9 @@ import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
 import { TabManager } from './skills/tab-manager.js';
 import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
 import { llmJson, llmVision, sanitizeErrorText } from './llm.js';
+import { getLesson, formatLessonForPrompt } from './lesson-store.js';
 import { LlmParseError } from './types.js';
-import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill } from './types.js';
+import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
 import { logger } from './logger.js';
 import {
   WAIT_AFTER_TYPE_MS,
@@ -231,6 +232,15 @@ async function screenshotFallback(page: CrawlPage, snapshot: string): Promise<st
   return snapshot;
 }
 
+async function isBrowserAlive(page: CrawlPage): Promise<boolean> {
+  try {
+    await page.url();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const SKILL_INJECT_MAX_STEP = 2;
 const PLAN_INJECT_MAX_STEP = 8;
 const HISTORY_RECENT_WINDOW = 8;
@@ -328,6 +338,7 @@ interface BuildUserMessageOptions {
   tabs?: TabInfo[];
   pageState?: string;
   domainSkill?: CatalogSkill | null;
+  taskLesson?: TaskLesson | null;
   stepsRemaining?: number;
   maxSteps?: number;
   recoveryMessage?: string | null;
@@ -351,6 +362,7 @@ function buildUserMessage(
     tabs,
     pageState,
     domainSkill,
+    taskLesson,
     stepsRemaining,
     maxSteps: totalSteps,
     recoveryMessage,
@@ -388,6 +400,13 @@ function buildUserMessage(
     (totalSteps - stepsRemaining) / totalSteps >= 0.5
   ) {
     message += `\nℹ Halfway through your step budget. Make sure you're making progress toward the goal.\n`;
+  }
+
+  if (taskLesson !== undefined && taskLesson !== null) {
+    const lessonText = formatLessonForPrompt(taskLesson);
+    if (lessonText !== '') {
+      message += `\n${lessonText}\n`;
+    }
   }
 
   if (recoveryMessage !== undefined && recoveryMessage !== null) {
@@ -789,6 +808,19 @@ export async function runAgentLoop(
   const MAX_PARSE_FAILURES = 3;
   const MAX_API_FAILURES = 3;
 
+  // ── Load task lessons ──────────────────────────────────────────────────────
+  let taskLesson: TaskLesson | null = null;
+  try {
+    taskLesson = await getLesson(prompt);
+    if (taskLesson !== null) {
+      const blocked = taskLesson.domains.filter((d) => d.status === 'blocked').length;
+      const worked = taskLesson.domains.filter((d) => d.status === 'worked').length;
+      logger.info({ blocked, worked, hash: taskLesson.task_hash }, 'Loaded task lessons');
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to load task lessons');
+  }
+
   // ── Planning + goal refinement (single LLM call) ──────────────────────────
   // If the prompt is vague (e.g. "find apartments in Chelsea"), the planner
   // also produces a SMART task with clear scope and stopping criteria.
@@ -799,6 +831,12 @@ export async function runAgentLoop(
     if (domainSkill !== undefined && domainSkill !== null) {
       planMessage += `\n\nWe have a proven skill for this site: "${domainSkill.skill.title}" — ${domainSkill.skill.description}`;
       planMessage += '\nLeverage it — no need to rediscover what already works.';
+    }
+    if (taskLesson !== null) {
+      const lessonText = formatLessonForPrompt(taskLesson);
+      if (lessonText !== '') {
+        planMessage += `\n\n${lessonText}\nDo NOT navigate to blocked domains. Use alternatives that worked before.`;
+      }
     }
     const plan = await llmJson<{ task?: string; plan: string }>({
       system: `You are a browser automation planner. Given a user prompt, produce a SMART task and a plan.
@@ -853,6 +891,18 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
         steps: history,
         error: 'Session aborted',
         duration_ms: Date.now() - startTime,
+      };
+    }
+
+    if (!(await isBrowserAlive(holder.page))) {
+      logger.error({ step }, 'Browser connection lost');
+      emit('failed', { step, error: 'Browser connection lost' });
+      return {
+        success: false,
+        steps: history,
+        error: 'Browser connection lost',
+        duration_ms: Date.now() - startTime,
+        final_url: history.length > 0 ? history[history.length - 1].url : undefined,
       };
     }
 
@@ -987,6 +1037,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
     }
     const skillForStep = step <= SKILL_INJECT_MAX_STEP ? domainSkill : undefined;
+    const lessonForStep = step <= PLAN_INJECT_MAX_STEP ? taskLesson : null;
     // Keep plan available for longer — it's cheap context and prevents drift
     const planForStep = step <= PLAN_INJECT_MAX_STEP ? planText : null;
     const stepsRemaining = maxSteps - step - 1;
@@ -1002,6 +1053,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       tabs,
       pageState,
       domainSkill: skillForStep,
+      taskLesson: lessonForStep,
       stepsRemaining,
       maxSteps,
       recoveryMessage,

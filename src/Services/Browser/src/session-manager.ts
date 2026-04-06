@@ -18,6 +18,7 @@ import { logPrompt } from './prompt-log.js';
 import { requireEnvInt, USER_RESPONSE_TIMEOUT_MS } from './config.js';
 import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig } from './llm.js';
 import { extractDomain, getSkillForDomain, getSkillsForDomains, saveSkill } from './skill-store.js';
+import { saveLesson, extractDomainLessons } from './lesson-store.js';
 import { logger } from './logger.js';
 
 interface ManagedSession {
@@ -48,6 +49,7 @@ const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
 const SESSION_IDLE_TIMEOUT_MS = requireEnvInt('SESSION_IDLE_TIMEOUT_MS');
 const BASE_CDP_PORT = 9222;
 const MIN_STEPS_FOR_SKILL = 3;
+const MIN_STEPS_FOR_LESSON = 3;
 const AUTO_CLOSE_DELAY_MS = 10_000;
 const NON_ACTION_TYPES = new Set(['done', 'wait', 'fail', 'ask_user']);
 
@@ -288,6 +290,22 @@ async function startAgentLoop(sessionId: string): Promise<void> {
           managed.domain = extractDomain(nav.action.url);
         } else if (result.final_url !== undefined && result.final_url !== '') {
           managed.domain = extractDomain(result.final_url);
+        }
+      }
+
+      // Save lessons from every run (both success and failure)
+      if (result.steps.length >= MIN_STEPS_FOR_LESSON) {
+        try {
+          const domainLessons = extractDomainLessons(result.steps, result.success);
+          if (domainLessons.length > 0) {
+            await saveLesson(managed.prompt, domainLessons);
+            logger.info(
+              { prompt: managed.prompt, lessons: domainLessons.length, success: result.success },
+              'Saved task lessons',
+            );
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to save task lessons');
         }
       }
 

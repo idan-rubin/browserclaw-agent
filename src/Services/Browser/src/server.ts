@@ -4,6 +4,7 @@ import { handleRequest } from './routes.js';
 import { startCleanupLoop, closeAllSessions, stopCleanupLoop } from './session-manager.js';
 import { validateConfig } from './config.js';
 import { initSkillStore } from './skill-store.js';
+import { initLessonStore } from './lesson-store.js';
 import { logger } from './logger.js';
 
 const { port, rateLimitMax, rateLimitWindowMs, internalToken } = validateConfig();
@@ -93,6 +94,7 @@ const server = createServer((req, res) => {
 
 startCleanupLoop();
 
+initLessonStore();
 initSkillStore()
   .then(() => {
     server.listen(port, () => {
