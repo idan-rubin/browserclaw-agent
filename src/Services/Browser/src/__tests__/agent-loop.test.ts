@@ -91,7 +91,12 @@ describe('runAgentLoop', () => {
   it('completes successfully when agent returns done', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Navigate and complete' })
-      .mockResolvedValueOnce({ action: 'done', reasoning: 'Task complete', answer: 'Done!' });
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Click button', ref: '1' })
+      .mockResolvedValueOnce({
+        action: 'done',
+        reasoning: 'Task complete',
+        answer: 'Task completed successfully — all required steps finished.',
+      });
 
     const { page } = mockPage();
     const emit = vi.fn();
@@ -100,9 +105,9 @@ describe('runAgentLoop', () => {
     const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     expect(result.success).toBe(true);
-    expect(result.answer).toBe('Done!');
-    expect(result.steps).toHaveLength(1);
-    expect(result.steps[0].action.action).toBe('done');
+    expect(result.answer).toBe('Task completed successfully — all required steps finished.');
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[1].action.action).toBe('done');
   });
 
   it('returns failure when agent returns fail', async () => {
@@ -326,7 +331,12 @@ describe('runAgentLoop', () => {
         task: 'Search for apartments in Chelsea. Collect listings with details.',
         plan: 'Go to site',
       })
-      .mockResolvedValueOnce({ action: 'done', reasoning: 'Found results', answer: '3 listings found' });
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Click search', ref: '1' })
+      .mockResolvedValueOnce({
+        action: 'done',
+        reasoning: 'Found results',
+        answer: 'Found 3 apartment listings in Chelsea with prices, bedrooms, and URLs.',
+      });
 
     const { page } = mockPage();
     const emit = vi.fn();
@@ -406,6 +416,7 @@ describe('runAgentLoop', () => {
     const { page, mock } = mockPage();
     // After click, URL changes — first few calls return original, later ones return new page
     mock.url
+      .mockResolvedValueOnce('https://example.com') // isBrowserAlive
       .mockResolvedValueOnce('https://example.com') // step snapshot
       .mockResolvedValueOnce('https://example.com') // agentStep.url
       .mockResolvedValueOnce('https://example.com') // preActionUrl
