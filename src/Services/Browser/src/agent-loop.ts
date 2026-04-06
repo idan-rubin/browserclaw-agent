@@ -101,6 +101,9 @@ Result scoping:
 Page processing:
 - Extract ALL useful data from a page before navigating away. Don't visit the same page twice.
 - If the snapshot looks sparse, try one scroll down — content may be lazy-loaded.
+- Listing detail pages often have data spread across the page — scroll through the ENTIRE page to find price, address, bedrooms, bathrooms, square footage, etc. Don't leave a detail page until you've captured all key attributes.
+- If data appears in a structured format (tables, data grids, key-value pairs), read the snapshot carefully — the data is there but may be split across multiple lines.
+- When a listing page shows "See more" or "Show details" buttons, click them before extracting data — hidden sections often contain the most important information.
 
 Navigation:
 - Before going back to search results, scroll down on the current page and check the snapshot for related content. Look for headings or text containing "Similar", "Related", "Recommended", "You may also like", "More like this", "People also viewed", "Nearby listings", or "Compare with".
@@ -126,6 +129,12 @@ When you hit a wall:
 - Re-strategize: your plan can change at any time. The initial plan was a guess — adapt based on what you've learned about the site.
 - Think about alternative paths to the same information. Can you use the site's navigation differently? Is there a direct URL? A different section of the site? A search box you haven't tried?
 - Be resourceful. The information is on the site — you just need to find the right path to it.
+
+Site blocking — when to move on:
+- If a site shows anti-bot challenges (press-and-hold, Cloudflare, CAPTCHA) more than once, the site is actively blocking automation. Do NOT waste more steps — navigate to a different site that has the same information.
+- If clicks keep failing, the page is mostly empty after loading, or you're getting access-denied/403 pages — the site is hostile. Move on immediately.
+- There are always multiple sites with the same information. Real estate: Zillow, Apartments.com, Realtor.com, Redfin. Flights: Google Flights, Kayak, Skyscanner. Hotels: Booking.com, Hotels.com, Google Hotels. Shopping: Amazon, Google Shopping, Best Buy.
+- When moving to a new site, navigate directly to it with your search criteria in the URL if possible (e.g. apartments.com/chelsea-new-york-ny).
 
 Before giving up:
 - If one approach fails, try a different path. Don't repeat the same failed action.
@@ -1001,6 +1010,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 Analyze what's been tried, what failed, and suggest a DIFFERENT approach.
 Don't repeat strategies that already failed. Be creative — try different site sections, different URLs, different interaction patterns.
 Include a specific alternative strategy, not just "try something different".
+IMPORTANT: If the agent hit anti-bot challenges (press_and_hold, click_cloudflare, CAPTCHA), the current site is blocking automation. Your new plan MUST use a completely different website. Navigate directly to the alternative with search criteria in the URL.
 Respond with JSON: {"plan": "your revised plan here"}`,
           message: `Original task: ${refinedPrompt}\n\nOriginal plan: ${planText ?? 'none'}\n\nCurrent page: ${title} (${url})${progressContext}\n\nMemory: ${lastMemory ?? 'none'}\n\nRecent actions:\n${recentSummary}\n\nStep ${String(step)} of ${String(maxSteps)} — ${replanReason}.`,
           maxTokens: 256,
