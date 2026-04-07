@@ -119,9 +119,11 @@ Strategy:
 - Every action should move you closer to the goal. If it doesn't, you're wasting steps.
 
 Filters and search:
-- After applying any filter (price, date, location, amenity), ALWAYS confirm it took effect: press Enter, click "Apply" or "Search", or check the snapshot shows filtered results. A filter that isn't submitted is worthless.
-- If the filter controls you need aren't visible after 2 scrolls, they probably don't exist on this page. Stop scrolling and work with what you have — use URL parameters, click category links, or verify criteria on individual listing pages instead.
-- Don't waste steps hunting for perfect filters. Good-enough filters + manual verification on detail pages beats endlessly searching for filter UI that may not exist.
+- After applying any filter (price, date, location, amenity), ALWAYS submit it: press Enter, click "Apply" or "Search".
+- After submitting, VERIFY the filter took effect in the NEXT snapshot. Check that results actually changed — prices should be within range, locations should match, etc. If results still show items outside your filter (e.g. you set max $4,200 but see $6,000+ listings), the filter did NOT work. Try again: clear the field, re-type, and submit differently (try a different button, or add the filter to the URL).
+- Do NOT proceed to browse results until you have confirmed filters are active. Browsing unfiltered results wastes every subsequent step.
+- If the filter controls you need aren't visible after 2 scrolls, they probably don't exist on this page. Use URL parameters instead (e.g. ?max_price=4200) or verify criteria on individual listing pages.
+- Don't waste steps hunting for perfect filter UI. URL parameters + manual verification on detail pages beats endlessly searching for filter controls that may not exist.
 
 Blocking overlays (popups, modals, date pickers, calendars, cookie banners):
 - If a popup, modal, date picker, calendar, or overlay is covering the page and blocking your clicks, you MUST dismiss it before doing anything else.
