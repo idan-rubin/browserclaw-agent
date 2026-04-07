@@ -24,7 +24,10 @@ export function SiteHeader({ activePath, border = false }: SiteHeaderProps) {
     <nav
       className={`relative z-10 flex items-center justify-between px-4 py-4 sm:px-10 sm:py-5${border ? ' border-b border-border/50' : ''}`}
     >
-      <Link href="/" className="flex items-center gap-2 font-[family-name:var(--font-heading)] text-lg sm:text-xl tracking-tight">
+      <Link
+        href="/"
+        className="flex items-center gap-2 font-[family-name:var(--font-heading)] text-lg sm:text-xl tracking-tight"
+      >
         <Image src="/logo.png" alt="" width={28} height={28} className="h-7 w-7 sm:h-8 sm:w-8 dark:hidden" />
         <Image src="/logo-dark.png" alt="" width={28} height={28} className="hidden h-7 w-7 sm:h-8 sm:w-8 dark:block" />
         <span className="hidden sm:inline">
