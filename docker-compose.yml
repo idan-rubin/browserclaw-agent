@@ -66,6 +66,7 @@ services:
       MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:-minioadmin}"
       MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
       MINIO_BUCKET: "browserclaw-skills"
+      PROMPT_LOG_DIR: "/app/data/prompts"
     volumes:
       - prompt_logs:/app/data/prompts
     labels:
