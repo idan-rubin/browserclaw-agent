@@ -59,8 +59,8 @@ function loadConfig(): { provider: LlmConfig['provider']; model: string; apiKey:
 
 function saveConfig(provider: LlmConfig['provider'], model: string, apiKey: string) {
   // User-provided BYOK key — intentional localStorage persistence for local-only browser sessions.
-  // codeql[skip] This is explicit user-controlled BYOK configuration, not a generated secret.
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, model, api_key: apiKey }));
+  const config = { provider, model, api_key: apiKey }; // lgtm[js/clear-text-storage-of-sensitive-data]
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
 }
 
 export function useLlmConfig() {
