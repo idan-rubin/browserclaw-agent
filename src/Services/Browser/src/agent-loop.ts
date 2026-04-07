@@ -66,7 +66,8 @@ Rules:
 - After every action, check the next snapshot to see if it worked.
 - If something failed, try a different approach. Never repeat a failed action.
 - "type" clears the field first, then types.
-- After typing in any field, wait — then check for autocomplete dropdowns and click the matching option.
+- After typing in a search or autocomplete field, wait — then check for dropdown suggestions and click the matching option.
+- After typing in a filter or form field (price, date, quantity), press Enter or click the submit/apply/search button to apply the value. Don't just type and move on — filters don't take effect until submitted.
 - "keyboard" to press special keys: Enter (submit forms), Escape (close dropdowns/dialogs/popups/date pickers/calendars), Tab (move between fields), ArrowDown/ArrowUp (navigate dropdowns).
 - If a popup, modal, date picker, calendar widget, or overlay is blocking the UI, dismiss it immediately: click its "Cancel", "Close", or "X" button, or use "keyboard" with "Escape". Do NOT try to click elements behind a blocking overlay — dismiss the overlay first.
 - "back" to go back in browser history. Use this instead of manually tracking URLs when you need to return to the previous page.
@@ -116,6 +117,11 @@ Strategy:
 - Before your first action, identify what type of site you're on and what the typical flow looks like to reach your goal.
 - At each step, know where you are in that flow and what comes next.
 - Every action should move you closer to the goal. If it doesn't, you're wasting steps.
+
+Filters and search:
+- After applying any filter (price, date, location, amenity), ALWAYS confirm it took effect: press Enter, click "Apply" or "Search", or check the snapshot shows filtered results. A filter that isn't submitted is worthless.
+- If the filter controls you need aren't visible after 2 scrolls, they probably don't exist on this page. Stop scrolling and work with what you have — use URL parameters, click category links, or verify criteria on individual listing pages instead.
+- Don't waste steps hunting for perfect filters. Good-enough filters + manual verification on detail pages beats endlessly searching for filter UI that may not exist.
 
 Blocking overlays (popups, modals, date pickers, calendars, cookie banners):
 - If a popup, modal, date picker, calendar, or overlay is covering the page and blocking your clicks, you MUST dismiss it before doing anything else.
