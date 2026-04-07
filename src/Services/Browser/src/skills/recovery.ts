@@ -120,11 +120,13 @@ function detectStagnation(recent: AgentStep[], currentUrl: string): RecoveryStra
   const sameUrlSteps = recent.filter((s) => s.url === currentUrl);
   if (sameUrlSteps.length < 6) return null;
 
-  // On the same URL for 6+ steps with mixed actions but no clear progress
+  // On the same URL for 6+ steps with mixed actions and majority errors
   const actions = new Set(sameUrlSteps.map((s) => s.action.action));
-  const hasErrors = sameUrlSteps.some((s) => s.action.error_feedback !== undefined);
+  const errorCount = sameUrlSteps.filter((s) => s.action.error_feedback !== undefined).length;
+  const errorRatio = errorCount / sameUrlSteps.length;
 
-  if (hasErrors && actions.size >= 2) {
+  // Require majority errors — a few failures on a long page is normal
+  if (errorRatio >= 0.5 && actions.size >= 2) {
     return {
       diagnosis: `You have been on this same page for ${String(sameUrlSteps.length)}+ steps without making progress.`,
       suggestions: [
@@ -139,40 +141,43 @@ function detectStagnation(recent: AgentStep[], currentUrl: string): RecoveryStra
   return null;
 }
 
-function detectNavigationLoop(recent: AgentStep[]): RecoveryStrategy | null {
-  const urls = recent.map((s) => s.url).filter(Boolean) as string[];
-  if (urls.length < 4) return null;
-
-  // Detect A→B→A→B pattern
-  const urlSet = new Set(urls);
-  if (urlSet.size === 2 && urls.length >= 4) {
-    // Check if alternating
-    let alternating = true;
-    for (let i = 1; i < urls.length; i++) {
-      if (urls[i] === urls[i - 1]) {
-        alternating = false;
-        break;
-      }
-    }
-    if (alternating) {
-      return {
-        diagnosis: 'You are navigating back and forth between two pages without making progress.',
-        suggestions: [
-          'Pick ONE of the two pages and commit to completing your task there.',
-          `Stay on the page that has the content you need and work through it systematically.`,
-          "If going back resets the page state (filters, scroll position), try a different approach that doesn't require going back.",
-          'Extract all needed information from each page before navigating away.',
-        ],
-      };
-    }
-  }
-
-  // Detect revisiting the same URL 3+ times
-  const urlCounts = new Map<string, number>();
+/** Collapse consecutive same-URL steps into distinct visits. */
+function collapseVisits(urls: string[]): string[] {
+  const visits: string[] = [];
   for (const url of urls) {
-    urlCounts.set(url, (urlCounts.get(url) ?? 0) + 1);
+    if (visits.length === 0 || visits[visits.length - 1] !== url) {
+      visits.push(url);
+    }
   }
-  for (const [url, count] of urlCounts) {
+  return visits;
+}
+
+function detectNavigationLoop(recent: AgentStep[]): RecoveryStrategy | null {
+  const rawUrls = recent.map((s) => s.url).filter(Boolean) as string[];
+  // Collapse consecutive same-URL steps — staying on a page for 7 steps is 1 visit, not 7
+  const visits = collapseVisits(rawUrls);
+  if (visits.length < 4) return null;
+
+  // Detect A→B→A→B pattern (already collapsed, so consecutive entries always differ)
+  const urlSet = new Set(visits);
+  if (urlSet.size === 2 && visits.length >= 4) {
+    return {
+      diagnosis: 'You are navigating back and forth between two pages without making progress.',
+      suggestions: [
+        'Pick ONE of the two pages and commit to completing your task there.',
+        `Stay on the page that has the content you need and work through it systematically.`,
+        "If going back resets the page state (filters, scroll position), try a different approach that doesn't require going back.",
+        'Extract all needed information from each page before navigating away.',
+      ],
+    };
+  }
+
+  // Detect revisiting the same URL 3+ times (distinct visits, not consecutive steps)
+  const visitCounts = new Map<string, number>();
+  for (const url of visits) {
+    visitCounts.set(url, (visitCounts.get(url) ?? 0) + 1);
+  }
+  for (const [url, count] of visitCounts) {
     if (count >= 3) {
       return {
         diagnosis: `You have visited the same page 3+ times: ${url}`,
