@@ -1,3 +1,5 @@
+name: browserclaw
+
 services:
   # ─── Object Storage ───────────────────────────────────────────
   minio:
