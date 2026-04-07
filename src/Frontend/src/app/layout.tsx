@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   },
   description: 'Type what you want done. Watch AI do it in a real browser. Get a reusable skill.',
   icons: {
-    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
+    icon: [{ url: '/icon.png', type: 'image/png' }],
   },
 };
 
