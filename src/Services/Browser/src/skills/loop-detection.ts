@@ -8,10 +8,9 @@ interface LoopNudge {
 }
 
 /**
- * Soft, escalating loop detection. Never blocks actions — returns a nudge message
- * at increasing severity thresholds if the agent appears stuck.
- *
- * Also detects stagnant pages (same URL + similar element count for 5+ steps).
+ * Detects exact action repetition (same action + same ref) with escalating severity.
+ * Pattern-based stuck diagnosis (stagnation, alternating failures, etc.) is handled
+ * by recovery.ts which provides richer diagnostics.
  */
 export function detectLoop(action: { action: string; ref?: string }, history: AgentStep[]): LoopNudge | null {
   if (history.length < 5) return null;
@@ -45,34 +44,6 @@ export function detectLoop(action: { action: string; ref?: string }, history: Ag
       message:
         'You have repeated this action several times. If you are making progress with each repetition, keep going. If not, try a different approach: use "keyboard" with "Escape" to close any blocking popups, date pickers, or overlays, then try a different element or strategy.',
     };
-  }
-
-  // Semantic loop: alternating between 2-3 failing actions (not exact same ref, but same type)
-  if (window.length >= 6) {
-    const failedRecent = window.slice(-6).filter((h) => h.action.error_feedback !== undefined);
-    if (failedRecent.length >= 4) {
-      const failedTypes = new Set(failedRecent.map((h) => h.action.action));
-      if (failedTypes.size <= 2) {
-        return {
-          level: 'warning',
-          message:
-            'You are alternating between the same types of actions and they keep failing. This approach is not working — you need a fundamentally different strategy. Try: navigating to a different page, using the site search, scrolling to find different elements, or pressing Escape to clear overlays.',
-        };
-      }
-    }
-  }
-
-  // Stagnant page detection: same URL for 5+ consecutive steps
-  const recentUrls = window.slice(-5).map((h) => h.url);
-  if (recentUrls.length >= 5 && recentUrls.every((u) => u === recentUrls[0])) {
-    const recentActions = new Set(windowKeys.slice(-5));
-    if (recentActions.size <= 2) {
-      return {
-        level: 'warning',
-        message:
-          'You have been on the same page for 5+ steps with very few different actions. The content you need may be elsewhere — try navigating to a different page or section.',
-      };
-    }
   }
 
   return null;

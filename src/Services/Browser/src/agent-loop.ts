@@ -351,7 +351,6 @@ interface BuildUserMessageOptions {
   stepsRemaining?: number;
   maxSteps?: number;
   recoveryMessage?: string | null;
-  originalPrompt?: string;
   contextSummary?: string;
   progress?: AgentProgress | null;
   contextLevel?: ContextLevel;
@@ -375,17 +374,11 @@ function buildUserMessage(
     stepsRemaining,
     maxSteps: totalSteps,
     recoveryMessage,
-    originalPrompt,
     contextSummary,
     progress,
     contextLevel = 'full',
   } = opts ?? {};
-  let message = '';
-  if (originalPrompt !== undefined && originalPrompt !== task) {
-    message += `User prompt: ${originalPrompt}\nTask: ${task}\n`;
-  } else {
-    message += `Task: ${task}\n`;
-  }
+  let message = `Task: ${task}\n`;
 
   // In reduced/minimal mode, drop plan and playbook to shrink context
   if (contextLevel === 'full' && plan !== undefined && plan !== null && plan !== '') {
@@ -1059,9 +1052,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
     }
 
-    // --- Recovery diagnosis (check every 4 steps to avoid flooding the LLM context) ---
+    // --- Recovery diagnosis (only when the agent is struggling) ---
     let recoveryMessage: string | null = null;
-    if (step > 0 && step % 4 === 0) {
+    if (step > 0 && step % 4 === 0 && recentFailureCount > 0) {
       const recovery = diagnoseStuckAgent(history, url);
       if (recovery !== null) {
         recoveryMessage = formatRecovery(recovery);
@@ -1143,7 +1136,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       stepsRemaining,
       maxSteps,
       recoveryMessage,
-      originalPrompt: prompt,
       contextSummary,
       progress: lastProgress,
       contextLevel,
@@ -1182,25 +1174,27 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         'Agent step',
       );
 
-      const loopNudge = detectLoop(actions[0], history);
-      if (loopNudge !== null) {
-        logger.warn({ step, level: loopNudge.level }, 'Loop nudge');
-        let nudgeMessage = loopNudge.message;
+      // Skip loop detection when recovery already diagnosed the problem — avoid double-messaging
+      if (recoveryMessage === null) {
+        const loopNudge = detectLoop(actions[0], history);
+        if (loopNudge !== null) {
+          logger.warn({ step, level: loopNudge.level }, 'Loop nudge');
+          let nudgeMessage = loopNudge.message;
 
-        // #4 Smarter loop recovery: on urgent/warning loops, inject DOM text extract
-        // so the agent has raw page content to work with instead of spinning on stale refs.
-        // domText was already captured at the top of this step — no need to re-fetch.
-        if (loopNudge.level === 'urgent' || loopNudge.level === 'warning') {
-          if (domText.trim().length > 100) {
-            const domPreview = domText.slice(0, 800);
-            nudgeMessage += `\n\nDOM TEXT (extracted directly — use this to find the data you need):\n${domPreview}${domText.length > 800 ? '\n…(truncated)' : ''}`;
-            nudgeMessage +=
-              '\n\nIf you have partial results, use "done" now with what you have. A partial answer is better than getting stuck.';
+          // On urgent/warning loops, inject DOM text extract so the agent has raw page
+          // content to work with instead of spinning on stale refs.
+          if (loopNudge.level === 'urgent' || loopNudge.level === 'warning') {
+            if (domText.trim().length > 100) {
+              const domPreview = domText.slice(0, 800);
+              nudgeMessage += `\n\nDOM TEXT (extracted directly — use this to find the data you need):\n${domPreview}${domText.length > 800 ? '\n…(truncated)' : ''}`;
+              nudgeMessage +=
+                '\n\nIf you have partial results, use "done" now with what you have. A partial answer is better than getting stuck.';
+            }
           }
-        }
 
-        actions[0].error_feedback = nudgeMessage;
-        recentFailureCount++;
+          actions[0].error_feedback = nudgeMessage;
+          recentFailureCount++;
+        }
       }
 
       // Detect stale extraction: same memory content as previous step
@@ -1235,7 +1229,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           step,
           error: 'LLM response was not valid JSON',
           type: 'parse_error',
-          rawText: err.responseSnippet,
+          ...(process.env.DEBUG !== undefined && { rawText: err.responseSnippet }),
         });
 
         // Absolute last resort: too many parse failures across all sites
