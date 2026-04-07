@@ -72,6 +72,8 @@ git clone https://github.com/idan-rubin/browserclaw-agent.git
 cd browserclaw-agent
 cp src/Services/Browser/.env.example src/Services/Browser/.env.local
 # Set LLM_PROVIDER and at least one API key
+# Set BROWSER_INTERNAL_TOKEN to a random secret (used for frontend → browser service auth):
+echo "BROWSER_INTERNAL_TOKEN=$(openssl rand -hex 32)" >> .env
 docker compose up
 ```
 

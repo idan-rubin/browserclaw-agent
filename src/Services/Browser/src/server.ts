@@ -102,8 +102,10 @@ initSkillStore()
     });
   })
   .catch((err: unknown) => {
-    logger.fatal({ err }, 'Failed to initialize skill store');
-    process.exit(1);
+    logger.warn({ err }, 'Skill store unavailable — running without skill catalog');
+    server.listen(port, () => {
+      logger.info({ port }, 'browserclaw-browser listening');
+    });
   });
 
 async function shutdown(): Promise<void> {
