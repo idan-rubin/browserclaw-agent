@@ -35,22 +35,22 @@ const MODELS: Record<string, { value: string; label: string }[]> = {
 };
 
 const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
-const STORAGE_KEY = 'browserclaw_llm_config';
+const PREFS_KEY = 'browserclaw_llm_prefs';
+const KEY_KEY = 'browserclaw_llm_key';
 
 function loadConfig(): { provider: LlmConfig['provider']; model: string; apiKey: string } {
   if (typeof window === 'undefined')
     return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '' };
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '' };
-    const parsed = JSON.parse(raw) as Partial<LlmConfig & { api_key: string }>;
-    const provider = parsed.provider ?? DEFAULT_PROVIDER;
+    const raw = localStorage.getItem(PREFS_KEY);
+    const prefs = raw !== null ? (JSON.parse(raw) as Partial<{ provider: string; model: string }>) : {};
+    const provider = (prefs.provider as LlmConfig['provider'] | undefined) ?? DEFAULT_PROVIDER;
     const models = MODELS[provider] ?? [];
     const model =
-      parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
-        ? parsed.model
+      prefs.model !== undefined && prefs.model !== '' && models.some((m) => m.value === prefs.model)
+        ? prefs.model
         : (models[0]?.value ?? '');
-    const apiKey = parsed.api_key ?? '';
+    const apiKey = sessionStorage.getItem(KEY_KEY) ?? '';
     return { provider, model, apiKey };
   } catch {
     return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '' };
@@ -58,7 +58,8 @@ function loadConfig(): { provider: LlmConfig['provider']; model: string; apiKey:
 }
 
 function saveConfig(provider: LlmConfig['provider'], model: string, apiKey: string) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, model, api_key: apiKey }));
+  localStorage.setItem(PREFS_KEY, JSON.stringify({ provider, model }));
+  sessionStorage.setItem(KEY_KEY, apiKey);
 }
 
 export function useLlmConfig() {
@@ -206,8 +207,8 @@ export function LlmConfigPanel({
           </div>
 
           <p className="text-[11px] leading-relaxed text-muted-foreground/50">
-            Your key is saved in your browser&apos;s local storage and never sent to our servers except to make LLM
-            calls during your run.
+            Your key is kept in your browser session only and never sent to our servers except to make LLM calls during
+            your run. It&apos;s cleared when you close the tab.
           </p>
         </div>
       )}
