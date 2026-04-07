@@ -36,7 +36,6 @@ RUN npx tsc
 RUN npm prune --omit=dev
 
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker-entrypoint.sh /docker-entrypoint.sh
 
 RUN groupadd -r browser && useradd -r -g browser -G audio,video -m browser \
     && chown -R browser:browser /var/log/supervisor /var/run /app
@@ -46,4 +45,4 @@ USER browser
 EXPOSE 5040
 EXPOSE 6080
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

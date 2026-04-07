@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint';
 // eslint-disable-next-line @typescript-eslint/no-deprecated -- defineConfig() not available in ESLint 9.x
 const config = tseslint.config(
   {
-    ignores: ['.next/', 'node_modules/', 'postcss.config.mjs'],
+    ignores: ['.next/', 'node_modules/'],
   },
   ...nextConfig,
   ...tseslint.configs.strictTypeChecked,
