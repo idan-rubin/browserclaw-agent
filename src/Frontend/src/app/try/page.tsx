@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { SiteHeader } from '@/components/site-header';
 import { LlmConfigPanel, useLlmConfig } from '@/components/llm-config';
 import { isLocalBrowserMode } from '@/lib/env';
 
@@ -168,36 +167,7 @@ export default function TryPage() {
     <div className="relative min-h-screen flex flex-col overflow-x-hidden">
       <div className="pointer-events-none fixed inset-0 z-0 dot-grid" />
 
-      {/* Nav */}
-      <nav className="relative z-10 flex items-center justify-between px-4 py-4 sm:px-10 sm:py-5">
-        <Link href="/" className="font-[family-name:var(--font-heading)] text-lg sm:text-xl tracking-tight">
-          browserclaw<sup className="text-[0.5em] align-super">&#8482;</sup>
-        </Link>
-        <div className="flex items-center gap-2 sm:gap-8">
-          <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground">
-            <a
-              href="https://github.com/idan-rubin/browserclaw-agent"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-foreground"
-            >
-              GitHub
-            </a>
-            <a href="/docs" className="transition-colors hover:text-foreground">
-              Docs
-            </a>
-            <a
-              href="https://mrrubin.substack.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-foreground"
-            >
-              Blog
-            </a>
-          </div>
-          <ThemeToggle />
-        </div>
-      </nav>
+      <SiteHeader />
 
       {/* Prompt UI */}
       <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 sm:px-6">

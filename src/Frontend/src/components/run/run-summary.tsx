@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { SiteHeader } from '@/components/site-header';
 import { StatCard } from '@/components/stat-card';
 import { SkillCard } from './skill-card';
 import type { ConsoleEntry, SkillOutput, DomainSkillEntry, RunStatus } from './types';
@@ -46,12 +46,7 @@ export function RunSummary({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <nav className="flex items-center justify-between border-b border-border/50 px-4 py-4 sm:px-6">
-        <Link href="/" className="font-[family-name:var(--font-heading)] text-lg tracking-tight">
-          browserclaw
-        </Link>
-        <ThemeToggle />
-      </nav>
+      <SiteHeader border />
 
       <div className="flex flex-1 justify-center overflow-y-auto px-4 py-10 sm:py-16">
         <div className="w-full max-w-2xl space-y-8 animate-page-in">
