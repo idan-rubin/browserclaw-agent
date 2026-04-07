@@ -65,7 +65,6 @@ browserclaw-agent/
 │           │   ├── skill-generator.ts  # Generate skill from action history
 │           │   ├── routes.ts           # Express routes
 │           │   └── types.ts
-│           ├── docker-entrypoint.sh    # Starts Xvfb, x11vnc, websockify, Node
 │           ├── supervisord.conf
 │           ├── package.json
 │           └── Dockerfile
