@@ -12,7 +12,7 @@ await page.waitFor({ timeMs: 2000 });
 // Type a prompt
 console.log('Typing prompt...');
 const { refs } = await page.snapshot({ interactive: true });
-const textbox = Object.entries(refs).find(([, v]) => v?.role === 'textbox')?.[0];
+const textbox = Object.entries(refs).find(([, v]) => (v as Record<string, unknown>)?.role === 'textbox')?.[0];
 if (textbox) {
   await page.type(textbox, 'Extract the top 10 posts from Hacker News right now');
   await page.waitFor({ timeMs: 1000 });
@@ -21,12 +21,19 @@ if (textbox) {
 // Click Run
 console.log('Clicking Run...');
 const snap2 = await page.snapshot({ interactive: true });
-const runBtn = Object.entries(snap2.refs).find(([, v]) => v?.name === 'Run')?.[0];
+const runBtn = Object.entries(snap2.refs).find(
+  ([, v]) => (v as Record<string, unknown>)?.name === 'Run',
+)?.[0];
 if (runBtn) {
   await page.click(runBtn);
   console.log('Clicked Run');
 } else {
-  console.log('Run button not found in refs:', Object.entries(snap2.refs).map(([k, v]) => `${k}: ${v?.name}`).join(', '));
+  console.log(
+    'Run button not found in refs:',
+    Object.entries(snap2.refs)
+      .map(([k, v]) => `${k}: ${(v as Record<string, unknown>)?.name}`)
+      .join(', '),
+  );
 }
 
 await page.waitFor({ timeMs: 8000 });
