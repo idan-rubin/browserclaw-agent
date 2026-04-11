@@ -20,11 +20,10 @@ export default function LandingPage() {
             <br />
             for you.
           </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-base text-muted-foreground sm:mt-6 sm:text-xl">
-            AI-native browser automation. Built from the ground up for agents, by agents.{' '}
-            <br className="hidden sm:block" />
-            No screenshots, no selectors, no guessing.
-          </p>
+          <div className="mx-auto mt-4 max-w-2xl space-y-1 text-base text-muted-foreground sm:mt-6 sm:space-y-2 sm:text-xl">
+            <p>AI-native browser automation, built for agents, by agents.</p>
+            <p>Born from OpenClaw. Snapshots instead of vision, refs instead of selectors, no guessing.</p>
+          </div>
           <div className="mt-8 flex flex-row items-center justify-center gap-3 sm:mt-10 sm:gap-6">
             <Link
               href="/try"
@@ -157,7 +156,7 @@ export default function LandingPage() {
             BrowserClaw
           </a>
           <span className="text-muted-foreground/30">&middot;</span>
-          <span>Inspired by</span>
+          <span>Born from</span>
           <a
             href="https://openclaw.ai"
             target="_blank"
