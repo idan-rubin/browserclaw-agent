@@ -1,5 +1,6 @@
 import { BrowserClaw, type CrawlPage } from 'browserclaw';
 import type { ServerResponse } from 'node:http';
+import { isPortFree } from './port-probe.js';
 import { HttpError } from './types.js';
 import type {
   Session,
@@ -56,11 +57,22 @@ const NON_ACTION_TYPES = new Set(['done', 'wait', 'fail', 'ask_user']);
 const sessions = new Map<string, ManagedSession>();
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
-function nextAvailableCdpPort(): number {
-  const usedPorts = new Set([...sessions.values()].map((s) => s.cdpPort));
-  let port = BASE_CDP_PORT;
-  while (usedPorts.has(port)) port++;
-  return port;
+const CDP_PORT_SEARCH_LIMIT = 100;
+
+async function nextAvailableCdpPort(): Promise<number> {
+  for (let port = BASE_CDP_PORT; port < BASE_CDP_PORT + CDP_PORT_SEARCH_LIMIT; port++) {
+    if (await isPortFree(port)) {
+      // Purge any stale session entries claiming this port — their Chrome died silently.
+      for (const [id, s] of sessions) {
+        if (s.cdpPort === port) {
+          logger.warn({ sessionId: id, port }, 'Evicting stale session — CDP port is actually free');
+          sessions.delete(id);
+        }
+      }
+      return port;
+    }
+  }
+  throw new HttpError(503, 'No free CDP ports available');
 }
 
 function getManagedSession(sessionId: string): ManagedSession {
@@ -143,7 +155,7 @@ export async function createSession(
     }
   }
 
-  const cdpPort = nextAvailableCdpPort();
+  const cdpPort = await nextAvailableCdpPort();
 
   const browser = await BrowserClaw.launch({
     headless,
