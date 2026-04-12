@@ -22,6 +22,8 @@ build/
 
 # Claude Code
 .claude/worktrees/
+CLAUDE.md
+memory/
 
 # OS
 .DS_Store
