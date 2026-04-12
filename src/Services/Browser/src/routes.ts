@@ -7,8 +7,9 @@ import {
   closeSession,
   addSSEClient,
   sessionCount,
-  resolveUserResponse,
+  enqueueUserMessage,
 } from './session-manager.js';
+import { INTERJECTION_MAX_CHARS } from './config.js';
 import { BYOK_PROVIDERS } from './llm.js';
 import { HttpError } from './types.js';
 import type { CreateSessionRequest, LlmConfig } from './types.js';
@@ -209,11 +210,11 @@ const routes: Route[] = [
         return;
       }
       const text = body.text.trim();
-      if (text.length > 10_000) {
-        sendError(res, 400, 'text must be under 10000 characters');
+      if (text.length > INTERJECTION_MAX_CHARS) {
+        sendError(res, 400, `text must be under ${String(INTERJECTION_MAX_CHARS)} characters`);
         return;
       }
-      resolveUserResponse(params.id, text);
+      enqueueUserMessage(params.id, text);
       json(res, 200, { success: true });
     },
   },

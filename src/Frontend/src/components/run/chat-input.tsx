@@ -20,9 +20,10 @@ export function ChatInput({
   variant,
 }: ChatInputProps) {
   const isLocal = variant === 'local';
+  const isAnswering = pendingQuestion != null && pendingQuestion !== '';
   return (
     <div
-      className={`flex items-center gap-2 border-t border-border/30 ${isLocal ? 'px-4 py-2' : 'px-3 py-1.5'} ${pendingQuestion != null && pendingQuestion !== '' ? 'bg-amber-500/5 border-t-amber-500/30' : ''}`}
+      className={`flex items-center gap-2 border-t border-border/30 ${isLocal ? 'px-4 py-2' : 'px-3 py-1.5'} ${isAnswering ? 'bg-amber-500/5 border-t-amber-500/30' : ''}`}
     >
       <input
         ref={inputRef}
@@ -37,15 +38,13 @@ export function ChatInput({
             onSubmit();
           }
         }}
-        placeholder={
-          pendingQuestion != null && pendingQuestion !== '' ? 'Type your response...' : 'Waiting for agent...'
-        }
-        disabled={pendingQuestion == null || pendingQuestion === '' || isSending}
+        placeholder={isAnswering ? 'Type your response...' : 'Send a message to the agent...'}
+        disabled={isSending}
         className={`flex-1 bg-transparent px-2 ${isLocal ? 'py-1.5 text-sm' : 'py-1 text-xs'} focus:outline-none disabled:cursor-not-allowed`}
       />
       <button
         onClick={onSubmit}
-        disabled={pendingQuestion == null || pendingQuestion === '' || !value.trim() || isSending}
+        disabled={!value.trim() || isSending}
         className={
           isLocal
             ? 'rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50'

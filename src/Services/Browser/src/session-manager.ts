@@ -9,13 +9,20 @@ import type {
   CatalogSkill,
   DomainSkillEntry,
   LlmConfig,
+  UserMessage,
 } from './types.js';
 import { runAgentLoop } from './agent-loop.js';
 import { generateSkill, generateSkillTags, mergeSkills } from './skill-generator.js';
 import { judgeRun } from './judge.js';
 import { moderatePrompt } from './content-policy.js';
 import { logPrompt } from './prompt-log.js';
-import { requireEnvInt, USER_RESPONSE_TIMEOUT_MS } from './config.js';
+import {
+  requireEnvInt,
+  USER_RESPONSE_TIMEOUT_MS,
+  USER_INTERJECTION_ENABLED,
+  MAX_INTERJECTIONS_PER_RUN,
+  INTERJECTION_MIN_INTERVAL_MS,
+} from './config.js';
 import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig } from './llm.js';
 import { extractDomain, getSkillForDomain, getSkillsForDomains, saveSkill } from './skill-store.js';
 import { saveLesson, extractDomainLessons } from './lesson-store.js';
@@ -43,6 +50,14 @@ interface ManagedSession {
     resolve: (text: string) => void;
     reject: (err: Error) => void;
   } | null;
+  /** Queue of user messages delivered while the agent was NOT blocked on ask_user. Drained at the top of each agent step. */
+  userMessageQueue: UserMessage[];
+  /** Per-session random token used to wrap user-interjection content in the LLM prompt so it can't spoof system instructions. */
+  interjectionNonce: string;
+  /** Running count of accepted interjections on this session — enforces the hard cap. */
+  interjectionsReceived: number;
+  /** Timestamp of the last accepted interjection — enforces the min-interval rate limit. */
+  lastInterjectionAt: Date | null;
 }
 
 const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
@@ -194,6 +209,10 @@ export async function createSession(
     abortController: new AbortController(),
     llmConfig,
     pendingUserResponse: null,
+    userMessageQueue: [],
+    interjectionNonce: crypto.randomUUID().replace(/-/g, ''),
+    interjectionsReceived: 0,
+    lastInterjectionAt: null,
   };
 
   sessions.set(id, managed);
@@ -265,6 +284,9 @@ async function startAgentLoop(sessionId: string): Promise<void> {
       resetLLMCallCount();
       const waitForUser = () => waitForUserResponse(sessionId);
       const pageHolder = { page: managed.page };
+      const userChatHooks = USER_INTERJECTION_ENABLED
+        ? { drainMessages: () => drainUserMessages(sessionId), nonce: managed.interjectionNonce }
+        : undefined;
       const result = await runAgentLoop(
         managed.prompt,
         pageHolder,
@@ -273,6 +295,8 @@ async function startAgentLoop(sessionId: string): Promise<void> {
         waitForUser,
         managed.browser,
         domainSkill,
+        undefined,
+        userChatHooks,
       );
       const llmCalls = getLLMCallCount();
 
@@ -605,12 +629,76 @@ export function waitForUserResponse(sessionId: string): Promise<string> {
   });
 }
 
-export function resolveUserResponse(sessionId: string, text: string): void {
+/**
+ * Accept a user message. When the flag is off, preserves the legacy behavior —
+ * only accepts replies while the agent is blocked on ask_user. When on, always
+ * enqueues (subject to rate limit + hard cap); if the agent is blocked on
+ * ask_user, additionally resolves the waiting promise so existing callers keep
+ * working unchanged.
+ */
+export function enqueueUserMessage(sessionId: string, text: string): void {
   const managed = getManagedSession(sessionId);
-  if (managed.pendingUserResponse === null) {
-    throw new HttpError(409, 'Session is not waiting for user input');
+
+  if (!USER_INTERJECTION_ENABLED) {
+    if (managed.pendingUserResponse === null) {
+      throw new HttpError(409, 'Session is not waiting for user input');
+    }
+    managed.pendingUserResponse.resolve(text);
+    return;
   }
-  managed.pendingUserResponse.resolve(text);
+
+  // Direct reply to an ask_user: unblock the agent loop via the existing
+  // `user_response` history path. Skip the interjection queue — otherwise the
+  // same text is processed twice (once as the reply that unblocks the step,
+  // again as a "USER INTERJECTION" injected into the next step's prompt).
+  if (managed.pendingUserResponse !== null) {
+    managed.lastActivityAt = new Date();
+    managed.pendingUserResponse.resolve(text);
+    return;
+  }
+
+  if (managed.interjectionsReceived >= MAX_INTERJECTIONS_PER_RUN) {
+    throw new HttpError(429, `Too many messages (cap: ${String(MAX_INTERJECTIONS_PER_RUN)} per run)`);
+  }
+  if (managed.lastInterjectionAt !== null) {
+    const elapsed = Date.now() - managed.lastInterjectionAt.getTime();
+    if (elapsed < INTERJECTION_MIN_INTERVAL_MS) {
+      throw new HttpError(
+        429,
+        `Rate limit — wait ${String(Math.ceil((INTERJECTION_MIN_INTERVAL_MS - elapsed) / 1000))}s before sending again`,
+      );
+    }
+  }
+
+  const now = new Date();
+  managed.userMessageQueue.push({ text, receivedAt: now });
+  managed.interjectionsReceived += 1;
+  managed.lastInterjectionAt = now;
+  managed.lastActivityAt = now;
+}
+
+/**
+ * Drain and return all pending user messages. Called by the agent loop at the
+ * top of each step.
+ */
+export function drainUserMessages(sessionId: string): UserMessage[] {
+  const managed = getManagedSession(sessionId);
+  const drained = managed.userMessageQueue;
+  managed.userMessageQueue = [];
+  return drained;
+}
+
+export function getInterjectionNonce(sessionId: string): string {
+  return getManagedSession(sessionId).interjectionNonce;
+}
+
+/**
+ * Legacy export — preserved so existing route handlers that imported it keep
+ * compiling while we migrate them. Prefer `enqueueUserMessage`.
+ * @deprecated use enqueueUserMessage
+ */
+export function resolveUserResponse(sessionId: string, text: string): void {
+  enqueueUserMessage(sessionId, text);
 }
 
 export async function closeSession(sessionId: string): Promise<void> {
