@@ -11,29 +11,24 @@ const RUN_BUTTON_CLASS =
 
 const EXAMPLES = [
   {
-    label: 'Apartments in Chelsea',
-    prompt:
-      'Search for pet-friendly apartments in Chelsea under $4,200 with laundry and elevator. List the top 5 buildings with price, address, and available units',
+    label: 'Shake Shack menu',
+    prompt: 'Show me the menu at Shake Shack',
   },
   {
-    label: 'Cheap flights to Barcelona',
-    prompt:
-      'Find the cheapest round-trip flight from JFK to Barcelona for June 15-22 2026. Compare at least 3 airlines and show price, duration, and number of stops for each',
+    label: 'NYC weather tomorrow',
+    prompt: 'What is the weather forecast for New York tomorrow?',
   },
   {
-    label: 'Best 4K monitor under $400',
-    prompt:
-      'Find a 4K monitor under $400 with USB-C, at least 27 inches, and 4+ star rating. Compare the top 3 options by price, screen size, refresh rate, and number of reviews',
+    label: '4K monitor on Best Buy',
+    prompt: 'Find a 4K monitor on Best Buy',
   },
   {
     label: "Renew my NY driver's license",
-    prompt:
-      "Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
+    prompt: "How do I renew my driver's license in New York?",
   },
   {
-    label: 'Compare Medicare plans',
-    prompt:
-      'Compare Medicare Advantage plans available in zip code 10001. List the top 3 plans by monthly premium, showing plan name, insurer, monthly cost, and whether they cover dental',
+    label: 'Met Museum hours',
+    prompt: 'What time does the Metropolitan Museum of Art open?',
   },
 ];
 
