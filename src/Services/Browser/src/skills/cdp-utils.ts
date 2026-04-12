@@ -10,7 +10,7 @@ export function getCdpBaseUrl(page: CrawlPage): string {
 }
 
 export function getTargetId(page: CrawlPage): string {
-  return (page as unknown as { targetId: string }).targetId;
+  return page.id;
 }
 
 export async function activateCdpTarget(cdpBaseUrl: string, targetId: string): Promise<void> {
