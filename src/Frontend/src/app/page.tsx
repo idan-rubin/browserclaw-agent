@@ -150,8 +150,8 @@ export default function LandingPage() {
             Layered, <span className="italic text-primary">not bundled</span>
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground sm:mt-4 sm:text-base">
-            browser-use welds the driver to the vehicle. We keep them separate — drive our vehicle with your own agent,
-            or put a different model behind our wheel.
+            browser-use welds the 😎 driver to the 🏎️ vehicle. We keep them separate — drive our 🏎️ with your own 😎,
+            or put different ⚡ behind our wheel.
           </p>
         </div>
 

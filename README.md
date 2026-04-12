@@ -15,7 +15,7 @@ Three separate layers, not one monolith:
 - 😎 **The agent** — the driver. Reasoning, obstacle recovery, learned skills. _That's this project._
 - 🏎️ **[BrowserClaw](https://github.com/idan-rubin/browserclaw)** — the vehicle. Snapshots, element refs, browser control. Standalone npm library.
 
-browser-use welds the driver to the vehicle. We keep them as separate, swappable layers — drive our vehicle with your own agent, put a different model behind our wheel, or run the whole stack as-is.
+browser-use welds the 😎 driver to the 🏎️ vehicle. We keep them as separate, swappable layers — drive our 🏎️ with your own 😎, put different ⚡ behind our wheel, or run the whole stack as-is.
 
 ## What the agent does
 
