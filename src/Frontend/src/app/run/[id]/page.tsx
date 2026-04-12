@@ -241,6 +241,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   async function handleRespond() {
     const text = chatInput.trim();
     if (!text || isSending) return;
+    const wasAnsweringQuestion = pendingQuestion != null && pendingQuestion !== '';
     setIsSending(true);
     setChatInput('');
     try {
@@ -250,13 +251,15 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         body: JSON.stringify({ text }),
       });
       if (!res.ok) {
-        toast.error('Failed to send response');
+        const data = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+        const msg = data.message ?? data.error ?? 'Failed to send message';
+        toast.error(msg);
         setChatInput(text);
         return;
       }
-      setPendingQuestion(null);
+      if (wasAnsweringQuestion) setPendingQuestion(null);
     } catch {
-      toast.error('Failed to send response');
+      toast.error('Failed to send message');
       setChatInput(text);
     } finally {
       setIsSending(false);

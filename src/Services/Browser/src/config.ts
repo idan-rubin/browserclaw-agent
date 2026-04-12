@@ -34,6 +34,13 @@ export const USER_RESPONSE_TIMEOUT_MS = requireEnvInt('USER_RESPONSE_TIMEOUT_MS'
 export const MAX_STEPS = requireEnvInt('MAX_STEPS');
 export const LLM_MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS ?? '1024', 10);
 
+// User-interjection limits (always-on user chat feature).
+export const USER_INTERJECTION_ENABLED = process.env.ENABLE_USER_INTERJECTION === 'true';
+export const MAX_INTERJECTIONS_PER_RUN = 20;
+export const INTERJECTION_MIN_INTERVAL_MS = 2_000;
+export const INTERJECTION_MAX_CHARS = 10_000;
+export const INTERJECTION_INJECTION_MAX_CHARS = 2_000;
+
 export interface MinioConfig {
   endpoint: string;
   accessKey: string;
