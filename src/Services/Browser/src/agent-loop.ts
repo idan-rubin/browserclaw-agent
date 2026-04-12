@@ -312,6 +312,7 @@ const MAX_ACTIONS_PER_STEP = 4;
 const REPLAN_BASE_INTERVAL = 8;
 const TERMINATION_CHECK_MIN_STEP = 6;
 const TERMINATION_CHECK_INTERVAL = 4;
+const JUDGE_FATIGUE_LIMIT = 3;
 const REPLAN_FAILURE_THRESHOLD = 3;
 const CONTEXT_COMPRESS_INTERVAL = 20;
 
@@ -937,6 +938,7 @@ export async function runAgentLoop(
   let lastRecoveryDomain: string | null = null;
   let pendingSiteSwitch: string | null = null;
   let duplicateMemoryCount = 0;
+  let consecutiveNotReadyJudgments = 0;
 
   const forceComplete = async (reason: string, precomputedAnswer?: string): Promise<AgentLoopResult> => {
     logger.warn({ step, reason }, 'Force-completing run');
@@ -1221,8 +1223,18 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           logger.info({ step }, 'Judge: answer ready — force-completing');
           return await forceComplete('Judge ruled answer ready', judgment.answer);
         }
+        consecutiveNotReadyJudgments++;
+        if (consecutiveNotReadyJudgments >= JUDGE_FATIGUE_LIMIT) {
+          logger.warn(
+            { step, nudges: consecutiveNotReadyJudgments, stillMissing: judgment.missing },
+            'Judge fatigue — force-completing with partial answer',
+          );
+          return await forceComplete(
+            `Fatigue: ${String(consecutiveNotReadyJudgments)} consecutive not-ready judgments; still missing "${judgment.missing}"`,
+          );
+        }
         logger.info({ step, missing: judgment.missing }, 'Judge: not ready — nudging agent');
-        terminationNudge = `PROGRESS CHECK: you have been gathering data but the question is still not answerable. Still missing: ${judgment.missing}. Focus your next action on that specifically — do not repeat extractions you have already tried.`;
+        terminationNudge = `PROGRESS CHECK: you have been gathering data but the question is still not answerable. Still missing: ${judgment.missing}. Focus your next action on that specifically — do not repeat extractions you have already tried. This is nudge ${String(consecutiveNotReadyJudgments)} of ${String(JUDGE_FATIGUE_LIMIT)}; on the next unsuccessful check the run will force-complete with a partial answer.`;
       }
     }
 
