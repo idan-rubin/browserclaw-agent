@@ -13,17 +13,17 @@ const EXAMPLES = [
   {
     label: "Renew my NY driver's license",
     prompt:
-      "Use dmv site. Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
+      "Use the New York DMV site to find the documents needed to renew a driver's license. List the ID requirements, fees, and whether it can be done online or requires an in-person visit.",
   },
   {
     label: 'Apartments in Chelsea',
     prompt:
-      'Search for pet-friendly apartments in Chelsea under $4,200. List the top 5 buildings with price, address, and available units.',
+      'Find 5 current dog-friendly apartments in Chelsea under $4,200/month. For each listing, report the price, address, number of bedrooms, and listing URL.',
   },
   {
     label: 'NYC dinner tonight',
     prompt:
-      'Find a table for 4 tonight at 8:30pm at a top NYC Italian restaurant — whichever has availability first among Carbone, Rezdora, or Raoul\u2019s. Report the restaurant, time, and booking link.',
+      'Find a table for 4 tonight at 8:30pm — whichever of Carbone, Rezdora, or Raoul\u2019s has availability first. Report the restaurant, time, and booking link.',
   },
   {
     label: 'Window seat JFK→LAX',
@@ -33,12 +33,12 @@ const EXAMPLES = [
   {
     label: 'Broadway seats Saturday',
     prompt:
-      'This Saturday evening on Broadway: find the cheapest center-orchestra seat under $200 for any currently running show. Report the show, theater, row, seat, and price.',
+      'This Saturday evening on Broadway: find a center-orchestra seat under $200 for any currently running show. Report the show, theater, row, seat, and price.',
   },
   {
     label: 'Senior eng jobs in NYC',
     prompt:
-      'Find 5 senior software engineer roles in New York City paying over $200k, posted in the last 14 days. Report company, role title, salary range, and posted date.',
+      'Find 5 senior software engineer roles in NYC posted in the last 14 days with a disclosed base salary of $200k or more. Report company, title, salary, and posted date.',
   },
   {
     label: 'iPhone 17 Pro Max stock',
