@@ -18,7 +18,7 @@ const EXAMPLES = [
   {
     label: 'Apartments in Chelsea',
     prompt:
-      'Search for pet-friendly apartments in Chelsea under $4,200. List the top 5 buildings with price, address, and available units.',
+      'Find 5 current dog-friendly apartments in Chelsea under $4,200/month. For each listing, report the price, address, number of bedrooms, and listing URL.',
   },
   {
     label: 'NYC dinner tonight',
