@@ -653,4 +653,25 @@ describe('termination judgment integration', () => {
     const lastActionCall = mockedLlmJson.mock.calls[mockedLlmJson.mock.calls.length - 1][0];
     expect(lastActionCall.message).toContain('the specific fee amount');
   });
+
+  it('force-completes after 3 consecutive not-ready judgments (fatigue)', async () => {
+    mockedLlmJson.mockResolvedValueOnce({ plan: 'Gather data' });
+    for (let i = 0; i < 17; i++) {
+      mockedLlmJson.mockResolvedValueOnce({
+        action: 'extract_full_page',
+        reasoning: `Extract step ${String(i)}`,
+        memory: `Step ${String(i)} memory`,
+      });
+    }
+    mockedLlmJson.mockResolvedValue({ status: 'needs_more', missing: 'exact fees' });
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Research', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    expect(result.steps[result.steps.length - 1].action.action).toBe('done');
+  });
 });
