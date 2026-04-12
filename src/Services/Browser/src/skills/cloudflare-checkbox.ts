@@ -1,5 +1,5 @@
 import type { CrawlPage } from 'browserclaw';
-import { getCdpBaseUrl, openCdpConnection, cdpClick } from './cdp-utils.js';
+import { getCdpBaseUrl } from './cdp-utils.js';
 import { isStillBlocked } from './press-and-hold.js';
 import { logger } from '../logger.js';
 
@@ -97,14 +97,9 @@ export async function clickCloudflareCheckbox(page: CrawlPage): Promise<boolean>
       return false;
     }
 
-    logger.info({ x: coords.x, y: coords.y }, 'cloudflare: clicking via CDP');
-    const cdp = await openCdpConnection(page);
-    try {
-      await cdpClick(cdp, coords.x, coords.y, { delay: 200 });
-      logger.info('cloudflare: clicked');
-    } finally {
-      cdp.close();
-    }
+    logger.info({ x: coords.x, y: coords.y }, 'cloudflare: clicking');
+    await page.mouseClick(coords.x, coords.y, { delayMs: 200 });
+    logger.info('cloudflare: clicked');
 
     const start = Date.now();
     while (Date.now() - start < MAX_WAIT_MS) {
