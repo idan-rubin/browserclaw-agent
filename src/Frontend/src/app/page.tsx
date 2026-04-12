@@ -16,9 +16,8 @@ export default function LandingPage() {
       <section className="relative z-10 flex flex-col items-center px-4 pt-2 pb-8 sm:pt-3 sm:pb-12 sm:px-6">
         <div className="w-full max-w-4xl animate-page-in text-center">
           <h1 className="text-[2.5rem] font-bold leading-[1.1] tracking-tight sm:text-7xl lg:text-8xl">
-            Let the agent <span className="italic text-primary">click&nbsp;through</span>
-            <br />
-            for you.
+            <div>Let the agent <span className="italic text-primary">click&nbsp;through</span></div>
+            <div>for you.</div>
           </h1>
           <div className="mx-auto mt-4 max-w-2xl space-y-2 text-[0.938rem] leading-relaxed text-muted-foreground sm:mt-6 sm:space-y-2 sm:text-xl sm:leading-normal">
             <div>

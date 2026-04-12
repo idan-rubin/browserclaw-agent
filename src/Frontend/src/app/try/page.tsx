@@ -173,16 +173,14 @@ export default function TryPage() {
       <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 sm:px-6">
         <div className="w-full max-w-3xl animate-page-in">
           <h1 className="text-center text-[2.5rem] font-bold leading-[1.1] tracking-tight sm:text-7xl lg:text-8xl">
-            Let the agent <span className="italic text-primary">click&nbsp;through</span>
-            <br />
-            for you.
+            <div>Let the agent <span className="italic text-primary">click&nbsp;through</span></div>
+            <div>for you.</div>
           </h1>
 
-          <p className="mx-auto mt-4 max-w-2xl text-center text-base text-muted-foreground sm:mt-6 sm:text-xl">
-            Compare apartments, find appointments, navigate bureaucracy.
-            <br className="hidden sm:block" />
-            Describe the task. Watch a real browser do it live.
-          </p>
+          <div className="mx-auto mt-4 max-w-2xl text-center text-base text-muted-foreground sm:mt-6 sm:text-xl">
+            <div className="inline sm:block">Compare apartments, find appointments, navigate bureaucracy.</div>{' '}
+            <div className="inline sm:block">Describe the task. Watch a real browser do it live.</div>
+          </div>
 
           <div className="mt-8 space-y-3 sm:mt-12">
             <div className="group rounded-2xl border border-border bg-card/60 p-2 backdrop-blur-sm transition-colors focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20">
