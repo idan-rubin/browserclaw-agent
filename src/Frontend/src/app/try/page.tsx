@@ -173,7 +173,9 @@ export default function TryPage() {
       <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 sm:px-6">
         <div className="w-full max-w-3xl animate-page-in">
           <h1 className="text-center text-[2.5rem] font-bold leading-[1.1] tracking-tight sm:text-7xl lg:text-8xl">
-            <div>Let the agent <span className="italic text-primary">click&nbsp;through</span></div>
+            <div>
+              Let the agent <span className="italic text-primary">click&nbsp;through</span>
+            </div>
             <div>for you.</div>
           </h1>
 
