@@ -16,6 +16,11 @@ const EXAMPLES = [
       "Use dmv site. Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
   },
   {
+    label: 'Apartments in Chelsea',
+    prompt:
+      'Search for pet-friendly apartments in Chelsea under $4,200 with laundry and elevator. List the top 5 buildings with price, address, and available units.',
+  },
+  {
     label: 'NYC dinner tonight',
     prompt:
       'Find a table for 4 tonight at 8:30pm at a top NYC Italian restaurant — whichever has availability first among Carbone, Rezdora, or Raoul\u2019s. Report the restaurant, time, and booking link.',
@@ -29,6 +34,11 @@ const EXAMPLES = [
     label: 'Broadway seats Saturday',
     prompt:
       'This Saturday evening on Broadway: find the cheapest center-orchestra seat under $200 for any currently running show. Report the show, theater, row, seat, and price.',
+  },
+  {
+    label: 'Senior eng jobs in NYC',
+    prompt:
+      'Find 5 senior software engineer roles in New York City paying over $200k, posted in the last 14 days. Report company, role title, salary range, and posted date.',
   },
   {
     label: 'iPhone 17 Pro Max stock',
