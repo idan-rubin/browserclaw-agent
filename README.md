@@ -7,7 +7,15 @@
 
 The AI agent for [browserclaw](https://github.com/idan-rubin/browserclaw).
 
-browserclaw separates the **browser engine** from the **intelligence**. The [library](https://github.com/idan-rubin/browserclaw) handles snapshots, element refs, and browser control. This project handles reasoning, obstacle recovery, and learned skills. Use them together for a ready-made agent, or use the library on its own with any LLM you want.
+## Layered, not bundled
+
+Three separate layers, not one monolith:
+
+- ⚡ **LLM** — the electricity. Your choice: Claude, GPT, Gemini, local. No lock-in.
+- 😎 **The agent** — the driver. Reasoning, obstacle recovery, learned skills. _That's this project._
+- 🏎️ **[BrowserClaw](https://github.com/idan-rubin/browserclaw)** — the vehicle. Snapshots, element refs, browser control. Standalone npm library.
+
+browser-use welds the driver to the vehicle. We keep them as separate, swappable layers — drive our vehicle with your own agent, put a different model behind our wheel, or run the whole stack as-is.
 
 ## What the agent does
 
@@ -181,7 +189,7 @@ Swap Anthropic for OpenAI, Groq, Gemini, or a local model. See the full [browser
 
 - **Built for TypeScript** — native to the JS ecosystem. First-class Node.js support, not a Python port.
 - **Accessibility tree, not DOM** — snapshots use the browser's accessibility tree — the same structure screen readers use. Semantic roles, names, and states instead of raw tags and attributes. Cleaner, smaller, and more meaningful to an LLM.
-- **Engine and intelligence, separated** — the [library](https://github.com/idan-rubin/browserclaw) is a standalone npm package with zero opinions about your AI. Use it with Claude, GPT, Gemini, Llama, or anything that reads text. This agent is one implementation — not the only way.
+- **Layered, not bundled** — browser-use ships one monolithic library. We split the stack so every layer is swappable: the ⚡ LLM (your choice), the 😎 agent (this project), and the 🏎️ [BrowserClaw](https://github.com/idan-rubin/browserclaw) vehicle (standalone npm package, zero opinions about your AI). Drop the vehicle into your own agent, or run the whole stack as-is.
 - **Gets smarter with use** — the skill catalog learns from every successful run. Other browser agents start from scratch each time. browserclaw-agent builds a playbook per domain and improves it on every run.
 - **Handles the real world** — Cloudflare Turnstile, press-and-hold anti-bot overlays, cookie banners, tab management — handled automatically via CDP. These are the things that make browser agents fail in production.
 
@@ -191,5 +199,5 @@ Swap Anthropic for OpenAI, Groq, Gemini, or a local model. See the full [browser
 
 ## Built with
 
-- [BrowserClaw](https://github.com/idan-rubin/browserclaw) — the engine
+- [BrowserClaw](https://github.com/idan-rubin/browserclaw) — 🏎️ the vehicle
 - [OpenClaw](https://github.com/openclaw/openclaw) — the community behind it

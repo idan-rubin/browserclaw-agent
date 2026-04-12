@@ -143,6 +143,40 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Layered, not bundled */}
+      <section className="relative z-10 mx-auto w-full max-w-5xl px-4 py-12 sm:px-10 sm:py-20">
+        <div className="mb-10 text-center sm:mb-14">
+          <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
+            Layered, <span className="italic text-primary">not bundled</span>
+          </h2>
+          <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground sm:mt-4 sm:text-base">
+            browser-use welds the driver to the vehicle. We keep them separate — drive our vehicle with your own agent,
+            or put a different model behind our wheel.
+          </p>
+        </div>
+
+        <div className="mx-auto flex max-w-2xl flex-col items-stretch">
+          <LayerRow
+            emoji="⚡"
+            name="LLM"
+            description="The electricity. Your choice — Claude, GPT, Gemini, local. No lock-in."
+          />
+          <LayerConnector />
+          <LayerRow
+            emoji="😎"
+            name="Agent"
+            description="The driver. Reads snapshots, picks the next move, recovers from errors, ships a reusable skill. That's this app."
+          />
+          <LayerConnector />
+          <LayerRow
+            emoji="🏎️"
+            name="BrowserClaw"
+            description="The vehicle. Text snapshots + numbered refs — deterministic, fast, no vision needed. Standalone npm library."
+            link={{ label: 'github →', href: 'https://github.com/idan-rubin/browserclaw' }}
+          />
+        </div>
+      </section>
+
       {/* Built With / Inspired By */}
       <section className="relative z-10 py-8 sm:py-12">
         <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs sm:text-sm text-muted-foreground/50 sm:gap-x-8">
@@ -375,6 +409,48 @@ function TestimonialCard({ quote, author, icon, emoji, reactions }: Testimonial)
       </div>
     </div>
   );
+}
+
+function LayerRow({
+  emoji,
+  name,
+  description,
+  link,
+}: {
+  emoji: string;
+  name: string;
+  description: string;
+  link?: { label: string; href: string };
+}) {
+  return (
+    <div className="flex items-center gap-4 rounded-2xl border border-border/50 bg-card/40 p-4 backdrop-blur-sm transition-colors hover:border-primary/20 hover:bg-card/60 sm:gap-6 sm:p-6">
+      <div className="text-3xl sm:text-4xl" aria-hidden>
+        {emoji}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-3">
+          <h3 className="font-[family-name:var(--font-heading)] text-base font-semibold tracking-tight sm:text-lg">
+            {name}
+          </h3>
+          {link && (
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary/80 transition-colors hover:text-primary"
+            >
+              {link.label}
+            </a>
+          )}
+        </div>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function LayerConnector() {
+  return <div className="mx-auto my-1 h-3 w-px bg-border/60" aria-hidden />;
 }
 
 function FooterColumn({ title, links }: { title: string; links: { label: string; href: string }[] }) {
