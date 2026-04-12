@@ -6,6 +6,11 @@ export interface Session {
   status: SessionStatus;
 }
 
+export interface UserMessage {
+  text: string;
+  receivedAt: Date;
+}
+
 export type SessionStatus = 'pending' | 'running' | 'waiting_for_user' | 'completed' | 'failed';
 
 export type LlmProvider = 'anthropic' | 'openai' | 'openai-oauth' | 'gemini';
