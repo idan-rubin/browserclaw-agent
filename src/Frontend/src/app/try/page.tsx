@@ -11,30 +11,34 @@ const RUN_BUTTON_CLASS =
 
 const EXAMPLES = [
   {
-    label: 'Shake Shack menu',
-    prompt: 'Show me the menu at Shake Shack',
-  },
-  {
-    label: 'NYC weather tomorrow',
-    prompt: 'What is the weather forecast for New York tomorrow?',
-  },
-  {
-    label: '4K monitor on Best Buy',
-    prompt: 'Find a 4K monitor on Best Buy',
-  },
-  {
-    label: 'Met Museum hours',
-    prompt: 'What time does the Metropolitan Museum of Art open?',
-  },
-  {
-    label: 'Apartments in Chelsea',
-    prompt:
-      'Search for pet-friendly apartments in Chelsea under $4,200 with laundry and elevator. List the top 5 buildings with price, address, and available units',
-  },
-  {
     label: "Renew my NY driver's license",
     prompt:
       "Use dmv site. Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
+  },
+  {
+    label: 'NYC dinner tonight',
+    prompt:
+      'Find a table for 4 tonight at 8:30pm at a top NYC Italian restaurant — whichever has availability first among Carbone, Rezdora, or Raoul\u2019s. Report the restaurant, time, and booking link.',
+  },
+  {
+    label: 'Window seat JFK→LAX',
+    prompt:
+      'Find the cheapest direct flight JFK to LAX next Tuesday with a window seat that is not in row 1 and not in an exit row. Report airline, flight number, time, price, and the exact seat.',
+  },
+  {
+    label: 'Broadway seats Saturday',
+    prompt:
+      'This Saturday evening on Broadway: find the cheapest center-orchestra seat under $200 for any currently running show. Report the show, theater, row, seat, and price.',
+  },
+  {
+    label: 'iPhone 17 Pro Max stock',
+    prompt:
+      'Find a Manhattan Apple Store with the iPhone 17 Pro Max 256GB in Natural Titanium available for pickup today. Report the store, nearest pickup time, and reservation link.',
+  },
+  {
+    label: 'MTA subway status',
+    prompt:
+      'For every NYC subway line, report the current service status (good service / delays / alerts) with a one-line cause for any line that is not in good service.',
   },
 ];
 
