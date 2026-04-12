@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { BrowserClawWordmark } from '@/components/browserclaw-wordmark';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 interface NavLink {
@@ -31,7 +32,7 @@ export function SiteHeader({ activePath, border = false }: SiteHeaderProps) {
         <Image src="/logo.png" alt="" width={224} height={280} className="h-5 w-auto sm:h-6 dark:hidden" />
         <Image src="/logo-dark.png" alt="" width={224} height={280} className="hidden h-5 w-auto sm:h-6 dark:block" />
         <span>
-          browserclaw<sup className="text-[0.5em] align-super">&#8482;</sup>
+          <BrowserClawWordmark />
         </span>
       </Link>
       <div className="flex items-center gap-2 sm:gap-8">

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, use } from 'react';
 import Link from 'next/link';
+import { BrowserClawWordmark } from '@/components/browserclaw-wordmark';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -286,7 +287,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       <nav className="flex shrink-0 items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-md sm:px-6">
         <div className="flex items-center gap-3">
           <Link href="/" className="font-[family-name:var(--font-heading)] text-lg tracking-tight">
-            browserclaw
+            <BrowserClawWordmark />
           </Link>
           {plan && (
             <div className="hidden sm:flex items-center gap-2">
