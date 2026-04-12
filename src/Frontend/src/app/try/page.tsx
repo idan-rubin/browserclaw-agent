@@ -34,7 +34,7 @@ const EXAMPLES = [
   {
     label: "Renew my NY driver's license",
     prompt:
-      "Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
+      "Use dmv site. Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
   },
 ];
 
