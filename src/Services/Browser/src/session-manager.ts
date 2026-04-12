@@ -647,6 +647,16 @@ export function enqueueUserMessage(sessionId: string, text: string): void {
     return;
   }
 
+  // Direct reply to an ask_user: unblock the agent loop via the existing
+  // `user_response` history path. Skip the interjection queue — otherwise the
+  // same text is processed twice (once as the reply that unblocks the step,
+  // again as a "USER INTERJECTION" injected into the next step's prompt).
+  if (managed.pendingUserResponse !== null) {
+    managed.lastActivityAt = new Date();
+    managed.pendingUserResponse.resolve(text);
+    return;
+  }
+
   if (managed.interjectionsReceived >= MAX_INTERJECTIONS_PER_RUN) {
     throw new HttpError(429, `Too many messages (cap: ${String(MAX_INTERJECTIONS_PER_RUN)} per run)`);
   }
@@ -665,11 +675,6 @@ export function enqueueUserMessage(sessionId: string, text: string): void {
   managed.interjectionsReceived += 1;
   managed.lastInterjectionAt = now;
   managed.lastActivityAt = now;
-
-  if (managed.pendingUserResponse !== null) {
-    // Agent was blocked on ask_user — preserve the existing unblock semantic.
-    managed.pendingUserResponse.resolve(text);
-  }
 }
 
 /**
