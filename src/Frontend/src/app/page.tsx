@@ -143,6 +143,112 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Layered, not bundled */}
+      <section className="relative z-10 mx-auto w-full max-w-5xl px-4 py-12 sm:px-10 sm:py-20">
+        <div className="mb-10 text-center sm:mb-14">
+          <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
+            Layered, <span className="italic text-primary">not bundled</span>
+          </h2>
+          <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground sm:mt-4 sm:text-base">
+            browser-use welds these into one package. We keep them separate — drop the library into your own agent, pair
+            this agent with any LLM, or run the whole stack as-is.
+          </p>
+        </div>
+
+        <div className="mx-auto flex max-w-2xl flex-col items-stretch">
+          <LayerRow
+            emoji="⚡"
+            name="LLM"
+            description="The electricity. Your choice — Claude, GPT, Gemini, local. No lock-in."
+          />
+          <LayerConnector />
+          <LayerRow
+            emoji="😎"
+            name="Agent"
+            description="The driver. Reads snapshots, picks the next move, recovers from errors, ships a reusable skill. That's this app."
+          />
+          <LayerConnector />
+          <LayerRow
+            emoji="🏎️"
+            name="BrowserClaw"
+            description="The vehicle. Text snapshots + numbered refs — deterministic, fast, no vision needed. Standalone npm library."
+            link={{ label: 'github →', href: 'https://github.com/idan-rubin/browserclaw' }}
+          />
+        </div>
+      </section>
+
+      {/* vs browser-use */}
+      <section className="relative z-10 mx-auto w-full max-w-4xl px-4 pb-12 sm:px-10 sm:pb-20">
+        <div className="mb-8 text-center sm:mb-12">
+          <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
+            vs <span className="italic text-primary">browser-use</span>
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm text-muted-foreground sm:text-base">
+            Different lineage, different design.{' '}
+            <a
+              href="https://openclaw.ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
+            >
+              OpenClaw
+            </a>{' '}
+            took the{' '}
+            <a
+              href="https://github.com/microsoft/playwright-mcp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
+            >
+              Playwright MCP
+            </a>{' '}
+            snapshot-and-ref approach, refined it locally, and shipped it as a standalone library. browser-use rolled
+            its own Python bundle.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-border/50 bg-card/40 backdrop-blur-sm">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/50 bg-card/40">
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground sm:px-6"></th>
+                <th className="px-4 py-3 text-center font-medium text-primary sm:px-6">browserclaw</th>
+                <th className="px-4 py-3 text-center font-medium text-muted-foreground sm:px-6">browser-use</th>
+              </tr>
+            </thead>
+            <tbody className="text-muted-foreground">
+              <BuRow label="Browser engine as a standalone library" us="yes" them="no" />
+              <BuRow label="Use the engine with a different agent" us="yes" them="partial" />
+              <BuRow label="Auto-learned skill catalog per domain" us="yes" them="no" />
+              <BuRow label="Built-in anti-bot solvers in OSS (Turnstile, press-hold)" us="yes" them="partial" />
+              <BuRow label="TypeScript / Node native" us="yes" them="no" />
+            </tbody>
+          </table>
+        </div>
+
+        <p className="mx-auto mt-4 max-w-2xl text-center text-xs text-muted-foreground/60">
+          Every row sourced from{' '}
+          <a
+            href="https://github.com/browser-use/browser-use"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-border/50 underline-offset-4 transition-colors hover:text-foreground"
+          >
+            browser-use&apos;s repo at HEAD
+          </a>
+          . Full citations in the{' '}
+          <a
+            href="https://github.com/idan-rubin/browserclaw-agent#vs-browser-use"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-border/50 underline-offset-4 transition-colors hover:text-foreground"
+          >
+            README
+          </a>
+          .
+        </p>
+      </section>
+
       {/* Built With / Inspired By */}
       <section className="relative z-10 py-8 sm:py-12">
         <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs sm:text-sm text-muted-foreground/50 sm:gap-x-8">
@@ -375,6 +481,75 @@ function TestimonialCard({ quote, author, icon, emoji, reactions }: Testimonial)
       </div>
     </div>
   );
+}
+
+function LayerRow({
+  emoji,
+  name,
+  description,
+  link,
+}: {
+  emoji: string;
+  name: string;
+  description: string;
+  link?: { label: string; href: string };
+}) {
+  return (
+    <div className="flex items-center gap-4 rounded-2xl border border-border/50 bg-card/40 p-4 backdrop-blur-sm transition-colors hover:border-primary/20 hover:bg-card/60 sm:gap-6 sm:p-6">
+      <div className="text-3xl sm:text-4xl" aria-hidden>
+        {emoji}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-3">
+          <h3 className="font-[family-name:var(--font-heading)] text-base font-semibold tracking-tight sm:text-lg">
+            {name}
+          </h3>
+          {link && (
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary/80 transition-colors hover:text-primary"
+            >
+              {link.label}
+            </a>
+          )}
+        </div>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function LayerConnector() {
+  return <div className="mx-auto my-1 h-3 w-px bg-border/60" aria-hidden />;
+}
+
+type BuMark = 'yes' | 'no' | 'partial';
+
+function BuRow({ label, us, them }: { label: string; us: BuMark; them: BuMark }) {
+  return (
+    <tr className="border-b border-border/30 last:border-b-0">
+      <td className="px-4 py-3 text-foreground sm:px-6">{label}</td>
+      <td className="px-4 py-3 text-center sm:px-6">
+        <BuMarkIcon value={us} />
+      </td>
+      <td className="px-4 py-3 text-center sm:px-6">
+        <BuMarkIcon value={them} />
+      </td>
+    </tr>
+  );
+}
+
+function BuMarkIcon({ value }: { value: BuMark }) {
+  switch (value) {
+    case 'yes':
+      return <span className="text-green-400">&#10003;</span>;
+    case 'partial':
+      return <span className="text-yellow-400">~</span>;
+    case 'no':
+      return <span className="text-red-400">&#10005;</span>;
+  }
 }
 
 function FooterColumn({ title, links }: { title: string; links: { label: string; href: string }[] }) {
