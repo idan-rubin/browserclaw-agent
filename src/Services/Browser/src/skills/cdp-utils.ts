@@ -1,10 +1,7 @@
 import type { CrawlPage } from 'browserclaw';
 
 export function getCdpBaseUrl(page: CrawlPage): string {
-  // browserclaw does not expose the CDP endpoint via its public API, so we
-  // reach into the private field. Guard hard against the field being renamed
-  // on a future browserclaw bump — we prefer a loud crash over the silent
-  // `undefined` failure mode that broke the cloudflare skill in 0.12.
+  // No public getter upstream yet; guard loudly so a rename fails fast.
   const cdpUrl = (page as unknown as { cdpUrl?: string }).cdpUrl;
   if (typeof cdpUrl !== 'string' || cdpUrl === '') {
     throw new Error(
