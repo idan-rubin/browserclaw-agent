@@ -655,7 +655,6 @@ describe('termination judgment integration', () => {
   });
 
   it('force-completes after 3 consecutive not-ready judgments (fatigue)', async () => {
-    // plan + enough extract actions to reach three judgment checks at steps 8, 12, 16
     mockedLlmJson.mockResolvedValueOnce({ plan: 'Gather data' });
     for (let i = 0; i < 17; i++) {
       mockedLlmJson.mockResolvedValueOnce({
@@ -664,13 +663,6 @@ describe('termination judgment integration', () => {
         memory: `Step ${String(i)} memory`,
       });
     }
-    // Three consecutive not-ready judgments — interspersed with action calls.
-    // The loop order is: action call at step N, then at top of iteration for step N+1
-    // the termination check may fire. So the judgment calls land at specific indices.
-    // Simpler: since we have 17 extract mocks before any judgment, and the judge fires
-    // at steps 8, 12, 16, each judge call consumes one mock. We need the first mock
-    // AT each judge call slot to be a "needs_more" response.
-    // Rather than mock-interleaving, use the generic mockResolvedValue fallback:
     mockedLlmJson.mockResolvedValue({ status: 'needs_more', missing: 'exact fees' });
 
     const { page } = mockPage();
@@ -679,7 +671,6 @@ describe('termination judgment integration', () => {
 
     const result: AgentLoopResult = await runAgentLoop('Research', page, emit, controller.signal);
 
-    // Fatigue fires at the 3rd not-ready judgment — run ends as success with partial data.
     expect(result.success).toBe(true);
     expect(result.steps[result.steps.length - 1].action.action).toBe('done');
   });
