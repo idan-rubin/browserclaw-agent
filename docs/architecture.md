@@ -180,4 +180,3 @@ postgres        → database (port 5432)
 - Internal auth: `BROWSER_INTERNAL_TOKEN` for frontend → browser service calls
 - Timestamps: UTC, `TIMESTAMPTZ` in PostgreSQL
 - JSON over the wire: `snake_case`
-- **No `<br>` tags.** Use responsive containers (`block sm:inline` or similar) to control line breaks per breakpoint. `<br>` is presentational — structure and CSS handle this cleanly.

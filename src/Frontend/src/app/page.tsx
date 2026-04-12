@@ -16,21 +16,13 @@ export default function LandingPage() {
       <section className="relative z-10 flex flex-col items-center px-4 pt-2 pb-8 sm:pt-3 sm:pb-12 sm:px-6">
         <div className="w-full max-w-4xl animate-page-in text-center">
           <h1 className="text-[2.5rem] font-bold leading-[1.1] tracking-tight sm:text-7xl lg:text-8xl">
-            <div>
-              Let the agent <span className="italic text-primary">click&nbsp;through</span>
-            </div>
-            <div>for you.</div>
+            Let the agent <span className="italic text-primary">click&nbsp;through</span>
+            <br />
+            for you.
           </h1>
-          <div className="mx-auto mt-4 max-w-2xl space-y-2 text-[0.938rem] leading-relaxed text-muted-foreground sm:mt-6 sm:space-y-2 sm:text-xl sm:leading-normal">
-            <div>
-              <div className="block sm:inline">AI-native browser automation,</div>{' '}
-              <div className="block sm:inline">built for agents, by agents.</div>
-            </div>
-            <div>
-              <div className="block sm:inline">Born from OpenClaw.</div>{' '}
-              <div className="block sm:inline">Snapshots instead of vision,</div>{' '}
-              <div className="block sm:inline">refs instead of selectors, no guessing.</div>
-            </div>
+          <div className="mx-auto mt-4 max-w-2xl space-y-1 text-base text-muted-foreground sm:mt-6 sm:space-y-2 sm:text-xl">
+            <p>AI-native browser automation, built for agents, by agents.</p>
+            <p>Born from OpenClaw. Snapshots instead of vision, refs instead of selectors, no guessing.</p>
           </div>
           <div className="mt-8 flex flex-row items-center justify-center gap-3 sm:mt-10 sm:gap-6">
             <Link
