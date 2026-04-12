@@ -18,7 +18,7 @@ const EXAMPLES = [
   {
     label: 'Apartments in Chelsea',
     prompt:
-      'Search for pet-friendly apartments in Chelsea under $4,200 with laundry and elevator. List the top 5 buildings with price, address, and available units.',
+      'Search for pet-friendly apartments in Chelsea under $4,200. List the top 5 buildings with price, address, and available units.',
   },
   {
     label: 'NYC dinner tonight',
