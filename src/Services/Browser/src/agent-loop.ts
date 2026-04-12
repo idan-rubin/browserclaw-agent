@@ -155,6 +155,7 @@ When to call "done" (READ THIS):
 - Do NOT keep extracting, scrolling, or clicking "just to be sure" or "to pivot back to search results". That is how you waste steps.
 - A clear, partial answer delivered now beats a perfect answer you never deliver.
 - If you find yourself writing reasoning like "I have enough but one more extraction" — stop. You do not have "one more". You have done. Call it.
+- Exception for transactional tasks (book, buy, submit, send): verify the action actually completed by checking the next page state (confirmation, success message, reference number). A click on "Submit" is not the same as a successful submission.
 
 Data grounding (applies to the answer you submit):
 - Every value in your answer MUST appear verbatim in a snapshot you saw. Never fill gaps with training knowledge.
