@@ -15,7 +15,7 @@ Three separate layers, not one monolith:
 - 😎 **The agent** — the driver. Reasoning, obstacle recovery, learned skills. _That's this project._
 - 🏎️ **[BrowserClaw](https://github.com/idan-rubin/browserclaw)** — the vehicle. Snapshots, element refs, browser control. Standalone npm library.
 
-browser-use welds the 😎 driver to the 🏎️ vehicle. We keep them as separate, swappable layers — drive our 🏎️ with your own 😎, put different ⚡ behind our wheel, or run the whole stack as-is.
+browser-use welds these into one package. We keep them as separate, swappable layers — drop the library into your own agent, pair this agent with any LLM, or run the whole stack as-is.
 
 ## vs browser-use
 
@@ -23,13 +23,13 @@ browser-use welds the 😎 driver to the 🏎️ vehicle. We keep them as separa
 
 Every row below is sourced from [browser-use's repo](https://github.com/browser-use/browser-use) at HEAD:
 
-|                                                                |     browserclaw     |               browser-use                |
-| -------------------------------------------------------------- | :-----------------: | :--------------------------------------: |
-| 🏎️ Browser engine as a standalone library[^bu1]                | ✓ `npm i browserclaw` |          ✗ (monolithic package)          |
-| Use the 🏎️ with your own 😎[^bu2]                              |    ✓ (documented)   | ~ (exports exist, not a documented path) |
-| 📚 Auto-learned skill catalog per domain[^bu3]                 |          ✓          |     ✗ (skills fetched from Cloud API)    |
-| 🛡️ Anti-bot solvers in OSS (Turnstile, press-hold, popups)[^bu4] |        ✓         |    ~ (OSS only waits for Cloud solver)   |
-| 📦 TypeScript / Node native[^bu5]                              |          ✓          |                ✗ (Python)                |
+|                                                                |      browserclaw      |               browser-use                |
+| -------------------------------------------------------------- | :-------------------: | :--------------------------------------: |
+| Browser engine as a standalone library[^bu1]                   | ✓ `npm i browserclaw` |          ✗ (monolithic package)          |
+| Use the engine with a different agent[^bu2]                    |    ✓ (documented)     | ~ (exports exist, not a documented path) |
+| Auto-learned skill catalog per domain[^bu3]                    |           ✓           |    ✗ (skills fetched from Cloud API)     |
+| Built-in anti-bot solvers in OSS (Turnstile, press-hold)[^bu4] |           ✓           |   ~ (OSS only waits for Cloud solver)    |
+| TypeScript / Node native[^bu5]                                 |           ✓           |                ✗ (Python)                |
 
 [^bu1]: browser-use ships a single Python package — [`browser_use/__init__.py`](https://github.com/browser-use/browser-use/blob/main/browser_use/__init__.py) exports `Agent`, `BrowserSession`, `DomService`, and every `Chat*` provider from the same module. See also [`pyproject.toml`](https://github.com/browser-use/browser-use/blob/main/pyproject.toml).
 
@@ -213,7 +213,7 @@ Swap Anthropic for OpenAI, Groq, Gemini, or a local model. See the full [browser
 
 - **Built for TypeScript** — native to the JS ecosystem. First-class Node.js support, not a Python port.
 - **Accessibility tree, not DOM** — snapshots use the browser's accessibility tree — the same structure screen readers use. Semantic roles, names, and states instead of raw tags and attributes. Cleaner, smaller, and more meaningful to an LLM.
-- **Layered, not bundled** — browser-use ships one monolithic library. We split the stack so every layer is swappable: the ⚡ LLM (your choice), the 😎 agent (this project), and the 🏎️ [BrowserClaw](https://github.com/idan-rubin/browserclaw) vehicle (standalone npm package, zero opinions about your AI). Drop the vehicle into your own agent, or run the whole stack as-is.
+- **Layered, not bundled** — the engine, the agent, and the LLM are separate, swappable pieces. See the [comparison above](#vs-browser-use).
 - **Gets smarter with use** — the skill catalog learns from every successful run. Other browser agents start from scratch each time. browserclaw-agent builds a playbook per domain and improves it on every run.
 - **Handles the real world** — Cloudflare Turnstile, press-and-hold anti-bot overlays, cookie banners, tab management — handled automatically via CDP. These are the things that make browser agents fail in production.
 
@@ -223,5 +223,5 @@ Swap Anthropic for OpenAI, Groq, Gemini, or a local model. See the full [browser
 
 ## Built with
 
-- [BrowserClaw](https://github.com/idan-rubin/browserclaw) — 🏎️ the vehicle
+- [BrowserClaw](https://github.com/idan-rubin/browserclaw) — the browser automation library
 - [OpenClaw](https://github.com/openclaw/openclaw) — the community behind it

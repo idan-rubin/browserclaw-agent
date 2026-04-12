@@ -150,8 +150,8 @@ export default function LandingPage() {
             Layered, <span className="italic text-primary">not bundled</span>
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground sm:mt-4 sm:text-base">
-            browser-use welds the 😎 driver to the 🏎️ vehicle. We keep them separate — drive our 🏎️ with your own 😎, or
-            put different ⚡ behind our wheel.
+            browser-use welds these into one package. We keep them separate — drop the library into your own agent, pair
+            this agent with any LLM, or run the whole stack as-is.
           </p>
         </div>
 
@@ -217,11 +217,11 @@ export default function LandingPage() {
               </tr>
             </thead>
             <tbody className="text-muted-foreground">
-              <BuRow label="🏎️ Browser engine as a standalone library" us="yes" them="no" />
-              <BuRow label="Use the 🏎️ with your own 😎" us="yes" them="partial" />
-              <BuRow label="📚 Auto-learned skill catalog per domain" us="yes" them="no" />
-              <BuRow label="🛡️ Anti-bot solvers in OSS (Turnstile, press-hold, popups)" us="yes" them="partial" />
-              <BuRow label="📦 TypeScript / Node native" us="yes" them="no" />
+              <BuRow label="Browser engine as a standalone library" us="yes" them="no" />
+              <BuRow label="Use the engine with a different agent" us="yes" them="partial" />
+              <BuRow label="Auto-learned skill catalog per domain" us="yes" them="no" />
+              <BuRow label="Built-in anti-bot solvers in OSS (Turnstile, press-hold)" us="yes" them="partial" />
+              <BuRow label="TypeScript / Node native" us="yes" them="no" />
             </tbody>
           </table>
         </div>
