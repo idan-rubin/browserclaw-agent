@@ -221,11 +221,11 @@ export default function LandingPage() {
               </tr>
             </thead>
             <tbody className="text-muted-foreground">
-              <BuRow label="Standalone browser library" us="yes" them="no" />
-              <BuRow label="Works with any agent" us="yes" them="partial" />
-              <BuRow label="Auto-learns skills per site" us="yes" them="no" />
-              <BuRow label="Solves anti-bot in OSS" us="yes" them="partial" />
-              <BuRow label="TypeScript / Node" us="yes" them="no" />
+              <BuRow label="Browser engine as a standalone library" us="yes" them="no" />
+              <BuRow label="Use the engine with a different agent" us="yes" them="partial" />
+              <BuRow label="Auto-learned skill catalog per domain" us="yes" them="no" />
+              <BuRow label="Built-in anti-bot solvers in OSS (Turnstile, press-hold)" us="yes" them="partial" />
+              <BuRow label="TypeScript / Node native" us="yes" them="no" />
             </tbody>
           </table>
         </div>
