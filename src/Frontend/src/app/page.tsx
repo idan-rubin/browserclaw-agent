@@ -150,8 +150,8 @@ export default function LandingPage() {
             Layered, <span className="italic text-primary">not bundled</span>
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground sm:mt-4 sm:text-base">
-            browser-use welds the 😎 driver to the 🏎️ vehicle. We keep them separate — drive our 🏎️ with your own 😎,
-            or put different ⚡ behind our wheel.
+            browser-use welds the 😎 driver to the 🏎️ vehicle. We keep them separate — drive our 🏎️ with your own 😎, or
+            put different ⚡ behind our wheel.
           </p>
         </div>
 
@@ -175,6 +175,78 @@ export default function LandingPage() {
             link={{ label: 'github →', href: 'https://github.com/idan-rubin/browserclaw' }}
           />
         </div>
+      </section>
+
+      {/* vs browser-use */}
+      <section className="relative z-10 mx-auto w-full max-w-4xl px-4 pb-12 sm:px-10 sm:pb-20">
+        <div className="mb-8 text-center sm:mb-12">
+          <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
+            vs <span className="italic text-primary">browser-use</span>
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm text-muted-foreground sm:text-base">
+            Different lineage, different design.{' '}
+            <a
+              href="https://openclaw.ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
+            >
+              OpenClaw
+            </a>{' '}
+            took the{' '}
+            <a
+              href="https://github.com/microsoft/playwright-mcp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
+            >
+              Playwright MCP
+            </a>{' '}
+            snapshot-and-ref approach, refined it locally, and shipped it as a standalone library. browser-use rolled
+            its own Python bundle.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-border/50 bg-card/40 backdrop-blur-sm">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/50 bg-card/40">
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground sm:px-6"></th>
+                <th className="px-4 py-3 text-center font-medium text-primary sm:px-6">browserclaw</th>
+                <th className="px-4 py-3 text-center font-medium text-muted-foreground sm:px-6">browser-use</th>
+              </tr>
+            </thead>
+            <tbody className="text-muted-foreground">
+              <BuRow label="🏎️ Browser engine as a standalone library" us="yes" them="no" />
+              <BuRow label="Use the 🏎️ with your own 😎" us="yes" them="partial" />
+              <BuRow label="📚 Auto-learned skill catalog per domain" us="yes" them="no" />
+              <BuRow label="🛡️ Anti-bot solvers in OSS (Turnstile, press-hold, popups)" us="yes" them="partial" />
+              <BuRow label="📦 TypeScript / Node native" us="yes" them="no" />
+            </tbody>
+          </table>
+        </div>
+
+        <p className="mx-auto mt-4 max-w-2xl text-center text-xs text-muted-foreground/60">
+          Every row sourced from{' '}
+          <a
+            href="https://github.com/browser-use/browser-use"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-border/50 underline-offset-4 transition-colors hover:text-foreground"
+          >
+            browser-use&apos;s repo at HEAD
+          </a>
+          . Full citations in the{' '}
+          <a
+            href="https://github.com/idan-rubin/browserclaw-agent#vs-browser-use"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-border/50 underline-offset-4 transition-colors hover:text-foreground"
+          >
+            README
+          </a>
+          .
+        </p>
       </section>
 
       {/* Built With / Inspired By */}
@@ -451,6 +523,33 @@ function LayerRow({
 
 function LayerConnector() {
   return <div className="mx-auto my-1 h-3 w-px bg-border/60" aria-hidden />;
+}
+
+type BuMark = 'yes' | 'no' | 'partial';
+
+function BuRow({ label, us, them }: { label: string; us: BuMark; them: BuMark }) {
+  return (
+    <tr className="border-b border-border/30 last:border-b-0">
+      <td className="px-4 py-3 text-foreground sm:px-6">{label}</td>
+      <td className="px-4 py-3 text-center sm:px-6">
+        <BuMarkIcon value={us} />
+      </td>
+      <td className="px-4 py-3 text-center sm:px-6">
+        <BuMarkIcon value={them} />
+      </td>
+    </tr>
+  );
+}
+
+function BuMarkIcon({ value }: { value: BuMark }) {
+  switch (value) {
+    case 'yes':
+      return <span className="text-green-400">&#10003;</span>;
+    case 'partial':
+      return <span className="text-yellow-400">~</span>;
+    case 'no':
+      return <span className="text-red-400">&#10005;</span>;
+  }
 }
 
 function FooterColumn({ title, links }: { title: string; links: { label: string; href: string }[] }) {

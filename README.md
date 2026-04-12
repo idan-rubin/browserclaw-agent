@@ -17,6 +17,30 @@ Three separate layers, not one monolith:
 
 browser-use welds the 😎 driver to the 🏎️ vehicle. We keep them as separate, swappable layers — drive our 🏎️ with your own 😎, put different ⚡ behind our wheel, or run the whole stack as-is.
 
+## vs browser-use
+
+**Different lineage, different design.** [OpenClaw](https://openclaw.ai) took the [Playwright MCP](https://github.com/microsoft/playwright-mcp) approach — Microsoft's snapshot-and-ref pattern — implemented it locally, and refined it into [browserclaw](https://github.com/idan-rubin/browserclaw), a standalone npm library. This agent rides on that library. browser-use rolled its own Python stack as one bundled package.
+
+Every row below is sourced from [browser-use's repo](https://github.com/browser-use/browser-use) at HEAD:
+
+|                                                                |     browserclaw     |               browser-use                |
+| -------------------------------------------------------------- | :-----------------: | :--------------------------------------: |
+| 🏎️ Browser engine as a standalone library[^bu1]                | ✓ `npm i browserclaw` |          ✗ (monolithic package)          |
+| Use the 🏎️ with your own 😎[^bu2]                              |    ✓ (documented)   | ~ (exports exist, not a documented path) |
+| 📚 Auto-learned skill catalog per domain[^bu3]                 |          ✓          |     ✗ (skills fetched from Cloud API)    |
+| 🛡️ Anti-bot solvers in OSS (Turnstile, press-hold, popups)[^bu4] |        ✓         |    ~ (OSS only waits for Cloud solver)   |
+| 📦 TypeScript / Node native[^bu5]                              |          ✓          |                ✗ (Python)                |
+
+[^bu1]: browser-use ships a single Python package — [`browser_use/__init__.py`](https://github.com/browser-use/browser-use/blob/main/browser_use/__init__.py) exports `Agent`, `BrowserSession`, `DomService`, and every `Chat*` provider from the same module. See also [`pyproject.toml`](https://github.com/browser-use/browser-use/blob/main/pyproject.toml).
+
+[^bu2]: `BrowserSession` and `DomService` are exported, but every README and docs example enters through `Agent(...)`. There is no "headless engine" subpackage. See [`browser_use/__init__.py`](https://github.com/browser-use/browser-use/blob/main/browser_use/__init__.py).
+
+[^bu3]: browser-use skills are fetched from their Cloud API by ID: `SkillService(skill_ids=[...], api_key='...')`. Not auto-learned from runs. See [`browser_use/skills/README.md`](https://github.com/browser-use/browser-use/blob/main/browser_use/skills/README.md).
+
+[^bu4]: [`captcha_watchdog.py`](https://github.com/browser-use/browser-use/blob/main/browser_use/browser/watchdogs/captcha_watchdog.py) only waits for `BrowserUse.captchaSolverStarted/Finished` CDP events emitted by their Cloud proxy. The README FAQ explicitly recommends Browser Use Cloud for CAPTCHAs.
+
+[^bu5]: [`pyproject.toml`](https://github.com/browser-use/browser-use/blob/main/pyproject.toml) declares `requires-python = ">=3.11,<4.0"`. The separate [`browser-use-node`](https://github.com/browser-use/browser-use-node) TypeScript SDK is archived.
+
 ## What the agent does
 
 The agent reads an accessibility snapshot of the page, decides what to do next, and executes the action. Up to 100 steps per run. It maintains a memory scratchpad across steps and evaluates whether each action succeeded before deciding the next move.
