@@ -23,12 +23,18 @@ const EXAMPLES = [
     prompt: 'Find a 4K monitor on Best Buy',
   },
   {
-    label: "Renew my NY driver's license",
-    prompt: "How do I renew my driver's license in New York?",
-  },
-  {
     label: 'Met Museum hours',
     prompt: 'What time does the Metropolitan Museum of Art open?',
+  },
+  {
+    label: 'Apartments in Chelsea',
+    prompt:
+      'Search for pet-friendly apartments in Chelsea under $4,200 with laundry and elevator. List the top 5 buildings with price, address, and available units',
+  },
+  {
+    label: "Renew my NY driver's license",
+    prompt:
+      "Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
   },
 ];
 
