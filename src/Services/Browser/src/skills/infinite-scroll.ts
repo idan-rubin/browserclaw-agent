@@ -89,7 +89,10 @@ async function pushPastBottom(page: CrawlPage, selector: string, boundaryPushPx:
     })()`);
 }
 
-export async function advanceInfiniteScroll(page: CrawlPage, opts: InfiniteScrollOptions = {}): Promise<InfiniteScrollResult> {
+export async function advanceInfiniteScroll(
+  page: CrawlPage,
+  opts: InfiniteScrollOptions = {},
+): Promise<InfiniteScrollResult> {
   const selector = opts.containerSelector ?? DEFAULT_CONTAINER_SELECTOR;
   const itemSplitPattern = opts.itemSplitPattern ?? DEFAULT_ITEM_SPLIT_PATTERN;
   const stepDelayMs = opts.stepDelayMs ?? DEFAULT_STEP_DELAY_MS;
