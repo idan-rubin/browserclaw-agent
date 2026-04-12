@@ -21,25 +21,15 @@ browser-use welds these into one package. We keep them as separate, swappable la
 
 **Different lineage, different design.** [OpenClaw](https://openclaw.ai) took the [Playwright MCP](https://github.com/microsoft/playwright-mcp) approach — Microsoft's snapshot-and-ref pattern — implemented it locally, and refined it into [browserclaw](https://github.com/idan-rubin/browserclaw), a standalone npm library. This agent rides on that library. browser-use rolled its own Python stack as one bundled package.
 
-Every row below is sourced from [browser-use's repo](https://github.com/browser-use/browser-use) at HEAD:
+|                             |    browserclaw     |    browser-use     |
+| :-------------------------- | :----------------: | :----------------: |
+| Standalone browser library  | :white_check_mark: |        :x:         |
+| Works with any agent        | :white_check_mark: | :heavy_minus_sign: |
+| Auto-learns skills per site | :white_check_mark: |        :x:         |
+| Solves anti-bot in OSS      | :white_check_mark: | :heavy_minus_sign: |
+| TypeScript / Node           | :white_check_mark: |        :x:         |
 
-|                                                                |      browserclaw      |               browser-use                |
-| -------------------------------------------------------------- | :-------------------: | :--------------------------------------: |
-| Browser engine as a standalone library[^bu1]                   | ✓ `npm i browserclaw` |          ✗ (monolithic package)          |
-| Use the engine with a different agent[^bu2]                    |    ✓ (documented)     | ~ (exports exist, not a documented path) |
-| Auto-learned skill catalog per domain[^bu3]                    |           ✓           |    ✗ (skills fetched from Cloud API)     |
-| Built-in anti-bot solvers in OSS (Turnstile, press-hold)[^bu4] |           ✓           |   ~ (OSS only waits for Cloud solver)    |
-| TypeScript / Node native[^bu5]                                 |           ✓           |                ✗ (Python)                |
-
-[^bu1]: browser-use ships a single Python package — [`browser_use/__init__.py`](https://github.com/browser-use/browser-use/blob/main/browser_use/__init__.py) exports `Agent`, `BrowserSession`, `DomService`, and every `Chat*` provider from the same module. See also [`pyproject.toml`](https://github.com/browser-use/browser-use/blob/main/pyproject.toml).
-
-[^bu2]: `BrowserSession` and `DomService` are exported, but every README and docs example enters through `Agent(...)`. There is no "headless engine" subpackage. See [`browser_use/__init__.py`](https://github.com/browser-use/browser-use/blob/main/browser_use/__init__.py).
-
-[^bu3]: browser-use skills are fetched from their Cloud API by ID: `SkillService(skill_ids=[...], api_key='...')`. Not auto-learned from runs. See [`browser_use/skills/README.md`](https://github.com/browser-use/browser-use/blob/main/browser_use/skills/README.md).
-
-[^bu4]: [`captcha_watchdog.py`](https://github.com/browser-use/browser-use/blob/main/browser_use/browser/watchdogs/captcha_watchdog.py) only waits for `BrowserUse.captchaSolverStarted/Finished` CDP events emitted by their Cloud proxy. The README FAQ explicitly recommends Browser Use Cloud for CAPTCHAs.
-
-[^bu5]: [`pyproject.toml`](https://github.com/browser-use/browser-use/blob/main/pyproject.toml) declares `requires-python = ">=3.11,<4.0"`. The separate [`browser-use-node`](https://github.com/browser-use/browser-use-node) TypeScript SDK is archived.
+:white_check_mark: = Yes&ensp; :heavy_minus_sign: = Partial&ensp; :x: = No
 
 ## What the agent does
 
