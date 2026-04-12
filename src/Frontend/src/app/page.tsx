@@ -21,7 +21,10 @@ export default function LandingPage() {
             for you.
           </h1>
           <div className="mx-auto mt-4 max-w-2xl space-y-1 text-base text-muted-foreground sm:mt-6 sm:space-y-2 sm:text-xl">
-            <p>AI-native browser automation,<br className="sm:hidden" /> built for agents, by agents.</p>
+            <p>
+              <span className="block sm:inline">AI-native browser automation,</span>{' '}
+              <span className="block sm:inline">built for agents, by agents.</span>
+            </p>
             <p>Born from OpenClaw. Snapshots instead of vision, refs instead of selectors, no guessing.</p>
           </div>
           <div className="mt-8 flex flex-row items-center justify-center gap-3 sm:mt-10 sm:gap-6">
