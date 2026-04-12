@@ -16,7 +16,7 @@ import { judgeRun } from './judge.js';
 import { moderatePrompt } from './content-policy.js';
 import { logPrompt } from './prompt-log.js';
 import { requireEnvInt, USER_RESPONSE_TIMEOUT_MS } from './config.js';
-import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig, sanitizeErrorText } from './llm.js';
+import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig } from './llm.js';
 import { extractDomain, getSkillForDomain, getSkillsForDomains, saveSkill } from './skill-store.js';
 import { saveLesson, extractDomainLessons } from './lesson-store.js';
 import { logger } from './logger.js';
@@ -354,9 +354,8 @@ async function startAgentLoop(sessionId: string): Promise<void> {
   } catch (err) {
     managed.status = 'failed';
     const message = err instanceof Error ? err.message : 'Agent loop crashed';
-    const stack = err instanceof Error && err.stack !== undefined ? sanitizeErrorText(err.stack) : undefined;
-    logger.error({ sessionId, message: sanitizeErrorText(message), stack, crashed: true }, 'Agent loop crashed');
-    emitter('failed', { step: 0, error: sanitizeErrorText(message) });
+    logger.error({ sessionId, crashed: true }, 'Agent loop crashed');
+    emitter('failed', { step: 0, error: message });
   }
 
   setTimeout(() => {
