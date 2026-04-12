@@ -149,11 +149,17 @@ Before giving up:
 - If the results page doesn't show details, click into individual listings.
 - Only "fail" after you've genuinely exhausted your options.
 
-Before calling "done":
-- Re-read the original task. Check every requirement against your findings.
-- DATA GROUNDING: Every value in your answer MUST appear verbatim in a snapshot you saw. Never fill gaps with your training knowledge. If you didn't see it on the page, don't include it.
-- Verify your actions actually completed by checking the page state, not just assuming.
-- If any requirement is uncertain or unverified, say so in your answer rather than guessing.`;
+When to call "done" (READ THIS):
+- If your "memory" already contains enough to answer the user's question — even partially — "done" is your next action. Submit what you have.
+- "Enough" means: the core question is answered. Missing a nice-to-have detail (e.g. exact fee amount when you have the renewal process, identity requirements, and the online-vs-in-person answer) is NOT a reason to keep gathering.
+- Do NOT keep extracting, scrolling, or clicking "just to be sure" or "to pivot back to search results". That is how you waste steps.
+- A clear, partial answer delivered now beats a perfect answer you never deliver.
+- If you find yourself writing reasoning like "I have enough but one more extraction" — stop. You do not have "one more". You have done. Call it.
+
+Data grounding (applies to the answer you submit):
+- Every value in your answer MUST appear verbatim in a snapshot you saw. Never fill gaps with training knowledge.
+- If a requirement is uncertain, say so in the answer — that is still a valid done.
+- State what you found and what you could not verify. Both are useful to the user.`;
 
 const LAST_STEP_PROMPT = `This is your FINAL step. You MUST respond with "done" or "fail" — no other action is allowed.
 
@@ -263,6 +269,8 @@ const PLAN_INJECT_MAX_STEP = 8;
 const HISTORY_RECENT_WINDOW = 8;
 const MAX_ACTIONS_PER_STEP = 4;
 const REPLAN_BASE_INTERVAL = 8;
+const READINESS_CHECK_MIN_STEP = 8;
+const READINESS_CHECK_INTERVAL = 6;
 const REPLAN_FAILURE_THRESHOLD = 3;
 const CONTEXT_COMPRESS_INTERVAL = 20;
 
@@ -782,7 +790,7 @@ async function getFinalSummary(prompt: string, history: AgentStep[]): Promise<st
       .join('\n');
     const result = await llmJson<{ answer: string }>({
       system:
-        'The browser agent is being stopped due to repeated failures. Summarize what was accomplished and any partial findings. Respond with JSON: {"answer": "your summary"}',
+        'The browser agent has collected data and is wrapping up. Using the memory and recent steps, produce the best answer to the user\'s task that the collected data supports. Structure with sections or bullets when helpful. If some requirements were not verified, say so plainly. Use ONLY data that appears in the memory or steps — never fill gaps from training knowledge. Respond with JSON: {"answer": "your answer"}',
       message: `Task: ${prompt}\n\nMemory:\n${lastMemory ?? 'none'}\n\nRecent steps:\n${steps}`,
       maxTokens: 512,
     });
@@ -790,6 +798,21 @@ async function getFinalSummary(prompt: string, history: AgentStep[]): Promise<st
   } catch {
     logger.warn('Failed to generate final summary');
     return undefined;
+  }
+}
+
+async function isAnswerReady(prompt: string, memory: string): Promise<boolean> {
+  if (memory.trim().length < 80) return false;
+  try {
+    const result = await llmJson<{ answerable: boolean }>({
+      system:
+        'You judge whether a browser agent already has enough data to answer the user\'s question. Be generous: a partial but useful answer counts as answerable. Missing a minor nice-to-have detail is not a blocker. Respond with JSON: {"answerable": true|false}',
+      message: `User question: ${prompt}\n\nAgent memory so far:\n${memory}`,
+      maxTokens: 64,
+    });
+    return result.answerable;
+  } catch {
+    return false;
   }
 }
 
@@ -1100,6 +1123,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       } else {
         consecutiveRecoveryCount = 0;
         lastRecoveryDomain = null;
+      }
+    }
+
+    if (step >= READINESS_CHECK_MIN_STEP && step % READINESS_CHECK_INTERVAL === 0) {
+      const mem = getLastMemory(history) ?? '';
+      if (await isAnswerReady(refinedPrompt, mem)) {
+        logger.info({ step }, 'Answer ready — force-completing');
+        return await forceComplete('Answer ready from accumulated memory');
       }
     }
 
@@ -1536,14 +1567,15 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     }
   }
 
-  // maxSteps reached — get a final summary of what was accomplished
+  // maxSteps reached — summarize and treat as success if we gathered anything useful.
   logger.warn({ steps: history.length, maxSteps }, 'Agent hit step limit');
   const summary = await getFinalSummary(refinedPrompt, history);
+  const gathered = (getLastMemory(history) ?? '').trim().length >= 80 || (summary ?? '').trim().length >= 80;
   return {
-    success: false,
+    success: gathered,
     steps: history,
     answer: summary,
-    error: `Reached maximum step limit (${String(maxSteps)})`,
+    error: gathered ? undefined : `Reached maximum step limit (${String(maxSteps)})`,
     duration_ms: Date.now() - startTime,
     final_url: history.length > 0 ? history[history.length - 1].url : undefined,
   };
