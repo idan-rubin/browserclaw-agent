@@ -11,6 +11,11 @@ const RUN_BUTTON_CLASS =
 
 const EXAMPLES = [
   {
+    label: "Renew my NY driver's license",
+    prompt:
+      "Use dmv site. Find the documents needed to renew a driver's license in New York state. List the ID requirements, fees, and whether it can be done online or requires an in-person visit",
+  },
+  {
     label: 'NYC dinner tonight',
     prompt:
       'Find a table for 4 tonight at 8:30pm at a top NYC Italian restaurant — whichever has availability first among Carbone, Rezdora, or Raoul\u2019s. Report the restaurant, time, and booking link.',
