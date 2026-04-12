@@ -20,9 +20,16 @@ export default function LandingPage() {
             <br />
             for you.
           </h1>
-          <div className="mx-auto mt-4 max-w-2xl space-y-1 text-[0.938rem] leading-relaxed text-muted-foreground sm:mt-6 sm:space-y-2 sm:text-xl sm:leading-normal">
-            <p>AI-native browser automation,<br className="sm:hidden" /> built for agents, by agents.</p>
-            <p>Born from OpenClaw.<br className="sm:hidden" /> Snapshots instead of vision,<br className="sm:hidden" /> refs instead of selectors, no guessing.</p>
+          <div className="mx-auto mt-4 max-w-2xl space-y-2 text-[0.938rem] leading-relaxed text-muted-foreground sm:mt-6 sm:space-y-2 sm:text-xl sm:leading-normal">
+            <div>
+              <div className="block sm:inline">AI-native browser automation,</div>{' '}
+              <div className="block sm:inline">built for agents, by agents.</div>
+            </div>
+            <div>
+              <div className="block sm:inline">Born from OpenClaw.</div>{' '}
+              <div className="block sm:inline">Snapshots instead of vision,</div>{' '}
+              <div className="block sm:inline">refs instead of selectors, no guessing.</div>
+            </div>
           </div>
           <div className="mt-8 flex flex-row items-center justify-center gap-3 sm:mt-10 sm:gap-6">
             <Link
