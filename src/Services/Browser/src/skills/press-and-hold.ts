@@ -197,8 +197,7 @@ export async function pressAndHold(page: CrawlPage): Promise<boolean> {
     const holdMs = humanHoldMs();
     const delay = 100 + Math.floor(Math.random() * 200);
     logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any -- pressAndHold types restored in next browserclaw release
-    await (page as any).pressAndHold(jitterX, jitterY, { delay, holdMs });
+    await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
     logger.info({ holdMs }, 'press-and-hold: released');
     await page.waitFor({ timeMs: 2000 });
 
