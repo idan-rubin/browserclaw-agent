@@ -149,18 +149,14 @@ Before giving up:
 - If the results page doesn't show details, click into individual listings.
 - Only "fail" after you've genuinely exhausted your options.
 
-When to call "done" (READ THIS):
-- If your "memory" already contains enough to answer the user's question — even partially — "done" is your next action. Submit what you have.
-- "Enough" means: the core question is answered. Missing a nice-to-have detail (e.g. exact fee amount when you have the renewal process, identity requirements, and the online-vs-in-person answer) is NOT a reason to keep gathering.
-- Do NOT keep extracting, scrolling, or clicking "just to be sure" or "to pivot back to search results". That is how you waste steps.
-- A clear, partial answer delivered now beats a perfect answer you never deliver.
-- If you find yourself writing reasoning like "I have enough but one more extraction" — stop. You do not have "one more". You have done. Call it.
-- Exception for transactional tasks (book, buy, submit, send): verify the action actually completed by checking the next page state (confirmation, success message, reference number). A click on "Submit" is not the same as a successful submission.
+When to call "done":
+- The moment your "memory" contains an answer to the user's core question, "done" is your next action. Missing a sub-detail is not a reason to keep gathering.
+- A partial, honest answer delivered now beats a complete answer you never deliver. State uncertainty explicitly — "couldn't verify X" is a valid part of a done answer.
+- Do not extract, scroll, or click "just to be sure" once you can answer. That is how runs time out.
+- Exception — transactional tasks (book, buy, submit, send): verify the action actually completed. A click on "Submit" is not the same as a successful submission; look for confirmation text, a reference number, or a state change before calling done.
 
-Data grounding (applies to the answer you submit):
-- Every value in your answer MUST appear verbatim in a snapshot you saw. Never fill gaps with training knowledge.
-- If a requirement is uncertain, say so in the answer — that is still a valid done.
-- State what you found and what you could not verify. Both are useful to the user.`;
+Data grounding:
+- Every value in your answer MUST appear verbatim in a snapshot you saw. Never fill gaps with training knowledge.`;
 
 const LAST_STEP_PROMPT = `This is your FINAL step. You MUST respond with "done" or "fail" — no other action is allowed.
 
@@ -270,8 +266,8 @@ const PLAN_INJECT_MAX_STEP = 8;
 const HISTORY_RECENT_WINDOW = 8;
 const MAX_ACTIONS_PER_STEP = 4;
 const REPLAN_BASE_INTERVAL = 8;
-const READINESS_CHECK_MIN_STEP = 8;
-const READINESS_CHECK_INTERVAL = 6;
+const TERMINATION_CHECK_MIN_STEP = 6;
+const TERMINATION_CHECK_INTERVAL = 4;
 const REPLAN_FAILURE_THRESHOLD = 3;
 const CONTEXT_COMPRESS_INTERVAL = 20;
 
@@ -802,18 +798,55 @@ async function getFinalSummary(prompt: string, history: AgentStep[]): Promise<st
   }
 }
 
-async function isAnswerReady(prompt: string, memory: string): Promise<boolean> {
-  if (memory.trim().length < 80) return false;
+export type TerminationJudgment = { ready: true; answer: string } | { ready: false; missing: string };
+
+/**
+ * Trigger a termination check periodically once the agent has been gathering
+ * for a while. Pure — safe to unit-test.
+ */
+export function shouldCheckTermination(step: number): boolean {
+  if (step < TERMINATION_CHECK_MIN_STEP) return false;
+  return step % TERMINATION_CHECK_INTERVAL === 0;
+}
+
+/**
+ * Ask the LLM: can we answer the user's question from what we've gathered?
+ * Structured output so the caller can either force-complete with the answer
+ * or inject the "missing" nudge into the next step — no wasted judgment.
+ */
+async function judgeTermination(
+  prompt: string,
+  memory: string,
+  recentHistory: AgentStep[],
+): Promise<TerminationJudgment> {
+  const steps = recentHistory
+    .slice(-8)
+    .map((s) => `${s.action.action}: ${s.action.reasoning}`)
+    .join('\n');
   try {
-    const result = await llmJson<{ answerable: boolean }>({
-      system:
-        'You judge whether a browser agent already has enough data to answer the user\'s question. Be generous: a partial but useful answer counts as answerable. Missing a minor nice-to-have detail is not a blocker. Respond with JSON: {"answerable": true|false}',
-      message: `User question: ${prompt}\n\nAgent memory so far:\n${memory}`,
-      maxTokens: 64,
+    const result = await llmJson<{ status?: string; answer?: string; missing?: string }>({
+      system: `You judge whether a browser agent can answer the user's question from data it has already gathered.
+
+Bias toward "ready": a partial, honest answer is better than an agent that never finishes. Missing a nice-to-have detail is not a reason to say "needs_more" — only say "needs_more" when the core question is genuinely unanswered.
+
+Respond with JSON:
+  {"status": "ready", "answer": "<direct answer to the user's question, grounded only in the memory/steps below; use sections or bullets when helpful; note any uncertainty explicitly>"}
+or
+  {"status": "needs_more", "missing": "<one sentence naming the specific data still needed, e.g. 'price of item X' or 'whether the form was submitted'>"}
+
+Use ONLY data that appears in the memory or steps below — never invent values.`,
+      message: `User question: ${prompt}\n\nAgent memory:\n${memory || '(empty)'}\n\nRecent steps:\n${steps || '(none)'}`,
+      maxTokens: 512,
     });
-    return result.answerable;
+    if (result.status === 'ready' && typeof result.answer === 'string' && result.answer.trim() !== '') {
+      return { ready: true, answer: result.answer };
+    }
+    if (typeof result.missing === 'string' && result.missing.trim() !== '') {
+      return { ready: false, missing: result.missing };
+    }
+    return { ready: false, missing: 'unable to determine what data is still needed' };
   } catch {
-    return false;
+    return { ready: false, missing: 'judgment unavailable' };
   }
 }
 
@@ -853,9 +886,9 @@ export async function runAgentLoop(
   let pendingSiteSwitch: string | null = null;
   let duplicateMemoryCount = 0;
 
-  const forceComplete = async (reason: string): Promise<AgentLoopResult> => {
+  const forceComplete = async (reason: string, precomputedAnswer?: string): Promise<AgentLoopResult> => {
     logger.warn({ step, reason }, 'Force-completing run');
-    const answer = await getFinalSummary(refinedPrompt, history);
+    const answer = precomputedAnswer ?? (await getFinalSummary(refinedPrompt, history));
     const doneAction: AgentAction = {
       action: 'done',
       reasoning: reason,
@@ -1127,11 +1160,17 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
     }
 
-    if (step >= READINESS_CHECK_MIN_STEP && step % READINESS_CHECK_INTERVAL === 0) {
+    let terminationNudge: string | null = null;
+    if (shouldCheckTermination(step)) {
       const mem = getLastMemory(history) ?? '';
-      if (await isAnswerReady(refinedPrompt, mem)) {
-        logger.info({ step }, 'Answer ready — force-completing');
-        return await forceComplete('Answer ready from accumulated memory');
+      if (mem.trim().length > 0) {
+        const judgment = await judgeTermination(refinedPrompt, mem, history);
+        if (judgment.ready) {
+          logger.info({ step }, 'Judge: answer ready — force-completing');
+          return await forceComplete('Judge ruled answer ready', judgment.answer);
+        }
+        logger.info({ step, missing: judgment.missing }, 'Judge: not ready — nudging agent');
+        terminationNudge = `PROGRESS CHECK: you have been gathering data but the question is still not answerable. Still missing: ${judgment.missing}. Focus your next action on that specifically — do not repeat extractions you have already tried.`;
       }
     }
 
@@ -1139,6 +1178,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     if (pendingSiteSwitch !== null) {
       recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + pendingSiteSwitch;
       pendingSiteSwitch = null;
+    }
+
+    if (terminationNudge !== null) {
+      recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + terminationNudge;
     }
 
     let tabCount: number | undefined;
@@ -1568,15 +1611,29 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     }
   }
 
-  // maxSteps reached — summarize and treat as success if we gathered anything useful.
+  // maxSteps reached — let the judge decide whether we have a real answer or
+  // just ran out of room. Judge wins over any arbitrary length threshold.
   logger.warn({ steps: history.length, maxSteps }, 'Agent hit step limit');
-  const summary = await getFinalSummary(refinedPrompt, history);
-  const gathered = (getLastMemory(history) ?? '').trim().length >= 80 || (summary ?? '').trim().length >= 80;
+  const mem = getLastMemory(history) ?? '';
+  const judgment =
+    mem.trim().length > 0
+      ? await judgeTermination(refinedPrompt, mem, history)
+      : ({ ready: false, missing: 'no data gathered' } as TerminationJudgment);
+  if (judgment.ready) {
+    return {
+      success: true,
+      steps: history,
+      answer: judgment.answer,
+      duration_ms: Date.now() - startTime,
+      final_url: history.length > 0 ? history[history.length - 1].url : undefined,
+    };
+  }
+  const fallback = await getFinalSummary(refinedPrompt, history);
   return {
-    success: gathered,
+    success: false,
     steps: history,
-    answer: summary,
-    error: gathered ? undefined : `Reached maximum step limit (${String(maxSteps)})`,
+    answer: fallback,
+    error: `Reached maximum step limit (${String(maxSteps)}); still missing: ${judgment.missing}`,
     duration_ms: Date.now() - startTime,
     final_url: history.length > 0 ? history[history.length - 1].url : undefined,
   };

@@ -48,7 +48,7 @@ vi.mock('../logger.js', () => ({
   },
 }));
 
-const { runAgentLoop } = await import('../agent-loop.js');
+const { runAgentLoop, shouldCheckTermination } = await import('../agent-loop.js');
 const { llmJson } = await import('../llm.js');
 const mockedLlmJson = vi.mocked(llmJson);
 
@@ -574,5 +574,83 @@ describe('runAgentLoop', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('maximum step limit');
     expect(result.steps).toHaveLength(3);
+  });
+});
+
+describe('shouldCheckTermination', () => {
+  it('does not trigger before the min step', () => {
+    expect(shouldCheckTermination(0)).toBe(false);
+    expect(shouldCheckTermination(4)).toBe(false);
+  });
+
+  it('triggers at the interval once past the min step', () => {
+    expect(shouldCheckTermination(8)).toBe(true);
+    expect(shouldCheckTermination(12)).toBe(true);
+    expect(shouldCheckTermination(16)).toBe(true);
+  });
+
+  it('does not trigger off-interval past the min step', () => {
+    expect(shouldCheckTermination(9)).toBe(false);
+    expect(shouldCheckTermination(11)).toBe(false);
+  });
+});
+
+describe('termination judgment integration', () => {
+  it('force-completes when the judge rules the answer is ready', async () => {
+    // 1 plan + 8 step actions + 1 judgment call at step 8
+    mockedLlmJson.mockResolvedValueOnce({ plan: 'Gather data' });
+    for (let i = 0; i < 8; i++) {
+      mockedLlmJson.mockResolvedValueOnce({
+        action: 'extract_full_page',
+        reasoning: `Extract step ${String(i)}`,
+        memory: `Gathered datum ${String(i)}`,
+      });
+    }
+    mockedLlmJson.mockResolvedValueOnce({
+      status: 'ready',
+      answer: 'Final structured answer from the judge.',
+    });
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Research question', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    expect(result.answer).toBe('Final structured answer from the judge.');
+    const doneStep = result.steps[result.steps.length - 1];
+    expect(doneStep.action.action).toBe('done');
+  });
+
+  it('nudges the agent with the missing data when the judge says not ready', async () => {
+    mockedLlmJson.mockResolvedValueOnce({ plan: 'Gather data' });
+    for (let i = 0; i < 8; i++) {
+      mockedLlmJson.mockResolvedValueOnce({
+        action: 'extract_full_page',
+        reasoning: `Extract step ${String(i)}`,
+        memory: `Step ${String(i)} memory`,
+      });
+    }
+    mockedLlmJson.mockResolvedValueOnce({
+      status: 'needs_more',
+      missing: 'the specific fee amount',
+    });
+    mockedLlmJson.mockResolvedValueOnce({
+      action: 'done',
+      reasoning: 'Finishing anyway',
+      answer: 'Here is what I found. The fee could not be verified.',
+    });
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Research question', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    // The step after the judgment should receive the nudge in its user-message context.
+    const lastActionCall = mockedLlmJson.mock.calls[mockedLlmJson.mock.calls.length - 1][0];
+    expect(lastActionCall.message).toContain('the specific fee amount');
   });
 });
