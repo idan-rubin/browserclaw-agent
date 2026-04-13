@@ -48,10 +48,7 @@ describe('extractDomainLessons', () => {
   });
 
   it('marks domain blocked when click_cloudflare is the last meaningful action', () => {
-    const steps = [
-      makeStep('navigate', 'https://cf.com/'),
-      makeStep('click_cloudflare', 'https://cf.com/'),
-    ];
+    const steps = [makeStep('navigate', 'https://cf.com/'), makeStep('click_cloudflare', 'https://cf.com/')];
     const lessons = extractDomainLessons(steps, false);
     const lesson = lessons.find((l) => l.domain === 'cf.com');
     expect(lesson?.status).toBe('blocked');
