@@ -409,18 +409,3 @@ async def cancel(session_id: str) -> JSONResponse:
         session.task.cancel()
     SESSIONS.pop(session_id, None)
     return JSONResponse({"success": True})
-
-
-@app.get("/api/v1/sessions/{session_id}")
-async def get_session(session_id: str) -> JSONResponse:
-    session = SESSIONS.get(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return JSONResponse(
-        {
-            "id": session.id,
-            "prompt": session.prompt,
-            "status": session.status,
-            "created_at": session.created_at,
-        }
-    )
