@@ -14,10 +14,13 @@ const BEARER_PREFIX = 'Bearer ';
 const ipHits = new Map<string, number[]>();
 
 function getClientIP(req: IncomingMessage): string {
+  // Last XFF entry only — leading entries are client-supplied and spoofable.
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded !== undefined) {
-    const first = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];
-    return first.trim();
+    const raw = Array.isArray(forwarded) ? forwarded[forwarded.length - 1] : forwarded;
+    const entries = raw.split(',');
+    const last = entries[entries.length - 1].trim();
+    if (last !== '') return last;
   }
   return req.socket.remoteAddress ?? '127.0.0.1';
 }
