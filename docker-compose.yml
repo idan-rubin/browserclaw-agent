@@ -42,6 +42,7 @@ services:
       BACKEND_URL: "http://browser:5040"
       BACKEND_BU_URL: "http://browser-use:5041"
       BROWSER_INTERNAL_TOKEN: "${BROWSER_INTERNAL_TOKEN:-}"
+      COMPARE_ENABLED: "${COMPARE_ENABLED:-}"
       COMPARE_GUID: "${COMPARE_GUID:-}"
     labels:
       - "traefik.enable=true"
@@ -53,11 +54,13 @@ services:
       - public
       - internal
 
-  # ─── browser-use sidecar (compare page only) ───────────────────
-  # OSS browser-use library wrapped in a thin FastAPI service that mirrors
-  # the Browser service HTTP + SSE contract. Used exclusively by /<guid>/
-  # for side-by-side head-to-head runs. BYOK-only (no server-side keys).
+  # ─── browser-use sidecar ───────────────────────────────────────
+  # Thin FastAPI wrapper around the OSS browser-use library that mirrors
+  # the Browser service HTTP + SSE contract. Only started under the
+  # `compare` profile — public deployments should run `docker compose up`
+  # without this profile. BYOK-only (no server-side keys).
   browser-use:
+    profiles: ["compare"]
     build:
       context: ./src/Services/BrowserUseAgent
       dockerfile: Dockerfile

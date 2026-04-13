@@ -4,7 +4,17 @@ import { requireEnv } from '@/lib/env';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// Proxy to the browser-use sidecar. Only reachable when the comparison page
+// is enabled; in public deployments COMPARE_ENABLED is unset and every
+// bu-runs endpoint returns 404.
+function compareEnabled(): boolean {
+  return process.env.COMPARE_ENABLED === 'true';
+}
+
 export async function POST(request: NextRequest) {
+  if (!compareEnabled()) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
   const backendUrl = requireEnv('BACKEND_BU_URL');
   try {
     const body = (await request.json()) as unknown;

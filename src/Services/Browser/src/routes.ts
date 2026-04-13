@@ -112,6 +112,7 @@ const routes: Route[] = [
 
       const hasValidToken = req.headers.authorization !== undefined;
       const skipModeration = hasValidToken && body.skip_moderation === true;
+      const skipPostprocessing = hasValidToken && body.skip_postprocessing === true;
 
       // Validate BYOK LLM config if provided
       let llmConfig: LlmConfig | undefined;
@@ -132,7 +133,15 @@ const routes: Route[] = [
         llmConfig = { provider, model: model.trim(), api_key: api_key.trim() };
       }
 
-      const { session } = await createSession(body.prompt, url, headless, clientIp, skipModeration, llmConfig);
+      const { session } = await createSession(
+        body.prompt,
+        url,
+        headless,
+        clientIp,
+        skipModeration,
+        llmConfig,
+        skipPostprocessing,
+      );
 
       json(res, 201, {
         session_id: session.id,

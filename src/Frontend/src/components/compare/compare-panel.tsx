@@ -1,14 +1,16 @@
 'use client';
 
 /**
- * ComparePanel — single side of the /<guid> head-to-head page.
+ * ComparePanel — one side of the comparison page.
  *
  * Owns its own SSE subscription and HUD. Agnostic to which backend it talks
- * to: pass `apiBase` = "/api/v1/runs" for browserclaw or "/api/v1/bu-runs"
- * for the browser-use sidecar. Both backends emit the same event envelope.
+ * to: pass `apiBase` = "/api/v1/runs" or "/api/v1/bu-runs". Both backends
+ * emit the same event envelope; whichever events a backend actually sends
+ * are the ones that render. Pills are purely event-driven — a backend that
+ * doesn't emit skill events simply doesn't show those pills.
  *
  * Emits a single callback — `onTerminal('completed' | 'failed')` — so the
- * parent can cancel the other side on first-terminal-wins.
+ * parent can cancel the other side under the first-terminal-wins rule.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -26,7 +28,6 @@ interface ComparePanelProps {
   apiBase: string;
   vncBase: string;
   label: string;
-  showPills: boolean;
   onTerminal: (status: TerminalStatus, detail?: string) => void;
 }
 
@@ -41,53 +42,30 @@ function parse(e: MessageEvent): Record<string, unknown> | undefined {
   }
 }
 
-export function ComparePanel({ sessionId, apiBase, vncBase, label, showPills, onTerminal }: ComparePanelProps) {
+const SKILL_ACTION_PILL: Record<string, string | undefined> = {
+  click_cloudflare: 'cloudflare solved',
+  press_and_hold: 'anti-bot solved',
+};
+
+export function ComparePanel({ sessionId, apiBase, vncBase, label, onTerminal }: ComparePanelProps) {
   const [step, setStep] = useState(0);
   const [tokens, setTokens] = useState({ input: 0, output: 0 });
   const [elapsed, setElapsed] = useState(0);
   const [status, setStatus] = useState<'pending' | 'running' | TerminalStatus>('pending');
   const [error, setError] = useState<string | null>(null);
   const [pills, setPills] = useState<Pill[]>([]);
-  const startRef = useRef(0);
   const pillIdRef = useRef(0);
-  const lastEventAtRef = useRef(0);
   const onTerminalRef = useRef(onTerminal);
   useEffect(() => {
     onTerminalRef.current = onTerminal;
   }, [onTerminal]);
 
-  const vncUrl = `${vncBase}/vnc.html?autoconnect=true&resize=scale&view_only=true&path=${encodeURIComponent(vncBase.replace(/^\//, '') + '/websockify')}`;
+  // noVNC expects the websockify path relative to its own root. Matches
+  // the format used by the main run page.
+  const websockifyPath = `${vncBase.replace(/^\//, '')}/websockify`;
+  const vncUrl = `${vncBase}/vnc.html?autoconnect=true&resize=scale&view_only=true&path=${websockifyPath}`;
 
-  // Ticking elapsed timer — only runs while we have an active session
-  useEffect(() => {
-    if (sessionId === null || status === 'completed' || status === 'failed') return;
-    const timer = setInterval(() => {
-      if (startRef.current === 0) return;
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
-    }, 1000);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [sessionId, status]);
-
-  // Watchdog for hang: no event for HANG_DETECT_MS → declare failed
-  useEffect(() => {
-    if (sessionId === null || status === 'completed' || status === 'failed') return;
-    const watchdog = setInterval(() => {
-      if (lastEventAtRef.current === 0) return;
-      const idle = Date.now() - lastEventAtRef.current;
-      if (idle > HANG_DETECT_MS) {
-        setStatus('failed');
-        setError('No progress for 60s');
-        onTerminalRef.current('failed', 'hang');
-      }
-    }, 2000);
-    return () => {
-      clearInterval(watchdog);
-    };
-  }, [sessionId, status]);
-
-  // Prune expired pills
+  // Prune expired pills on a dedicated interval so the main effect stays lean.
   useEffect(() => {
     if (pills.length === 0) return;
     const timer = setInterval(() => {
@@ -99,23 +77,36 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, showPills, on
     };
   }, [pills.length]);
 
-  // SSE subscription
+  // Single lifecycle owner: SSE stream + hang watchdog + elapsed ticker.
+  // Keeping them together means one `terminated` flag gates all three, and
+  // the cleanup function tears down every timer + the EventSource atomically.
   useEffect(() => {
     if (sessionId === null) return;
-    startRef.current = Date.now();
-    lastEventAtRef.current = Date.now();
 
-    const es = new EventSource(`${apiBase}/${sessionId}/stream`);
+    const start = Date.now();
+    let lastEventAt = start;
     let terminated = false;
+    const es = new EventSource(`${apiBase}/${sessionId}/stream`);
+
+    const terminate = (finalStatus: TerminalStatus, detail?: string) => {
+      if (terminated) return;
+      terminated = true;
+      setStatus(finalStatus);
+      if (detail !== undefined) setError(detail);
+      es.close();
+      onTerminalRef.current(finalStatus, detail);
+    };
 
     const touch = () => {
-      lastEventAtRef.current = Date.now();
+      if (terminated) return;
+      lastEventAt = Date.now();
     };
 
     const addPill = (labelText: string) => {
-      if (!showPills) return;
+      if (terminated) return;
       pillIdRef.current += 1;
-      setPills((prev) => [...prev, { id: pillIdRef.current, label: labelText, expires: Date.now() + PILL_LIFETIME_MS }]);
+      const id = pillIdRef.current;
+      setPills((prev) => [...prev, { id, label: labelText, expires: Date.now() + PILL_LIFETIME_MS }]);
     };
 
     es.addEventListener('connected', () => {
@@ -129,6 +120,8 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, showPills, on
       if (!data) return;
       const n = Number(data.step);
       if (!Number.isNaN(n)) setStep(n);
+      const pill = SKILL_ACTION_PILL[String(data.action)];
+      if (pill !== undefined) addPill(pill);
     });
 
     es.addEventListener('tokens', (e) => {
@@ -155,53 +148,42 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, showPills, on
       addPill('skill improved');
     });
 
-    // Transient success pills from our built-in skill handlers. The Browser
-    // service doesn't emit these as named events, but the step `action` field
-    // reflects them — map here.
-    const skillActionPill: Record<string, string> = {
-      click_cloudflare: 'cloudflare solved',
-      press_and_hold: 'anti-bot solved',
-    };
-    es.addEventListener('step', (e) => {
-      const data = parse(e);
-      if (!data) return;
-      const pill = skillActionPill[String(data.action)];
-      if (pill) addPill(pill);
-    });
-
     es.addEventListener('completed', (e) => {
       touch();
-      terminated = true;
       const data = parse(e);
-      setStatus('completed');
-      const answer = data && typeof data.answer === 'string' ? data.answer : null;
+      const answer = data !== undefined && typeof data.answer === 'string' ? data.answer : null;
       if (answer !== null) setError(answer);
-      es.close();
-      onTerminalRef.current('completed');
+      terminate('completed');
     });
 
     es.addEventListener('failed', (e) => {
       touch();
-      terminated = true;
       const data = parse(e);
-      setStatus('failed');
-      setError(data && typeof data.error === 'string' ? data.error : 'failed');
-      es.close();
-      onTerminalRef.current('failed');
+      terminate('failed', data !== undefined && typeof data.error === 'string' ? data.error : 'failed');
     });
 
-    es.onerror = () => {
-      if (terminated) {
-        es.close();
-        return;
+    // Browser-level disconnects — EventSource auto-reconnects unless we close.
+    // Let the watchdog handle genuine hangs; ignore transient errors here.
+
+    const elapsedTimer = setInterval(() => {
+      if (terminated) return;
+      setElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+
+    const watchdog = setInterval(() => {
+      if (terminated) return;
+      if (Date.now() - lastEventAt > HANG_DETECT_MS) {
+        terminate('failed', 'No progress for 60s');
       }
-      // Let the watchdog handle actual hangs; transient disconnects recover via EventSource auto-reconnect.
-    };
+    }, 2000);
 
     return () => {
+      terminated = true;
+      clearInterval(elapsedTimer);
+      clearInterval(watchdog);
       es.close();
     };
-  }, [sessionId, apiBase, showPills]);
+  }, [sessionId, apiBase]);
 
   const done = status === 'completed' || status === 'failed';
 

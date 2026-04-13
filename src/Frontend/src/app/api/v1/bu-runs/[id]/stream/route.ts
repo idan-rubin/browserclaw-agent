@@ -7,6 +7,12 @@ export const dynamic = 'force-dynamic';
 const ID_RE = /^[0-9a-f]{32}$/i;
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (process.env.COMPARE_ENABLED !== 'true') {
+    return new Response(JSON.stringify({ error: 'Not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   const { id } = await params;
   if (!ID_RE.test(id)) {
     return new Response(JSON.stringify({ error: 'Invalid session ID' }), {

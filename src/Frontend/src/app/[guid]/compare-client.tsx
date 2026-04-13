@@ -1,21 +1,28 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useLlmConfig, LlmConfigPanel, type LlmConfig } from '@/components/llm-config';
 import { ComparePanel, type TerminalStatus } from '@/components/compare/compare-panel';
+import { BrowserClawWordmark } from '@/components/browserclaw-wordmark';
 
 interface Side {
   key: 'browserclaw' | 'browser-use';
   label: string;
   apiBase: string;
   vncBase: string;
-  showPills: boolean;
 }
 
 const SIDES: Side[] = [
-  { key: 'browserclaw', label: 'browserclaw', apiBase: '/api/v1/runs', vncBase: '/vnc', showPills: true },
-  { key: 'browser-use', label: 'browser-use', apiBase: '/api/v1/bu-runs', vncBase: '/vnc-bu', showPills: false },
+  { key: 'browserclaw', label: 'browserclaw', apiBase: '/api/v1/runs', vncBase: '/vnc' },
+  { key: 'browser-use', label: 'browser-use', apiBase: '/api/v1/bu-runs', vncBase: '/vnc-bu' },
 ];
+
+// browser-use's ChatBrowserUse/LiteLLM classes don't cover our OpenAI-OAuth
+// subscription flow, so restrict the provider list to backends both sides
+// can run identically.
+const SHARED_PROVIDERS: readonly LlmConfig['provider'][] = ['anthropic', 'openai', 'gemini'];
+const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
 
 interface SideState {
   sessionId: string | null;
@@ -29,7 +36,14 @@ const emptySide: SideState = { sessionId: null, terminal: null, error: null };
 const emptyBoth: SidesState = { browserclaw: { ...emptySide }, 'browser-use': { ...emptySide } };
 
 async function startRun(apiBase: string, prompt: string, llmConfig: LlmConfig | undefined): Promise<string> {
-  const body: Record<string, unknown> = { prompt, skip_moderation: true };
+  // skip_postprocessing asks the Browser service not to run work that the
+  // sidecar has no equivalent for (skill generation, judge). This keeps the
+  // token totals on both sides measuring the same thing: the agent loop.
+  const body: Record<string, unknown> = {
+    prompt,
+    skip_moderation: true,
+    skip_postprocessing: true,
+  };
   if (llmConfig !== undefined) body.llm_config = llmConfig;
   const res = await fetch(apiBase, {
     method: 'POST',
@@ -65,6 +79,16 @@ export function CompareClient() {
     statesRef.current = states;
   }, [states]);
 
+  // If the user's saved provider isn't supported by both backends, reset to
+  // the shared default. useLlmConfig persists per-user choices, and users
+  // may arrive here carrying a setting that worked on other pages.
+  const { provider: llmProvider, setProvider: llmSetProvider } = llm;
+  useEffect(() => {
+    if (!SHARED_PROVIDERS.includes(llmProvider)) {
+      llmSetProvider(DEFAULT_PROVIDER);
+    }
+  }, [llmProvider, llmSetProvider]);
+
   const hasApiKey = llm.apiKey.trim() !== '';
   const hasActiveSession = states.browserclaw.sessionId !== null || states['browser-use'].sessionId !== null;
   const bothTerminal =
@@ -99,9 +123,9 @@ export function CompareClient() {
     const trimmed = prompt.trim();
     const llmConfig = llm.getConfig();
 
-    // Launch in parallel. If one fails to start, report the error but let the
-    // other keep running — the failed side is effectively "crashed before
-    // step 1" and its counterpart wins by default per the first-terminal rule.
+    // Launch in parallel. If one fails to start, the failed side gets a
+    // terminal state immediately; the other keeps running and wins by
+    // default under the first-terminal rule.
     const [bcRes, buRes] = await Promise.allSettled([
       startRun('/api/v1/runs', trimmed, llmConfig),
       startRun('/api/v1/bu-runs', trimmed, llmConfig),
@@ -129,6 +153,30 @@ export function CompareClient() {
       {/* Prompt bar */}
       <div className="shrink-0 border-b border-border/50 bg-background/95 px-3 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-col gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <Link
+              href="/"
+              className="flex items-center gap-2 text-sm tracking-tight text-muted-foreground transition-colors hover:text-foreground"
+              aria-label="Back to home"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              <BrowserClawWordmark />
+            </Link>
+            <span className="rounded-full bg-muted/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              internal
+            </span>
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <textarea
               value={prompt}
@@ -142,18 +190,18 @@ export function CompareClient() {
                 }
               }}
               rows={2}
-              placeholder="Same prompt, both agents, same model. Go."
+              placeholder="Same prompt, both agents, same model."
               className="flex-1 resize-none rounded-xl border border-border bg-card/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20"
-              disabled={running && !bothTerminal}
+              disabled={running}
             />
             <button
               onClick={() => {
                 void handleRun();
               }}
-              disabled={!canRun && !bothTerminal}
+              disabled={!canRun}
               className="shrink-0 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none"
             >
-              {running && !bothTerminal ? 'Running…' : bothTerminal ? 'Run again' : 'Race'}
+              {running ? 'Running\u2026' : bothTerminal ? 'Run again' : 'Run'}
             </button>
           </div>
           <LlmConfigPanel
@@ -163,6 +211,7 @@ export function CompareClient() {
             setModel={llm.setModel}
             apiKey={llm.apiKey}
             setApiKey={llm.setApiKey}
+            allowedProviders={SHARED_PROVIDERS}
           />
           {launchError !== null && <p className="text-xs text-red-400">{launchError}</p>}
           {!hasApiKey && <p className="text-xs text-amber-500/80">Enter your API key above to run.</p>}
@@ -181,14 +230,13 @@ export function CompareClient() {
                   apiBase={side.apiBase}
                   vncBase={side.vncBase}
                   label={side.label}
-                  showPills={side.showPills}
                   onTerminal={handleTerminal(side.key)}
                 />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center bg-black/90 px-4 text-center">
                   <span className="font-[family-name:var(--font-heading)] text-xl text-foreground/70">{side.label}</span>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {state.error ?? (running ? 'Launching…' : 'Waiting for prompt')}
+                    {state.error ?? (running ? 'Launching\u2026' : 'Waiting for prompt')}
                   </p>
                 </div>
               )}

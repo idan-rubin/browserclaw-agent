@@ -1,8 +1,9 @@
 """
-browser-use sidecar for the head-to-head comparison page.
+browser-use sidecar.
 
-Mirrors the HTTP + SSE contract of the Browser service (src/Services/Browser)
-so the frontend ComparePanel can talk to either backend identically.
+A thin FastAPI wrapper around browser_use.Agent that mirrors the HTTP +
+SSE contract of the Browser service, so frontend code can talk to either
+backend through the same event envelope. BYOK only; no server-side keys.
 
 Contract:
   POST   /api/v1/sessions           -> { session_id, status, created_at }
@@ -10,11 +11,11 @@ Contract:
   DELETE /api/v1/sessions/{id}      -> { success }
   GET    /health                    -> { status, sessions }
 
-Events (matching Browser service shape):
+Events:
   connected   { session_id }
   step        { step, action, reasoning, url, page_title }
   tokens      { input, output, total }
-  completed   { answer, steps_completed, duration_ms, llm_calls, skills_used, skill_outcome }
+  completed   { answer, steps_completed, duration_ms, llm_calls }
   failed      { step, error }
 """
 
@@ -25,6 +26,7 @@ import json
 import logging
 import os
 import secrets
+import subprocess
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -40,7 +42,10 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("browser-use-sidecar")
 
 MAX_STEPS = int(os.environ.get("BU_MAX_STEPS", "100"))
-CDP_URL = os.environ.get("BU_CDP_URL", "http://localhost:9222")
+CDP_HOST = os.environ.get("BU_CDP_HOST", "127.0.0.1")
+CDP_PORT = int(os.environ.get("BU_CDP_PORT", "9222"))
+CDP_URL = f"http://{CDP_HOST}:{CDP_PORT}"
+CHROME_RESTART_TIMEOUT_S = 20.0
 
 # ── LLM provider factory ─────────────────────────────────────────────────────
 
@@ -124,6 +129,44 @@ async def emit(session: Session, event: str, data: dict[str, Any]) -> None:
     await session.queue.put((event, data))
 
 
+async def wait_for_cdp(timeout_s: float = CHROME_RESTART_TIMEOUT_S) -> None:
+    """Block until the local Chrome CDP port accepts connections."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(CDP_HOST, CDP_PORT), timeout=1.0
+            )
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return
+        except (OSError, asyncio.TimeoutError):
+            await asyncio.sleep(0.25)
+    raise RuntimeError(f"Chrome CDP not reachable at {CDP_HOST}:{CDP_PORT} within {timeout_s}s")
+
+
+async def reset_chrome() -> None:
+    """Kill the supervisord-managed Chromium so it restarts with clean state.
+
+    Supervisord's autorestart policy brings Chrome back up with a fresh user
+    data dir (we never persist one), so every session begins from identical
+    starting conditions.
+    """
+    # pkill as the `browser` user can only kill its own processes — both
+    # Chromium and this sidecar run as `browser`, so this is safe.
+    try:
+        subprocess.run(["pkill", "-9", "-f", "/usr/bin/chromium"], check=False, timeout=5.0)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as err:
+        log.warning("pkill failed: %s", err)
+    # Brief grace period for supervisord to notice the exit and start a new
+    # process before we start polling.
+    await asyncio.sleep(0.3)
+    await wait_for_cdp()
+
+
 # ── Request models ───────────────────────────────────────────────────────────
 
 
@@ -135,7 +178,12 @@ class LlmConfig(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     prompt: str = Field(min_length=1)
-    skip_moderation: bool | None = None  # accepted but ignored; our side already moderates
+    # Accepted for API parity with the Browser service. This sidecar relies
+    # on the caller's BYOK provider policies rather than a dedicated
+    # moderation pass.
+    skip_moderation: bool | None = None
+    # Accepted for API parity. The sidecar has no post-run pipeline to skip.
+    skip_postprocessing: bool | None = None
     llm_config: LlmConfig | None = None
 
 
@@ -146,6 +194,9 @@ async def run_agent(session: Session, llm_config: LlmConfig) -> None:
     session.status = "running"
     start = time.time()
     try:
+        # Start every run from a clean Chrome profile.
+        await reset_chrome()
+
         llm = make_llm(llm_config.provider, llm_config.model, llm_config.api_key)
 
         browser = BrowserSession(
@@ -156,13 +207,17 @@ async def run_agent(session: Session, llm_config: LlmConfig) -> None:
             if session.terminated:
                 return
             session.step_count = step_num
-            # browser-use's agent_output.action is a list; pick the first for display.
+            # browser-use's agent_output.action is a list of single-variant
+            # ActionModel instances. Use Pydantic's `model_fields_set` —
+            # only the fields explicitly set on this instance appear, so we
+            # pick the action variant without relying on iteration order or
+            # being fooled by future always-populated metadata fields.
             actions = getattr(agent_output, "action", None) or []
             first_action = actions[0] if actions else None
             action_name = "think"
             if first_action is not None:
-                # Each action object has exactly one non-None field — that's the action name.
-                for name in first_action.__class__.model_fields:
+                fields_set = getattr(first_action, "model_fields_set", None) or set()
+                for name in fields_set:
                     if getattr(first_action, name, None) is not None:
                         action_name = name
                         break
@@ -218,6 +273,9 @@ async def run_agent(session: Session, llm_config: LlmConfig) -> None:
             )
 
         if success:
+            # skills_used / skill_outcome / domain are included for schema
+            # parity with the Browser service; browser-use does not have
+            # equivalent concepts so we report neutral defaults.
             await emit(
                 session,
                 "completed",

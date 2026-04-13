@@ -8,7 +8,7 @@ export interface LlmConfig {
   api_key: string;
 }
 
-const PROVIDERS = [
+export const PROVIDERS = [
   { value: 'anthropic' as const, label: 'Anthropic' },
   { value: 'openai' as const, label: 'OpenAI' },
   { value: 'openai-oauth' as const, label: 'OpenAI (Subscription)' },
@@ -101,6 +101,7 @@ export function LlmConfigPanel({
   setModel,
   apiKey,
   setApiKey,
+  allowedProviders,
 }: {
   provider: LlmConfig['provider'];
   setProvider: (p: LlmConfig['provider']) => void;
@@ -108,9 +109,16 @@ export function LlmConfigPanel({
   setModel: (m: string) => void;
   apiKey: string;
   setApiKey: (k: string) => void;
+  /**
+   * Optional filter for the provider dropdown. Pages that integrate with
+   * backends that don't support every provider can narrow the list.
+   */
+  allowedProviders?: readonly LlmConfig['provider'][];
 }) {
   const [open, setOpen] = useState(apiKey === '');
   const models = MODELS[provider] ?? [];
+  const shownProviders =
+    allowedProviders !== undefined ? PROVIDERS.filter((p) => allowedProviders.includes(p.value)) : PROVIDERS;
 
   return (
     <div className="w-full">
@@ -170,7 +178,7 @@ export function LlmConfigPanel({
               aria-label="LLM Provider"
               className={`${FIELD_CLASS} sm:w-40`}
             >
-              {PROVIDERS.map((p) => (
+              {shownProviders.map((p) => (
                 <option key={p.value} value={p.value}>
                   {p.label}
                 </option>
