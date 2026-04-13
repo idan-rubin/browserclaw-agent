@@ -40,13 +40,36 @@ services:
     restart: unless-stopped
     environment:
       BACKEND_URL: "http://browser:5040"
+      BACKEND_BU_URL: "http://browser-use:5041"
       BROWSER_INTERNAL_TOKEN: "${BROWSER_INTERNAL_TOKEN:-}"
+      COMPARE_GUID: "${COMPARE_GUID:-}"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
       - "traefik.http.routers.frontend.entrypoints=web"
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+    networks:
+      - public
+      - internal
+
+  # ─── browser-use sidecar (compare page only) ───────────────────
+  # OSS browser-use library wrapped in a thin FastAPI service that mirrors
+  # the Browser service HTTP + SSE contract. Used exclusively by /<guid>/
+  # for side-by-side head-to-head runs. BYOK-only (no server-side keys).
+  browser-use:
+    build:
+      context: ./src/Services/BrowserUseAgent
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.browser-use.rule=PathPrefix(`/vnc-bu`)"
+      - "traefik.http.routers.browser-use.entrypoints=web"
+      - "traefik.http.routers.browser-use.priority=10"
+      - "traefik.http.routers.browser-use.middlewares=strip-vnc-bu"
+      - "traefik.http.middlewares.strip-vnc-bu.stripprefix.prefixes=/vnc-bu"
+      - "traefik.http.services.browser-use.loadbalancer.server.port=6080"
     networks:
       - public
       - internal

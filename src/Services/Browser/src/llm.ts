@@ -21,7 +21,15 @@ export function sanitizeErrorText(text: string): string {
 interface SessionLlmContext {
   llmConfig: LlmConfig;
   llmCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
   byokClient?: OpenAI;
+}
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+  total: number;
 }
 
 const sessionLlmStore = new AsyncLocalStorage<SessionLlmContext>();
@@ -32,7 +40,18 @@ const sessionLlmStore = new AsyncLocalStorage<SessionLlmContext>();
  * instead of the server's environment variables.
  */
 export function runWithLlmConfig<T>(config: LlmConfig, fn: () => Promise<T>): Promise<T> {
-  return sessionLlmStore.run({ llmConfig: config, llmCallCount: 0 }, fn);
+  return sessionLlmStore.run({ llmConfig: config, llmCallCount: 0, inputTokens: 0, outputTokens: 0 }, fn);
+}
+
+function recordUsage(input: number, output: number): void {
+  const ctx = sessionLlmStore.getStore();
+  if (ctx) {
+    ctx.inputTokens += input;
+    ctx.outputTokens += output;
+  } else {
+    _fallbackInputTokens += input;
+    _fallbackOutputTokens += output;
+  }
 }
 
 export const BYOK_PROVIDERS: Partial<Record<string, { baseURL: string; useMaxCompletionTokens: boolean }>> = {
@@ -232,6 +251,8 @@ async function callCodexResponsesAPI(
     } else if (data.type === 'response.completed') {
       sawCompleted = true;
       const resp = data.response as Record<string, unknown> | undefined;
+      const usage = resp?.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+      if (usage) recordUsage(usage.input_tokens ?? 0, usage.output_tokens ?? 0);
       const output = (resp?.output as Record<string, unknown>[] | undefined)?.[0];
       const content = (output?.content as Record<string, unknown>[] | undefined)?.[0];
       const legacyText = content?.text as string | undefined;
@@ -259,6 +280,9 @@ async function callChatCompletions(
     ],
   });
 
+  if (response.usage) {
+    recordUsage(response.usage.prompt_tokens ?? 0, response.usage.completion_tokens ?? 0);
+  }
   const content = response.choices[0]?.message.content ?? null;
   if (content === null) throw new Error('LLM returned empty response');
   return { text: content };
@@ -276,18 +300,31 @@ async function callLLM(provider: ProviderConfig, model: string, req: LLMRequest)
 // Per-session LLM call counter backed by AsyncLocalStorage.
 // Falls back to a module-level counter for calls outside a session context.
 let _fallbackLlmCallCount = 0;
+let _fallbackInputTokens = 0;
+let _fallbackOutputTokens = 0;
 
 export function getLLMCallCount(): number {
   const ctx = sessionLlmStore.getStore();
   return ctx ? ctx.llmCallCount : _fallbackLlmCallCount;
 }
 
+export function getTokenUsage(): TokenUsage {
+  const ctx = sessionLlmStore.getStore();
+  const input = ctx ? ctx.inputTokens : _fallbackInputTokens;
+  const output = ctx ? ctx.outputTokens : _fallbackOutputTokens;
+  return { input, output, total: input + output };
+}
+
 export function resetLLMCallCount(): void {
   const ctx = sessionLlmStore.getStore();
   if (ctx) {
     ctx.llmCallCount = 0;
+    ctx.inputTokens = 0;
+    ctx.outputTokens = 0;
   } else {
     _fallbackLlmCallCount = 0;
+    _fallbackInputTokens = 0;
+    _fallbackOutputTokens = 0;
   }
 }
 
@@ -492,5 +529,8 @@ export async function llmVision(system: string, message: string, imageBase64: st
     'LLM vision call',
   );
 
+  if (response.usage) {
+    recordUsage(response.usage.prompt_tokens ?? 0, response.usage.completion_tokens ?? 0);
+  }
   return response.choices[0]?.message.content ?? '';
 }

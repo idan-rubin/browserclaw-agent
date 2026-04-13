@@ -8,7 +8,7 @@ import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
 import { TabManager } from './skills/tab-manager.js';
 import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
 import type { UserMessage } from './types.js';
-import { llmJson, llmVision, sanitizeErrorText } from './llm.js';
+import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
 import { getLesson, formatLessonForPrompt } from './lesson-store.js';
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
@@ -1507,6 +1507,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         url: agentStep.url,
         page_title: agentStep.page_title,
       });
+      emit('tokens', getTokenUsage());
 
       // --- Terminal actions ---
 
