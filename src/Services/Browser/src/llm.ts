@@ -281,7 +281,7 @@ async function callChatCompletions(
   });
 
   if (response.usage) {
-    recordUsage(response.usage.prompt_tokens ?? 0, response.usage.completion_tokens ?? 0);
+    recordUsage(response.usage.prompt_tokens, response.usage.completion_tokens);
   }
   const content = response.choices[0]?.message.content ?? null;
   if (content === null) throw new Error('LLM returned empty response');
@@ -530,7 +530,7 @@ export async function llmVision(system: string, message: string, imageBase64: st
   );
 
   if (response.usage) {
-    recordUsage(response.usage.prompt_tokens ?? 0, response.usage.completion_tokens ?? 0);
+    recordUsage(response.usage.prompt_tokens, response.usage.completion_tokens);
   }
   return response.choices[0]?.message.content ?? '';
 }

@@ -91,8 +91,7 @@ export function CompareClient() {
 
   const hasApiKey = llm.apiKey.trim() !== '';
   const hasActiveSession = states.browserclaw.sessionId !== null || states['browser-use'].sessionId !== null;
-  const bothTerminal =
-    states.browserclaw.terminal !== null && states['browser-use'].terminal !== null;
+  const bothTerminal = states.browserclaw.terminal !== null && states['browser-use'].terminal !== null;
   const running = launching || (hasActiveSession && !bothTerminal);
   const canRun = !running && prompt.trim() !== '' && hasApiKey;
 
@@ -234,7 +233,9 @@ export function CompareClient() {
                 />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center bg-black/90 px-4 text-center">
-                  <span className="font-[family-name:var(--font-heading)] text-xl text-foreground/70">{side.label}</span>
+                  <span className="font-[family-name:var(--font-heading)] text-xl text-foreground/70">
+                    {side.label}
+                  </span>
                   <p className="mt-2 text-xs text-muted-foreground">
                     {state.error ?? (running ? 'Launching\u2026' : 'Waiting for prompt')}
                   </p>

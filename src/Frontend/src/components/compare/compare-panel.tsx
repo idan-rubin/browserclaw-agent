@@ -241,7 +241,9 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, onTerminal }:
         {done && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/70 px-3 py-2 text-xs text-white/90 backdrop-blur-sm">
             {status === 'completed' ? (
-              <span className="text-green-400">&#10003; completed in {elapsed}s &middot; {step} steps</span>
+              <span className="text-green-400">
+                &#10003; completed in {elapsed}s &middot; {step} steps
+              </span>
             ) : (
               <span className="text-red-400">
                 &#10007; {error ?? 'failed'} &middot; {step} steps
