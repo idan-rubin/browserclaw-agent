@@ -163,7 +163,7 @@ export async function createSession(
     await closeSession(existing.id);
   }
 
-  if (skipModeration !== true && llmConfig === undefined) {
+  if (skipModeration !== true) {
     const aiCheck = await moderatePrompt(prompt);
     if (!aiCheck.allowed) {
       throw new HttpError(422, aiCheck.reason ?? 'Prompt blocked by content policy.');

@@ -639,6 +639,41 @@ function parseActions(parsed: Record<string, unknown>): AgentAction[] {
   });
 }
 
+// Scheme + hostname checks on top of browserclaw's SSRF policy (which only blocks RFC1918).
+export function assertNavigateUrlAllowed(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`navigate: invalid URL`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`navigate: unsupported scheme ${parsed.protocol} — only http/https allowed`);
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1' || host === '[::1]') {
+    throw new Error(`navigate: localhost blocked`);
+  }
+  if (
+    host.startsWith('169.254.') ||
+    host === 'metadata.google.internal' ||
+    host === 'metadata.goog' ||
+    host === 'metadata.aws.internal'
+  ) {
+    throw new Error(`navigate: link-local / metadata endpoint blocked`);
+  }
+}
+
+// Block LLM-supplied expressions from touching credentials, storage, or network APIs.
+const EXTRACT_BLOCKLIST =
+  /\b(?:document\.cookie|localStorage|sessionStorage|indexedDB|window\.name|XMLHttpRequest|fetch\s*\(|eval\s*\(|Function\s*\(|navigator\.credentials|navigator\.sendBeacon|navigator\.geolocation|document\.write)/i;
+
+export function assertExtractExpressionAllowed(expression: string): void {
+  if (EXTRACT_BLOCKLIST.test(expression)) {
+    throw new Error('extract: expression references disallowed API (cookies, storage, network, or eval)');
+  }
+}
+
 async function executeAction(action: AgentAction, page: CrawlPage): Promise<void> {
   switch (action.action) {
     case 'click':
@@ -654,6 +689,7 @@ async function executeAction(action: AgentAction, page: CrawlPage): Promise<void
 
     case 'navigate':
       if (action.url === undefined || action.url === '') throw new Error('navigate action requires url');
+      assertNavigateUrlAllowed(action.url);
       await page.goto(action.url);
       break;
 
@@ -1549,6 +1585,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       if (action.action === 'extract') {
         if (action.expression !== undefined && action.expression !== '') {
           try {
+            assertExtractExpressionAllowed(action.expression);
             const raw = await holder.page.evaluate(action.expression);
             const result = typeof raw === 'string' ? raw : JSON.stringify(raw);
             agentStep.action.extract_result = result.slice(0, 2000);
