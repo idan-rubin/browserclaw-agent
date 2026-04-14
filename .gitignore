@@ -43,3 +43,4 @@ docs/articles/
 # Misc
 *.log
 *.tsbuildinfo
+.claude/

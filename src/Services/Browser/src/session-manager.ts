@@ -74,9 +74,8 @@ let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 const CDP_PORT_SEARCH_LIMIT = 100;
 
-export async function nextAvailableCdpPort(exclude: ReadonlySet<number> = new Set()): Promise<number> {
+async function nextAvailableCdpPort(): Promise<number> {
   for (let port = BASE_CDP_PORT; port < BASE_CDP_PORT + CDP_PORT_SEARCH_LIMIT; port++) {
-    if (exclude.has(port)) continue;
     if (await isPortFree(port)) {
       // Purge any stale session entries claiming this port — their Chrome died silently.
       for (const [id, s] of sessions) {
@@ -171,35 +170,22 @@ export async function createSession(
     }
   }
 
-  const triedPorts = new Set<number>();
-  let cdpPort = await nextAvailableCdpPort();
-  let browser: BrowserClaw | undefined;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    triedPorts.add(cdpPort);
-    try {
-      browser = await BrowserClaw.launch({
-        headless,
-        noSandbox: process.platform === 'linux',
-        cdpPort,
-        ssrfPolicy: {
-          dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
-        },
-        chromeArgs: [
-          '--disable-blink-features=AutomationControlled',
-          '--disable-downloads',
-          '--disable-file-system',
-          ...(headless === true ? [] : ['--start-maximized']),
-        ],
-      });
-      break;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (attempt === 2 || !msg.includes('Failed to start Chrome CDP')) throw err;
-      logger.warn({ port: cdpPort, attempt: attempt + 1, err: msg }, 'Chrome launch failed, retrying on next port');
-      cdpPort = await nextAvailableCdpPort(triedPorts);
-    }
-  }
-  if (browser === undefined) throw new HttpError(503, 'Failed to launch browser');
+  const cdpPort = await nextAvailableCdpPort();
+
+  const browser = await BrowserClaw.launch({
+    headless,
+    noSandbox: process.platform === 'linux',
+    cdpPort,
+    ssrfPolicy: {
+      dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
+    },
+    chromeArgs: [
+      '--disable-blink-features=AutomationControlled',
+      '--disable-downloads',
+      '--disable-file-system',
+      ...(headless === true ? [] : ['--start-maximized']),
+    ],
+  });
 
   let page: CrawlPage;
   try {
