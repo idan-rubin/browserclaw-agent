@@ -65,13 +65,16 @@ services:
       context: ./src/Services/BrowserUseAgent
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      BROWSER_INTERNAL_TOKEN: "${BROWSER_INTERNAL_TOKEN}"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.browser-use.rule=PathPrefix(`/vnc-bu`)"
       - "traefik.http.routers.browser-use.entrypoints=web"
       - "traefik.http.routers.browser-use.priority=10"
-      - "traefik.http.routers.browser-use.middlewares=strip-vnc-bu"
+      - "traefik.http.routers.browser-use.middlewares=strip-vnc-bu,compare-vnc-auth"
       - "traefik.http.middlewares.strip-vnc-bu.stripprefix.prefixes=/vnc-bu"
+      - "traefik.http.middlewares.compare-vnc-auth.basicauth.users=${COMPARE_VNC_BASIC_AUTH}"
       - "traefik.http.services.browser-use.loadbalancer.server.port=6080"
     networks:
       - public

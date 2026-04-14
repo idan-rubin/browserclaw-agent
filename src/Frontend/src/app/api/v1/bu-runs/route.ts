@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { requireEnv } from '@/lib/env';
+import { requireEnv, backendHeaders } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as unknown;
     const res = await fetch(`${backendUrl}/api/v1/sessions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...backendHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: request.signal,
     });

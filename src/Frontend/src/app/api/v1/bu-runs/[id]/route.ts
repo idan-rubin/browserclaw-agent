@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { requireEnv } from '@/lib/env';
+import { requireEnv, backendHeaders } from '@/lib/env';
 
 export const runtime = 'nodejs';
 
@@ -16,7 +16,10 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
 
   const backendUrl = requireEnv('BACKEND_BU_URL');
   try {
-    const res = await fetch(`${backendUrl}/api/v1/sessions/${id}`, { method: 'DELETE' });
+    const res = await fetch(`${backendUrl}/api/v1/sessions/${id}`, {
+      method: 'DELETE',
+      headers: backendHeaders(),
+    });
     const data = (await res.json()) as unknown;
     return NextResponse.json(data, { status: res.status });
   } catch {

@@ -25,13 +25,14 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import subprocess
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -46,6 +47,31 @@ CDP_HOST = os.environ.get("BU_CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("BU_CDP_PORT", "9222"))
 CDP_URL = f"http://{CDP_HOST}:{CDP_PORT}"
 CHROME_RESTART_TIMEOUT_S = 20.0
+INTERNAL_TOKEN = os.environ.get("BROWSER_INTERNAL_TOKEN", "")
+if INTERNAL_TOKEN == "":
+    raise RuntimeError("BROWSER_INTERNAL_TOKEN must be set")
+
+
+_SENSITIVE_RE = re.compile(
+    r"(eyJ[A-Za-z0-9_-]{20,}"
+    r"|sk-[A-Za-z0-9]{20,}"
+    r"|gsk_[A-Za-z0-9]{20,}"
+    r"|xox[bpas]-[A-Za-z0-9-]{20,}"
+    r"|AIza[A-Za-z0-9_-]{20,}"
+    r"|ghp_[A-Za-z0-9]{20,}"
+    r"|[A-Za-z0-9+/]{40,}={0,2})"
+)
+
+
+def sanitize_error(text: str) -> str:
+    return _SENSITIVE_RE.sub("[REDACTED]", text)[:500]
+
+
+def require_token(authorization: str = Header(default="")) -> None:
+    prefix = "Bearer "
+    token = authorization[len(prefix):] if authorization.startswith(prefix) else ""
+    if not secrets.compare_digest(token, INTERNAL_TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid or missing internal token")
 
 # ── LLM provider factory ─────────────────────────────────────────────────────
 
@@ -58,11 +84,6 @@ PROVIDERS = {
 
 
 def make_llm(provider: str, model: str, api_key: str):
-    """Instantiate a browser-use Chat class for the given BYOK provider.
-
-    We pass api_key explicitly (never via env var) so concurrent sessions
-    with different users' keys cannot collide.
-    """
     cls = PROVIDERS.get(provider)
     if cls is None:
         raise HTTPException(
@@ -92,18 +113,12 @@ SESSIONS: dict[str, Session] = {}
 
 
 def snapshot_tokens(agent: Agent | None) -> dict[str, int]:
-    """Best-effort running-total token snapshot from browser-use's TokenCost.
-
-    Private-API aware: tries the public summary first, falls back to summing
-    _usage_history. Returns zeros if nothing is readable yet.
-    """
     if agent is None:
         return {"input": 0, "output": 0, "total": 0}
     tc = getattr(agent, "token_cost", None)
     if tc is None:
         return {"input": 0, "output": 0, "total": 0}
 
-    # Try whatever public aggregator exists in the installed version.
     for method_name in ("get_usage_summary", "usage_summary", "summary"):
         method = getattr(tc, method_name, None)
         if callable(method):
@@ -115,13 +130,17 @@ def snapshot_tokens(agent: Agent | None) -> dict[str, int]:
             except Exception:
                 pass
 
-    # Fallback: sum the raw history.
     history = getattr(tc, "_usage_history", None) or getattr(tc, "usage_history", None) or []
     inp = 0
     out = 0
     for entry in history:
         inp += int(getattr(entry, "prompt_tokens", 0) or 0)
         out += int(getattr(entry, "completion_tokens", 0) or 0)
+    if not history:
+        log.warning(
+            "snapshot_tokens: no readable token source on browser-use TokenCost "
+            "(checked get_usage_summary/usage_summary/summary/_usage_history/usage_history)"
+        )
     return {"input": inp, "output": out, "total": inp + out}
 
 
@@ -130,7 +149,6 @@ async def emit(session: Session, event: str, data: dict[str, Any]) -> None:
 
 
 async def wait_for_cdp(timeout_s: float = CHROME_RESTART_TIMEOUT_S) -> None:
-    """Block until the local Chrome CDP port accepts connections."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
@@ -149,20 +167,10 @@ async def wait_for_cdp(timeout_s: float = CHROME_RESTART_TIMEOUT_S) -> None:
 
 
 async def reset_chrome() -> None:
-    """Kill the supervisord-managed Chromium so it restarts with clean state.
-
-    Supervisord's autorestart policy brings Chrome back up with a fresh user
-    data dir (we never persist one), so every session begins from identical
-    starting conditions.
-    """
-    # pkill as the `browser` user can only kill its own processes — both
-    # Chromium and this sidecar run as `browser`, so this is safe.
     try:
         subprocess.run(["pkill", "-9", "-f", "/usr/bin/chromium"], check=False, timeout=5.0)
     except (FileNotFoundError, subprocess.TimeoutExpired) as err:
         log.warning("pkill failed: %s", err)
-    # Brief grace period for supervisord to notice the exit and start a new
-    # process before we start polling.
     await asyncio.sleep(0.3)
     await wait_for_cdp()
 
@@ -178,11 +186,7 @@ class LlmConfig(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     prompt: str = Field(min_length=1)
-    # Accepted for API parity with the Browser service. This sidecar relies
-    # on the caller's BYOK provider policies rather than a dedicated
-    # moderation pass.
     skip_moderation: bool | None = None
-    # Accepted for API parity. The sidecar has no post-run pipeline to skip.
     skip_postprocessing: bool | None = None
     llm_config: LlmConfig | None = None
 
@@ -194,7 +198,6 @@ async def run_agent(session: Session, llm_config: LlmConfig) -> None:
     session.status = "running"
     start = time.time()
     try:
-        # Start every run from a clean Chrome profile.
         await reset_chrome()
 
         llm = make_llm(llm_config.provider, llm_config.model, llm_config.api_key)
@@ -207,11 +210,6 @@ async def run_agent(session: Session, llm_config: LlmConfig) -> None:
             if session.terminated:
                 return
             session.step_count = step_num
-            # browser-use's agent_output.action is a list of single-variant
-            # ActionModel instances. Use Pydantic's `model_fields_set` —
-            # only the fields explicitly set on this instance appear, so we
-            # pick the action variant without relying on iteration order or
-            # being fooled by future always-populated metadata fields.
             actions = getattr(agent_output, "action", None) or []
             first_action = actions[0] if actions else None
             action_name = "think"
@@ -259,7 +257,6 @@ async def run_agent(session: Session, llm_config: LlmConfig) -> None:
         duration_ms = int((time.time() - start) * 1000)
         session.status = "completed" if success else "failed"
 
-        # Emit final tokens snapshot (authoritative from history.usage if present).
         usage = getattr(history, "usage", None)
         if usage is not None:
             await emit(
@@ -273,9 +270,6 @@ async def run_agent(session: Session, llm_config: LlmConfig) -> None:
             )
 
         if success:
-            # skills_used / skill_outcome / domain are included for schema
-            # parity with the Browser service; browser-use does not have
-            # equivalent concepts so we report neutral defaults.
             await emit(
                 session,
                 "completed",
@@ -303,16 +297,16 @@ async def run_agent(session: Session, llm_config: LlmConfig) -> None:
         session.status = "failed"
         await emit(session, "failed", {"step": session.step_count, "error": "Run cancelled"})
         raise
-    except Exception as err:  # noqa: BLE001 — we want every failure surfaced to the client
-        log.exception("Agent run crashed")
+    except Exception as err:  # noqa: BLE001
+        safe_msg = sanitize_error(str(err))
+        log.error("Agent run crashed: %s: %s", type(err).__name__, safe_msg)
         session.status = "failed"
         await emit(
             session,
             "failed",
-            {"step": session.step_count, "error": f"{type(err).__name__}: {err}"},
+            {"step": session.step_count, "error": f"{type(err).__name__}: {safe_msg}"},
         )
     finally:
-        # Sentinel so the SSE stream can close.
         await session.queue.put(("__end__", {}))
 
 
@@ -332,18 +326,20 @@ async def health() -> JSONResponse:
     )
 
 
-@app.post("/api/v1/sessions")
+@app.post("/api/v1/sessions", dependencies=[Depends(require_token)])
 async def create_session(body: CreateSessionRequest) -> JSONResponse:
     if body.llm_config is None:
         raise HTTPException(status_code=400, detail="llm_config is required (BYOK)")
 
-    # One session per sidecar at a time. Comparison is 1:1, not a fleet.
-    # If one is already running, evict it.
     for existing_id, existing in list(SESSIONS.items()):
         if existing.status in ("pending", "running"):
             existing.terminated = True
             if existing.task is not None:
                 existing.task.cancel()
+                try:
+                    await asyncio.wait_for(existing.task, timeout=5.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass
             SESSIONS.pop(existing_id, None)
 
     session_id = secrets.token_hex(16)
@@ -362,14 +358,13 @@ async def create_session(body: CreateSessionRequest) -> JSONResponse:
     )
 
 
-@app.get("/api/v1/sessions/{session_id}/stream")
+@app.get("/api/v1/sessions/{session_id}/stream", dependencies=[Depends(require_token)])
 async def stream(session_id: str, request: Request) -> StreamingResponse:
     session = SESSIONS.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
     async def event_generator():
-        # Initial handshake, matching Browser service wire format.
         yield f"event: connected\ndata: {json.dumps({'session_id': session_id})}\n\n"
         heartbeat_interval = 15.0
         last_heartbeat = time.time()
@@ -399,7 +394,7 @@ async def stream(session_id: str, request: Request) -> StreamingResponse:
     )
 
 
-@app.delete("/api/v1/sessions/{session_id}")
+@app.delete("/api/v1/sessions/{session_id}", dependencies=[Depends(require_token)])
 async def cancel(session_id: str) -> JSONResponse:
     session = SESSIONS.get(session_id)
     if session is None:

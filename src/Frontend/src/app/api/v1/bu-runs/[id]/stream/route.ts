@@ -1,12 +1,12 @@
 import { type NextRequest } from 'next/server';
-import { requireEnv } from '@/lib/env';
+import { requireEnv, backendHeaders } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const ID_RE = /^[0-9a-f]{32}$/i;
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (process.env.COMPARE_ENABLED !== 'true') {
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
@@ -26,7 +26,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   let upstream: Response;
   try {
     upstream = await fetch(`${backendUrl}/api/v1/sessions/${id}/stream`, {
-      headers: { Accept: 'text/event-stream' },
+      headers: { ...backendHeaders(), Accept: 'text/event-stream' },
+      signal: request.signal,
     });
   } catch {
     return new Response(JSON.stringify({ error: 'Service unavailable' }), {

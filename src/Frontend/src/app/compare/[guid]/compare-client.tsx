@@ -18,9 +18,6 @@ const SIDES: Side[] = [
   { key: 'browser-use', label: 'browser-use', apiBase: '/api/v1/bu-runs', vncBase: '/vnc-bu' },
 ];
 
-// browser-use's ChatBrowserUse/LiteLLM classes don't cover our OpenAI-OAuth
-// subscription flow, so restrict the provider list to backends both sides
-// can run identically.
 const SHARED_PROVIDERS: readonly LlmConfig['provider'][] = ['anthropic', 'openai', 'gemini'];
 const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
 
@@ -36,9 +33,6 @@ const emptySide: SideState = { sessionId: null, terminal: null, error: null };
 const emptyBoth: SidesState = { browserclaw: { ...emptySide }, 'browser-use': { ...emptySide } };
 
 async function startRun(apiBase: string, prompt: string, llmConfig: LlmConfig | undefined): Promise<string> {
-  // skip_postprocessing asks the Browser service not to run work that the
-  // sidecar has no equivalent for (skill generation, judge). This keeps the
-  // token totals on both sides measuring the same thing: the agent loop.
   const body: Record<string, unknown> = {
     prompt,
     skip_moderation: true,
@@ -60,11 +54,7 @@ async function startRun(apiBase: string, prompt: string, llmConfig: LlmConfig | 
 }
 
 async function cancelRun(apiBase: string, sessionId: string): Promise<void> {
-  try {
-    await fetch(`${apiBase}/${sessionId}`, { method: 'DELETE' });
-  } catch {
-    // best-effort — if the service is already gone, nothing to cancel
-  }
+  await fetch(`${apiBase}/${sessionId}`, { method: 'DELETE' });
 }
 
 export function CompareClient() {
@@ -79,9 +69,6 @@ export function CompareClient() {
     statesRef.current = states;
   }, [states]);
 
-  // If the user's saved provider isn't supported by both backends, reset to
-  // the shared default. useLlmConfig persists per-user choices, and users
-  // may arrive here carrying a setting that worked on other pages.
   const { provider: llmProvider, setProvider: llmSetProvider } = llm;
   useEffect(() => {
     if (!SHARED_PROVIDERS.includes(llmProvider)) {
@@ -95,8 +82,6 @@ export function CompareClient() {
   const running = launching || (hasActiveSession && !bothTerminal);
   const canRun = !running && prompt.trim() !== '' && hasApiKey;
 
-  // First-terminal-wins: when either side hits a terminal state, cancel the
-  // other. Idempotent via winnerDeclared ref.
   const handleTerminal = useCallback(
     (side: Side['key']) => (status: TerminalStatus) => {
       setStates((prev) => ({ ...prev, [side]: { ...prev[side], terminal: status } }));
@@ -122,9 +107,6 @@ export function CompareClient() {
     const trimmed = prompt.trim();
     const llmConfig = llm.getConfig();
 
-    // Launch in parallel. If one fails to start, the failed side gets a
-    // terminal state immediately; the other keeps running and wins by
-    // default under the first-terminal rule.
     const [bcRes, buRes] = await Promise.allSettled([
       startRun('/api/v1/runs', trimmed, llmConfig),
       startRun('/api/v1/bu-runs', trimmed, llmConfig),
