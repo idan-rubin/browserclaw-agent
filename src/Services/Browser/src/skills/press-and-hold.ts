@@ -179,7 +179,7 @@ export function enrichSnapshot(snapshot: string, domText: string, type: AntiBotT
   return snapshot;
 }
 
-export async function pressAndHold(page: CrawlPage): Promise<boolean> {
+export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }): Promise<boolean> {
   try {
     logger.info('press-and-hold: starting');
 
@@ -194,7 +194,7 @@ export async function pressAndHold(page: CrawlPage): Promise<boolean> {
     const urlBefore = await page.url();
     const jitterX = x + Math.floor(Math.random() * 20) - 10;
     const jitterY = y + Math.floor(Math.random() * 10) - 5;
-    const holdMs = humanHoldMs();
+    const holdMs = opts?.holdMs ?? humanHoldMs();
     const delay = 100 + Math.floor(Math.random() * 200);
     logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
     await page.pressAndHold(jitterX, jitterY, { delay, holdMs });

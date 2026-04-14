@@ -90,6 +90,7 @@ Respond with valid JSON:
       "direction": "up" | "down" (for scroll),
       "expression": "JavaScript expression to evaluate (for extract) — e.g. 'Array.from(document.querySelectorAll(\".price\")).map(el => el.textContent)'",
       "tab_id": "target ID of the tab to switch to or close (for switch_tab / close_tab)",
+      "hold_ms": "optional hold duration in ms (for press_and_hold) — set when the button/UI specifies a hold time or a prior attempt was too short",
       "answer": "direct answer to the user's question (for done)"
     }
   ]
@@ -1571,7 +1572,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       // --- Special actions (break batch — need new snapshot) ---
 
       if (action.action === 'press_and_hold') {
-        await pressAndHold(holder.page);
+        await pressAndHold(holder.page, { holdMs: action.hold_ms });
         step++;
         break;
       }
