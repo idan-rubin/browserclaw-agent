@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useLlmConfig, LlmConfigPanel, type LlmConfig } from '@/components/llm-config';
 import { ComparePanel, type TerminalStatus } from '@/components/compare/compare-panel';
 import { BrowserClawWordmark } from '@/components/browserclaw-wordmark';
+import { logger } from '@/lib/logger';
 
 interface Side {
   key: 'browserclaw' | 'browser-use';
@@ -54,7 +55,11 @@ async function startRun(apiBase: string, prompt: string, llmConfig: LlmConfig | 
 }
 
 async function cancelRun(apiBase: string, sessionId: string): Promise<void> {
-  await fetch(`${apiBase}/${sessionId}`, { method: 'DELETE' });
+  try {
+    await fetch(`${apiBase}/${sessionId}`, { method: 'DELETE' });
+  } catch (err) {
+    logger.warn({ err, apiBase, sessionId }, 'cancelRun failed');
+  }
 }
 
 export function CompareClient() {
