@@ -8,10 +8,6 @@ export function requireEnv(name: string): string {
   return value;
 }
 
-/**
- * Returns auth headers for backend requests.
- * Includes the internal token when BROWSER_INTERNAL_TOKEN is set.
- */
 export function backendHeaders(): Record<string, string> {
   const token = process.env.BROWSER_INTERNAL_TOKEN;
   if (token == null || token === '') return {};

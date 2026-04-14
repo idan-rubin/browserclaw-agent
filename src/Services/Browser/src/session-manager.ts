@@ -47,6 +47,7 @@ interface ManagedSession {
   domainSkills: DomainSkillEntry[];
   abortController: AbortController;
   llmConfig: LlmConfig | undefined;
+  skipPostprocessing: boolean;
   pendingUserResponse: {
     resolve: (text: string) => void;
     reject: (err: Error) => void;
@@ -152,6 +153,7 @@ export async function createSession(
   ip: string,
   skipModeration?: boolean,
   llmConfig?: LlmConfig,
+  skipPostprocessing?: boolean,
 ): Promise<{ session: Session }> {
   if (sessions.size >= MAX_SESSIONS) {
     throw new HttpError(429, `Maximum concurrent sessions (${String(MAX_SESSIONS)}) reached`);
@@ -220,6 +222,7 @@ export async function createSession(
     domainSkills: [],
     abortController: new AbortController(),
     llmConfig,
+    skipPostprocessing: skipPostprocessing === true,
     pendingUserResponse: null,
     userMessageQueue: [],
     interjectionNonce: crypto.randomUUID().replace(/-/g, ''),
@@ -329,8 +332,9 @@ async function startAgentLoop(sessionId: string): Promise<void> {
         }
       }
 
-      // Save lessons from every run (both success and failure)
-      if (result.steps.length >= MIN_STEPS_FOR_LESSON) {
+      // Save lessons from every run (both success and failure).
+      // skipPostprocessing runs don't contribute to the shared catalog.
+      if (!managed.skipPostprocessing && result.steps.length >= MIN_STEPS_FOR_LESSON) {
         try {
           const domainLessons = extractDomainLessons(result.steps, result.success);
           if (domainLessons.length > 0) {
@@ -346,8 +350,10 @@ async function startAgentLoop(sessionId: string): Promise<void> {
       }
 
       if (result.success) {
-        skillOutcome = await tryGenerateSkill(managed, emitter, domainSkill);
-        await aggregateDomainSkills(managed, domainSkill, emitter);
+        if (!managed.skipPostprocessing) {
+          skillOutcome = await tryGenerateSkill(managed, emitter, domainSkill);
+          await aggregateDomainSkills(managed, domainSkill, emitter);
+        }
         emitter('completed', {
           steps_completed: result.steps.length,
           duration_ms: result.duration_ms,

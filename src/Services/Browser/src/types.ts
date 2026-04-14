@@ -26,6 +26,13 @@ export interface CreateSessionRequest {
   url?: string;
   headless?: boolean;
   skip_moderation?: boolean;
+  /**
+   * When true, skip post-run work that exists on this service but not on
+   * bare OSS agents (skill generation, judge, domain-skill aggregation).
+   * Used by apples-to-apples comparison runs so token totals reflect only
+   * the agent loop itself.
+   */
+  skip_postprocessing?: boolean;
   llm_config?: LlmConfig;
 }
 
