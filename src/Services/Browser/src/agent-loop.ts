@@ -1066,8 +1066,11 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       planText = plan.plan;
       emit('plan', { prompt: refinedPrompt, plan: plan.plan });
     }
-  } catch {
-    logger.error('Failed to generate plan');
+  } catch (err) {
+    logger.error(
+      { error: sanitizeErrorText(err instanceof Error ? err.message : 'unknown') },
+      'Failed to generate plan',
+    );
   }
 
   let step = 0;
@@ -1470,7 +1473,15 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
       // API/network error — don't burn a step, the agent never got to act
       consecutiveApiFailures++;
-      logger.error({ step, attempt: consecutiveApiFailures, maxAttempts: MAX_API_FAILURES }, 'LLM API error');
+      logger.error(
+        {
+          step,
+          attempt: consecutiveApiFailures,
+          maxAttempts: MAX_API_FAILURES,
+          error: sanitizeErrorText(err instanceof Error ? err.message : 'unknown'),
+        },
+        'LLM API error',
+      );
       emit('step_error', { step, error: 'AI service temporarily unavailable', type: 'api_error' });
       if (consecutiveApiFailures >= MAX_API_FAILURES) {
         return {

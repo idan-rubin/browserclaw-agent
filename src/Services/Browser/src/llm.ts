@@ -216,23 +216,29 @@ async function callCodexResponsesAPI(
 
   const body = await res.text();
   const lines = body.split('\n');
+  const textParts: string[] = [];
+  let sawCompleted = false;
   for (const line of lines) {
-    if (line.startsWith('data: ')) {
-      let data: Record<string, unknown>;
-      try {
-        data = JSON.parse(line.slice(6)) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-      if (data.type === 'response.completed') {
-        const resp = data.response as Record<string, unknown> | undefined;
-        const output = (resp?.output as Record<string, unknown>[] | undefined)?.[0];
-        const content = (output?.content as Record<string, unknown>[] | undefined)?.[0];
-        const responseText = content?.text as string | undefined;
-        if (responseText !== undefined && responseText !== '') return { text: responseText };
-      }
+    if (!line.startsWith('data: ')) continue;
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(line.slice(6)) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (data.type === 'response.output_text.done') {
+      const text = data.text as string | undefined;
+      if (text !== undefined && text !== '') textParts.push(text);
+    } else if (data.type === 'response.completed') {
+      sawCompleted = true;
+      const resp = data.response as Record<string, unknown> | undefined;
+      const output = (resp?.output as Record<string, unknown>[] | undefined)?.[0];
+      const content = (output?.content as Record<string, unknown>[] | undefined)?.[0];
+      const legacyText = content?.text as string | undefined;
+      if (legacyText !== undefined && legacyText !== '') textParts.push(legacyText);
     }
   }
+  if (sawCompleted && textParts.length > 0) return { text: textParts.join('') };
 
   throw new Error('Codex Responses API returned no completed response');
 }

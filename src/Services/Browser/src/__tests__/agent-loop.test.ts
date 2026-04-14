@@ -6,6 +6,8 @@ import type { AgentLoopResult } from '../types.js';
 // Mock external dependencies
 vi.mock('../llm.js', () => ({
   llmJson: vi.fn(),
+  llmVision: vi.fn(),
+  sanitizeErrorText: (s: string) => s,
 }));
 
 vi.mock('../skills/press-and-hold.js', () => ({
