@@ -39,6 +39,8 @@ const config = tseslint.config(
       '@typescript-eslint/require-await': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/switch-exhaustiveness-check': 'error',
+      'no-console': 'error',
+      'no-empty': ['error', { allowEmptyCatch: false }],
     },
   },
   eslintConfigPrettier,
