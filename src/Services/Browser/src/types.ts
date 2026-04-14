@@ -74,6 +74,8 @@ export interface AgentAction {
   expression?: string;
   /** Tab ID to switch to or close (for switch_tab / close_tab actions) */
   tab_id?: string;
+  /** Hold duration in ms (for press_and_hold). Omit for the default 4–10s randomized hold. */
+  hold_ms?: number;
   /** Result of extract action — set by the agent loop, shown in next step's history */
   extract_result?: string;
   /** Set by the agent loop when action execution fails — fed back to LLM in next step */
