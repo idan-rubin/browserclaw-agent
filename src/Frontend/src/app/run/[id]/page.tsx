@@ -43,6 +43,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [chatInput, setChatInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [view, setView] = useState<'human' | 'agent'>('human');
+  const [skillMd, setSkillMd] = useState<string | null>(null);
+  const [skillError, setSkillError] = useState<string | null>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const startTime = useRef(Date.now());
 
@@ -228,6 +231,25 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   }, [id]);
 
   useEffect(() => {
+    if (view !== 'agent' || skillMd !== null || skillError !== null) return;
+    let cancelled = false;
+    fetch('/api/v1/skill')
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
+        return res.text();
+      })
+      .then((text) => {
+        if (!cancelled) setSkillMd(text);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setSkillError(err instanceof Error ? err.message : 'Failed to load');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [view, skillMd, skillError]);
+
+  useEffect(() => {
     if (pendingQuestion != null && pendingQuestion !== '') {
       chatInputRef.current?.focus();
       document.title = 'Agent needs input — browserclaw';
@@ -344,12 +366,52 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         />
       ) : (
         <>
-          <div className="flex-1 bg-black">
-            <iframe
-              src={vncUrl}
-              className={`h-full w-full border-0 ${isDragging ? 'pointer-events-none' : ''}`}
-              title="Browser stream"
-            />
+          <div className="relative flex-1 bg-black">
+            {view === 'human' ? (
+              <iframe
+                src={vncUrl}
+                className={`h-full w-full border-0 ${isDragging ? 'pointer-events-none' : ''}`}
+                title="Browser stream"
+              />
+            ) : (
+              <div className="h-full w-full overflow-auto bg-black px-6 py-5">
+                {skillMd !== null ? (
+                  <pre className="whitespace-pre-wrap font-[family-name:var(--font-jetbrains-mono)] text-[12px] leading-relaxed text-foreground/85">
+                    {skillMd}
+                  </pre>
+                ) : skillError !== null ? (
+                  <p className="text-xs text-red-400">Failed to load skill: {skillError}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Loading…</p>
+                )}
+              </div>
+            )}
+            <div
+              role="group"
+              aria-label="View toggle"
+              className="pointer-events-auto absolute bottom-3 right-3 z-20 flex items-center rounded-full border border-border/60 bg-background/80 p-0.5 text-[10px] font-semibold uppercase tracking-widest shadow-lg backdrop-blur"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setView('human');
+                }}
+                className={`rounded-full px-3 py-1 transition-colors ${view === 'human' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}`}
+                aria-pressed={view === 'human'}
+              >
+                Human
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setView('agent');
+                }}
+                className={`rounded-full px-3 py-1 transition-colors ${view === 'agent' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}`}
+                aria-pressed={view === 'agent'}
+              >
+                Agent
+              </button>
+            </div>
           </div>
           <RunConsole
             entries={entries}

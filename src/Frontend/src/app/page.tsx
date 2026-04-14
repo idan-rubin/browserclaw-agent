@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { SiteHeader } from '@/components/site-header';
+import { AgentViewToggle } from '@/components/agent-view-toggle';
 import { type IconType, type Testimonial, generateTestimonials } from './testimonials-data';
 
 const ROW_1_TESTIMONIALS = generateTestimonials(7, 42);
@@ -7,324 +8,328 @@ const ROW_2_TESTIMONIALS = generateTestimonials(7, 99);
 
 export default function LandingPage() {
   return (
-    <div className="relative min-h-screen flex flex-col overflow-x-hidden">
-      <div className="pointer-events-none fixed inset-0 z-0 dot-grid" />
+    <AgentViewToggle>
+      <div className="relative min-h-screen flex flex-col overflow-x-hidden">
+        <div className="pointer-events-none fixed inset-0 z-0 dot-grid" />
 
-      <SiteHeader />
+        <SiteHeader />
 
-      {/* Hero */}
-      <section className="relative z-10 flex flex-col items-center px-4 pt-2 pb-8 sm:pt-3 sm:pb-12 sm:px-6">
-        <div className="w-full max-w-4xl animate-page-in text-center">
-          <h1 className="text-[2.5rem] font-bold leading-[1.1] tracking-tight sm:text-7xl lg:text-8xl">
-            <span className="block">
-              Let the agent <span className="italic text-primary">click&nbsp;through</span>
-            </span>
-            <span className="block">for you.</span>
-          </h1>
-          <div className="mx-auto mt-4 max-w-2xl space-y-1 text-base text-muted-foreground sm:mt-6 sm:space-y-2 sm:text-xl">
-            <p>
-              <span className="block sm:inline">AI-native browser automation,</span>{' '}
-              <span className="block sm:inline">built for agents, by agents.</span>
-            </p>
-            <p>Born from OpenClaw. Snapshots instead of vision, refs instead of selectors, no guessing.</p>
+        {/* Hero */}
+        <section className="relative z-10 flex flex-col items-center px-4 pt-2 pb-8 sm:pt-3 sm:pb-12 sm:px-6">
+          <div className="w-full max-w-4xl animate-page-in text-center">
+            <h1 className="text-[2.5rem] font-bold leading-[1.1] tracking-tight sm:text-7xl lg:text-8xl">
+              <span className="block">
+                Let the agent <span className="italic text-primary">click&nbsp;through</span>
+              </span>
+              <span className="block">for you.</span>
+            </h1>
+            <div className="mx-auto mt-4 max-w-2xl space-y-1 text-base text-muted-foreground sm:mt-6 sm:space-y-2 sm:text-xl">
+              <p>
+                <span className="block sm:inline">AI-native browser automation,</span>{' '}
+                <span className="block sm:inline">built for agents, by agents.</span>
+              </p>
+              <p>Born from OpenClaw. Snapshots instead of vision, refs instead of selectors, no guessing.</p>
+            </div>
+            <div className="mt-8 flex flex-row items-center justify-center gap-3 sm:mt-10 sm:gap-6">
+              <Link
+                href="/try"
+                className="rounded-xl bg-primary px-6 py-3 text-base font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97] sm:px-8 sm:py-4"
+              >
+                Try it live
+              </Link>
+              <a
+                href="https://github.com/idan-rubin/browserclaw"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-xl border border-border px-6 py-3 text-base font-semibold text-foreground transition-all hover:bg-card/60 sm:px-8 sm:py-4"
+              >
+                View on GitHub
+              </a>
+            </div>
           </div>
-          <div className="mt-8 flex flex-row items-center justify-center gap-3 sm:mt-10 sm:gap-6">
-            <Link
-              href="/try"
-              className="rounded-xl bg-primary px-6 py-3 text-base font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97] sm:px-8 sm:py-4"
+        </section>
+
+        {/* What Agents Say */}
+        <section className="relative z-10 pt-4 pb-16 sm:pt-6 sm:pb-24">
+          <div className="mb-10 text-center sm:mb-14">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
+              What Agents <span className="italic text-primary">Say</span>
+            </h2>
+            <p className="mt-3 text-sm text-muted-foreground sm:text-base">
+              Built for agents. Loved by agents. Humans welcome too.
+            </p>
+          </div>
+
+          <div className="marquee-container space-y-4">
+            {/* Row 1 — scrolls left */}
+            <div className="marquee-mask overflow-hidden">
+              <div className="marquee-track marquee-left">
+                {[...ROW_1_TESTIMONIALS, ...ROW_1_TESTIMONIALS].map((t, i) => (
+                  <TestimonialCard key={`r1-${String(i)}`} {...t} />
+                ))}
+              </div>
+            </div>
+
+            {/* Row 2 — scrolls right */}
+            <div className="marquee-mask overflow-hidden">
+              <div className="marquee-track marquee-right">
+                {[...ROW_2_TESTIMONIALS, ...ROW_2_TESTIMONIALS].map((t, i) => (
+                  <TestimonialCard key={`r2-${String(i)}`} {...t} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Product Cards */}
+        <section className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-6 sm:px-10 sm:pb-10">
+          <div className="grid gap-4 sm:gap-6 sm:grid-cols-3">
+            <Card
+              title="Compare across sites"
+              description="Open multiple pages, normalize messy info, and rank options by what actually matters — fees, policies, availability, not just price."
+              icon={
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <line x1="8" y1="21" x2="16" y2="21" />
+                  <line x1="12" y1="17" x2="12" y2="21" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+              }
+            />
+            <Card
+              title="Navigate the confusing"
+              description="Government forms, insurance portals, visa workflows, building applications — the painful web tasks you keep putting off."
+              icon={
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+              }
+            />
+            <Card
+              title="Get a reusable skill"
+              description="Every run exports a structured skill file. Run it again tomorrow, share it with your team, or build on it."
+              icon={
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                  <line x1="14" y1="4" x2="10" y2="20" />
+                </svg>
+              }
+            />
+          </div>
+        </section>
+
+        {/* Layered, not bundled */}
+        <section className="relative z-10 mx-auto w-full max-w-5xl px-4 py-12 sm:px-10 sm:py-20">
+          <div className="mb-10 text-center sm:mb-14">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
+              Layered, <span className="italic text-primary">not bundled</span>
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground sm:mt-4 sm:text-base">
+              browser-use welds these into one package. We keep them separate — drop the library into your own agent,
+              pair this agent with any LLM, or run the whole stack as-is.
+            </p>
+          </div>
+
+          <div className="mx-auto flex max-w-2xl flex-col items-stretch">
+            <LayerRow
+              emoji="⚡"
+              name="LLM"
+              description="The electricity. Your choice — Claude, GPT, Gemini, local. No lock-in."
+            />
+            <LayerConnector />
+            <LayerRow
+              emoji="😎"
+              name="Agent"
+              description="The driver. Reads snapshots, picks the next move, recovers from errors, ships a reusable skill. That's this app."
+            />
+            <LayerConnector />
+            <LayerRow
+              emoji="🏎️"
+              name="BrowserClaw"
+              description="The vehicle. Text snapshots + numbered refs — deterministic, fast, no vision needed. Standalone npm library."
+              link={{ label: 'github →', href: 'https://github.com/idan-rubin/browserclaw' }}
+            />
+          </div>
+        </section>
+
+        {/* vs browser-use */}
+        <section className="relative z-10 mx-auto w-full max-w-4xl px-4 pb-12 sm:px-10 sm:pb-20">
+          <div className="mb-8 text-center sm:mb-12">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
+              vs <span className="italic text-primary">browser-use</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-sm text-muted-foreground sm:text-base">
+              Different lineage, different design.{' '}
+              <a
+                href="https://openclaw.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
+              >
+                OpenClaw
+              </a>{' '}
+              took the{' '}
+              <a
+                href="https://github.com/microsoft/playwright-mcp"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
+              >
+                Playwright MCP
+              </a>{' '}
+              snapshot-and-ref approach, refined it locally, and shipped it as a standalone library. browser-use rolled
+              its own Python bundle.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-border/50 bg-card/40 backdrop-blur-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border/50 bg-card/40">
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground sm:px-6"></th>
+                  <th className="px-4 py-3 text-center font-medium text-primary sm:px-6">browserclaw</th>
+                  <th className="px-4 py-3 text-center font-medium text-muted-foreground sm:px-6">browser-use</th>
+                </tr>
+              </thead>
+              <tbody className="text-muted-foreground">
+                <BuRow label="Browser engine as a standalone library" us="yes" them="no" />
+                <BuRow label="Use the engine with a different agent" us="yes" them="partial" />
+                <BuRow label="Auto-learned skill catalog per domain" us="yes" them="no" />
+                <BuRow label="Built-in anti-bot solvers in OSS (Turnstile, press-hold)" us="yes" them="partial" />
+                <BuRow label="TypeScript / Node native" us="yes" them="no" />
+              </tbody>
+            </table>
+          </div>
+
+          <p className="mx-auto mt-4 max-w-2xl text-center text-xs text-muted-foreground/60">
+            Every row sourced from{' '}
+            <a
+              href="https://github.com/browser-use/browser-use"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-border/50 underline-offset-4 transition-colors hover:text-foreground"
             >
-              Try it live
-            </Link>
+              browser-use&apos;s repo at HEAD
+            </a>
+            . Full citations in the{' '}
+            <a
+              href="https://github.com/idan-rubin/browserclaw-agent#vs-browser-use"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-border/50 underline-offset-4 transition-colors hover:text-foreground"
+            >
+              README
+            </a>
+            .
+          </p>
+        </section>
+
+        {/* Built With / Inspired By */}
+        <section className="relative z-10 py-8 sm:py-12">
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs sm:text-sm text-muted-foreground/50 sm:gap-x-8">
+            <span>Built with</span>
             <a
               href="https://github.com/idan-rubin/browserclaw"
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-xl border border-border px-6 py-3 text-base font-semibold text-foreground transition-all hover:bg-card/60 sm:px-8 sm:py-4"
+              className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
             >
-              View on GitHub
+              BrowserClaw
             </a>
-          </div>
-        </div>
-      </section>
-
-      {/* What Agents Say */}
-      <section className="relative z-10 pt-4 pb-16 sm:pt-6 sm:pb-24">
-        <div className="mb-10 text-center sm:mb-14">
-          <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
-            What Agents <span className="italic text-primary">Say</span>
-          </h2>
-          <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-            Built for agents. Loved by agents. Humans welcome too.
-          </p>
-        </div>
-
-        <div className="marquee-container space-y-4">
-          {/* Row 1 — scrolls left */}
-          <div className="marquee-mask overflow-hidden">
-            <div className="marquee-track marquee-left">
-              {[...ROW_1_TESTIMONIALS, ...ROW_1_TESTIMONIALS].map((t, i) => (
-                <TestimonialCard key={`r1-${String(i)}`} {...t} />
-              ))}
-            </div>
-          </div>
-
-          {/* Row 2 — scrolls right */}
-          <div className="marquee-mask overflow-hidden">
-            <div className="marquee-track marquee-right">
-              {[...ROW_2_TESTIMONIALS, ...ROW_2_TESTIMONIALS].map((t, i) => (
-                <TestimonialCard key={`r2-${String(i)}`} {...t} />
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Product Cards */}
-      <section className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-6 sm:px-10 sm:pb-10">
-        <div className="grid gap-4 sm:gap-6 sm:grid-cols-3">
-          <Card
-            title="Compare across sites"
-            description="Open multiple pages, normalize messy info, and rank options by what actually matters — fees, policies, availability, not just price."
-            icon={
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="2" y="3" width="20" height="14" rx="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-            }
-          />
-          <Card
-            title="Navigate the confusing"
-            description="Government forms, insurance portals, visa workflows, building applications — the painful web tasks you keep putting off."
-            icon={
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-              </svg>
-            }
-          />
-          <Card
-            title="Get a reusable skill"
-            description="Every run exports a structured skill file. Run it again tomorrow, share it with your team, or build on it."
-            icon={
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="16 18 22 12 16 6" />
-                <polyline points="8 6 2 12 8 18" />
-                <line x1="14" y1="4" x2="10" y2="20" />
-              </svg>
-            }
-          />
-        </div>
-      </section>
-
-      {/* Layered, not bundled */}
-      <section className="relative z-10 mx-auto w-full max-w-5xl px-4 py-12 sm:px-10 sm:py-20">
-        <div className="mb-10 text-center sm:mb-14">
-          <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
-            Layered, <span className="italic text-primary">not bundled</span>
-          </h2>
-          <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground sm:mt-4 sm:text-base">
-            browser-use welds these into one package. We keep them separate — drop the library into your own agent, pair
-            this agent with any LLM, or run the whole stack as-is.
-          </p>
-        </div>
-
-        <div className="mx-auto flex max-w-2xl flex-col items-stretch">
-          <LayerRow
-            emoji="⚡"
-            name="LLM"
-            description="The electricity. Your choice — Claude, GPT, Gemini, local. No lock-in."
-          />
-          <LayerConnector />
-          <LayerRow
-            emoji="😎"
-            name="Agent"
-            description="The driver. Reads snapshots, picks the next move, recovers from errors, ships a reusable skill. That's this app."
-          />
-          <LayerConnector />
-          <LayerRow
-            emoji="🏎️"
-            name="BrowserClaw"
-            description="The vehicle. Text snapshots + numbered refs — deterministic, fast, no vision needed. Standalone npm library."
-            link={{ label: 'github →', href: 'https://github.com/idan-rubin/browserclaw' }}
-          />
-        </div>
-      </section>
-
-      {/* vs browser-use */}
-      <section className="relative z-10 mx-auto w-full max-w-4xl px-4 pb-12 sm:px-10 sm:pb-20">
-        <div className="mb-8 text-center sm:mb-12">
-          <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">
-            vs <span className="italic text-primary">browser-use</span>
-          </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-sm text-muted-foreground sm:text-base">
-            Different lineage, different design.{' '}
+            <span className="text-muted-foreground/30">&middot;</span>
+            <span>Born from</span>
             <a
               href="https://openclaw.ai"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
+              className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
             >
               OpenClaw
-            </a>{' '}
-            took the{' '}
-            <a
-              href="https://github.com/microsoft/playwright-mcp"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
-            >
-              Playwright MCP
-            </a>{' '}
-            snapshot-and-ref approach, refined it locally, and shipped it as a standalone library. browser-use rolled
-            its own Python bundle.
-          </p>
-        </div>
+            </a>
+          </div>
+        </section>
 
-        <div className="overflow-x-auto rounded-2xl border border-border/50 bg-card/40 backdrop-blur-sm">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/50 bg-card/40">
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground sm:px-6"></th>
-                <th className="px-4 py-3 text-center font-medium text-primary sm:px-6">browserclaw</th>
-                <th className="px-4 py-3 text-center font-medium text-muted-foreground sm:px-6">browser-use</th>
-              </tr>
-            </thead>
-            <tbody className="text-muted-foreground">
-              <BuRow label="Browser engine as a standalone library" us="yes" them="no" />
-              <BuRow label="Use the engine with a different agent" us="yes" them="partial" />
-              <BuRow label="Auto-learned skill catalog per domain" us="yes" them="no" />
-              <BuRow label="Built-in anti-bot solvers in OSS (Turnstile, press-hold)" us="yes" them="partial" />
-              <BuRow label="TypeScript / Node native" us="yes" them="no" />
-            </tbody>
-          </table>
-        </div>
-
-        <p className="mx-auto mt-4 max-w-2xl text-center text-xs text-muted-foreground/60">
-          Every row sourced from{' '}
-          <a
-            href="https://github.com/browser-use/browser-use"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline decoration-border/50 underline-offset-4 transition-colors hover:text-foreground"
+        {/* Bottom CTA */}
+        <section className="relative z-10 flex flex-col items-center gap-6 pb-20 pt-4 sm:gap-8 sm:pb-32 sm:pt-8">
+          <h2 className="text-center text-3xl font-bold tracking-tight sm:text-5xl">
+            Stop clicking. Start describing.
+          </h2>
+          <Link
+            href="/try"
+            className="rounded-xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97]"
           >
-            browser-use&apos;s repo at HEAD
-          </a>
-          . Full citations in the{' '}
-          <a
-            href="https://github.com/idan-rubin/browserclaw-agent#vs-browser-use"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline decoration-border/50 underline-offset-4 transition-colors hover:text-foreground"
-          >
-            README
-          </a>
-          .
-        </p>
-      </section>
+            Try it now
+          </Link>
+        </section>
 
-      {/* Built With / Inspired By */}
-      <section className="relative z-10 py-8 sm:py-12">
-        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs sm:text-sm text-muted-foreground/50 sm:gap-x-8">
-          <span>Built with</span>
-          <a
-            href="https://github.com/idan-rubin/browserclaw"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
-          >
-            BrowserClaw
-          </a>
-          <span className="text-muted-foreground/30">&middot;</span>
-          <span>Born from</span>
-          <a
-            href="https://openclaw.ai"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
-          >
-            OpenClaw
-          </a>
-        </div>
-      </section>
-
-      {/* Bottom CTA */}
-      <section className="relative z-10 flex flex-col items-center gap-6 pb-20 pt-4 sm:gap-8 sm:pb-32 sm:pt-8">
-        <h2 className="text-center text-3xl font-bold tracking-tight sm:text-5xl">Stop clicking. Start describing.</h2>
-        <Link
-          href="/try"
-          className="rounded-xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97]"
-        >
-          Try it now
-        </Link>
-      </section>
-
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-border/50 px-4 py-10 sm:px-10 sm:py-16">
-        <div className="mx-auto grid max-w-6xl grid-cols-2 gap-8 sm:grid-cols-4 sm:gap-10">
-          <FooterColumn
-            title="Product"
-            links={[
-              { label: 'Skills Library', href: '/skills' },
-              { label: 'API Docs', href: '/docs#api-reference' },
-            ]}
-          />
-          <FooterColumn
-            title="Resources"
-            links={[
-              { label: 'Documentation', href: '/docs' },
-              { label: 'Blog', href: 'https://mrrubin.substack.com' },
-              { label: 'Changelog', href: '/changelog' },
-            ]}
-          />
-          <FooterColumn
-            title="Open Source"
-            links={[
-              { label: 'BrowserClaw', href: 'https://github.com/idan-rubin/browserclaw' },
-              { label: 'OpenClaw', href: 'https://openclaw.ai' },
-              { label: 'npm', href: 'https://www.npmjs.com/package/browserclaw' },
-            ]}
-          />
-          <FooterColumn
-            title="Connect"
-            links={[{ label: 'GitHub', href: 'https://github.com/idan-rubin/browserclaw-agent' }]}
-          />
-        </div>
-        <div className="mx-auto mt-12 max-w-6xl text-sm text-muted-foreground/40">
-          &copy; {new Date().getFullYear()} browserclaw.org
-        </div>
-      </footer>
-    </div>
+        {/* Footer */}
+        <footer className="relative z-10 border-t border-border/50 px-4 py-10 sm:px-10 sm:py-16">
+          <div className="mx-auto grid max-w-6xl grid-cols-2 gap-8 sm:grid-cols-4 sm:gap-10">
+            <FooterColumn
+              title="Product"
+              links={[
+                { label: 'Skills Library', href: '/skills' },
+                { label: 'API Docs', href: '/docs#api-reference' },
+              ]}
+            />
+            <FooterColumn
+              title="Resources"
+              links={[
+                { label: 'Documentation', href: '/docs' },
+                { label: 'Blog', href: 'https://mrrubin.substack.com' },
+                { label: 'Changelog', href: '/changelog' },
+              ]}
+            />
+            <FooterColumn
+              title="Open Source"
+              links={[
+                { label: 'BrowserClaw', href: 'https://github.com/idan-rubin/browserclaw' },
+                { label: 'OpenClaw', href: 'https://openclaw.ai' },
+                { label: 'npm', href: 'https://www.npmjs.com/package/browserclaw' },
+              ]}
+            />
+            <FooterColumn
+              title="Connect"
+              links={[{ label: 'GitHub', href: 'https://github.com/idan-rubin/browserclaw-agent' }]}
+            />
+          </div>
+          <div className="mx-auto mt-12 max-w-6xl text-sm text-muted-foreground/40">
+            &copy; {new Date().getFullYear()} browserclaw.org
+          </div>
+        </footer>
+      </div>
+    </AgentViewToggle>
   );
 }
 
