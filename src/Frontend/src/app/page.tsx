@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { SiteHeader } from '@/components/site-header';
 import { AgentViewToggle } from '@/components/agent-view-toggle';
+import { SamplePrompts } from '@/components/sample-prompts';
 import { type IconType, type Testimonial, generateTestimonials } from './testimonials-data';
 
 const ROW_1_TESTIMONIALS = generateTestimonials(7, 42);
@@ -79,6 +80,16 @@ export default function LandingPage() {
               </div>
             </div>
           </div>
+        </section>
+
+        {/* Sample prompts */}
+        <section className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-8 sm:px-10 sm:pb-12">
+          <div className="mb-6 text-center sm:mb-8">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Pick a task, <span className="italic text-primary">watch it go</span>
+            </h2>
+          </div>
+          <SamplePrompts />
         </section>
 
         {/* Product Cards */}
