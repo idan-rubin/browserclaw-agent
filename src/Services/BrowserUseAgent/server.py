@@ -198,7 +198,17 @@ async def run_agent(session: Session, llm_config: LlmConfig) -> None:
     session.status = "running"
     start = time.time()
     try:
-        await reset_chrome()
+        try:
+            await reset_chrome()
+        except Exception as err:  # noqa: BLE001
+            log.error("reset_chrome failed: %s: %s", type(err).__name__, err)
+            session.status = "failed"
+            await emit(
+                session,
+                "failed",
+                {"step": 0, "error": "Chrome reset failed — sidecar may need restart"},
+            )
+            return
 
         llm = make_llm(llm_config.provider, llm_config.model, llm_config.api_key)
 
@@ -321,7 +331,6 @@ async def health() -> JSONResponse:
         {
             "status": "healthy",
             "service": "browser-use-sidecar",
-            "sessions": len(SESSIONS),
         }
     )
 
