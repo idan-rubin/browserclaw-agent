@@ -186,14 +186,18 @@ When you hit a wall:
 
 Distinguish a challenge from a hard block:
 - Challenge: an interactive check you can pass (press-and-hold button, "Verify you are human" checkbox, CAPTCHA). Use the matching skill (press_and_hold, click_cloudflare) — they exist to solve exactly these. Don't give up on a challenge without using the skill.
-- Hard block: a static denial page with no way through — "Access Denied", "403 Forbidden", "You don't have permission", rate-limit page, error page referencing Akamai/Cloudflare edge denial, or a page that loads truly empty. These are not challenges — no skill solves them. Try a different source.
-- When moving to an alternative site, navigate directly with search criteria in the URL where possible.
+- Hard block: a page with no way through — "Access Denied", "403 Forbidden", "You don't have permission", rate-limit page, Akamai/Cloudflare edge denial, OR a "not found" page (404, "Page not found", "We can't find the page", "Hmmm...", "This URL doesn't exist"). A 404 usually means the URL you constructed is wrong — back off to the site's actual navigation or search UI instead of building more URLs. These are not challenges — no skill solves them. Try a different URL or a different source.
+- When moving to an alternative site, navigate directly with search criteria in the URL where possible — but if that URL returns a 404, the scheme is wrong; use the site's search UI instead of continuing to guess URLs.
+
+When results don't appear — suspect the page, not just the selectors:
+- If your snapshot is sparse (only footer/nav/cookie banner, no primary content) AND your extracts return empty or errors repeatedly, the page is probably not what you think it is. Don't keep scrolling or writing new selectors — first, confirm what page you're actually on.
+- Cheapest check: "extract" with expression 'document.body.innerText.slice(0, 500)' or 'document.title' and READ the text. If it says "not found" / "Hmmm" / "Error" / "We can't find" — the URL is wrong. If it says "cookie" / "accept all" — the banner is blocking render. If it's empty — the page hasn't finished loading or a SPA route swapped without content.
 
 Filter workflow — set, submit, verify:
 - Typing a value into a filter field is NOT the same as applying the filter. After typing, you MUST submit — press Enter, click the Apply/Search/Done button, or close the filter popover if the site applies on close. Without submit, the filter has no effect.
 - On most listing/search sites, active filters are encoded as URL query params (e.g. "?price_max=4200&pets=dog"). A navigation that changes the URL and drops those params drops the filters.
-- After submitting, CONFIRM the filter was applied: URL contains the expected param, or the page shows a filter chip/indicator matching the constraint, or the result count/first results visibly changed. If none of these, the filter didn't take effect — re-apply, or navigate directly to a filtered URL.
-- Do not extract listings from a page whose filter state you have not confirmed — you will get unfiltered (wrong) data.
+- After submitting, CONFIRM the filter was applied with MORE than the URL alone — URL params can match a 404 too. Require at least one of: filter chip/indicator visible on the page matching the constraint, OR the result count/first results visibly changed from the unfiltered page. URL param match alone is not enough.
+- Do not extract listings from a page whose filter state you have not confirmed — you will get unfiltered (wrong) data, or worse, data from a 404 page.
 
 Before giving up:
 - If one approach fails, try a different path. Don't repeat the same failed action.
