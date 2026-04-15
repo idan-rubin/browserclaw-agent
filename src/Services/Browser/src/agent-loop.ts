@@ -122,7 +122,7 @@ Rules:
 - On modern JS/SPA sites (Next.js, React apps), listing and detail data is usually embedded in structured state — try these first before hand-rolling selectors: JSON.parse(document.getElementById('__NEXT_DATA__').textContent), window.__APOLLO_STATE__, window.__INITIAL_STATE__, or JSON-LD via document.querySelectorAll('script[type="application/ld+json"]'). One well-aimed extract from structured state beats five DOM-selector attempts.
 - "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
 - "close_tab" to close a tab by tab_id. Use only when a tab is no longer needed.
-- Perception ladder: use the cheapest sufficient method first — accessibility snapshot -> DOM text -> extract -> screenshot fallback -> ask_user.
+- Perception ladder: use the right method for the situation — accessibility snapshot -> DOM text -> extract -> screenshot fallback -> ask_user. Start with the snapshot; escalate when it doesn't contain what you need.
 - "ask_user" only when you need info you can't get from the page (MFA codes, credentials, preferences).
 - "done" when finished. Include "answer" if the task asked a question — be specific with what you found. Before done, verify you actually satisfied the task.
 - "fail" when the task is impossible. In reasoning, give a SHORT summary: what you tried, why it failed, and any partial results you found. Don't dump your full scratchpad — the user sees this.
@@ -171,11 +171,12 @@ Filters and search:
 - If the filter controls you need aren't visible after 2 scrolls, they probably don't exist on this page. Use URL parameters instead (e.g. ?max_price=4200) or verify criteria on individual listing pages.
 - Don't waste steps hunting for perfect filter UI. URL parameters + manual verification on detail pages beats endlessly searching for filter controls that may not exist.
 
-Blocking overlays (popups, modals, date pickers, calendars, cookie banners):
-- If a popup, modal, date picker, calendar, or overlay is covering the page and blocking your clicks, you MUST dismiss it before doing anything else.
-- To dismiss: click the overlay's "Cancel", "Close", "X", or "No thanks" button using "click" with its ref number. If there's no visible close button, use "keyboard" with "Escape".
-- After dismissing, check the next snapshot — there may be another overlay underneath (e.g. a date picker on top of a filters modal). Dismiss each layer one at a time.
-- Do NOT repeatedly click elements behind an overlay. If a click fails and the snapshot still shows an overlay, dismiss the overlay first.
+Anything covering the page — classify before acting:
+- Overlay to dismiss: cookie/GDPR banners, newsletter signup, membership/upsell, age verification, location/notification prompts, "install our app", date pickers, calendars, drawers, Google One Tap / "Sign in with Google" tile, social-login prompts, chat widgets, embedded auth iframes. → Click "Cancel" / "Close" / "X" / "No thanks" / "Maybe later", or press Escape.
+- Challenge to solve: press-and-hold button, Cloudflare "Verify you are human" checkbox, reCAPTCHA widget. → Use the matching skill (press_and_hold, click_cloudflare). Don't dismiss — solve.
+- These can appear AT ANY POINT — on load, after a click, after scroll, after idle, after navigation, even between two actions in the same batch. Don't assume a page that was clear stays clear. Re-check each snapshot before acting on old refs.
+- Overlays can layer (date picker over filters modal; cookie banner behind newsletter popup). Dismiss each layer one at a time.
+- Do NOT repeatedly click elements behind an overlay — if a click fails and the snapshot still shows one, it's intercepting; handle it first.
 
 When you hit a wall:
 - Stop. Don't retry the same thing.
@@ -184,16 +185,18 @@ When you hit a wall:
 - Think about alternative paths to the same information. Can you use the site's navigation differently? Is there a direct URL? A different section of the site? A search box you haven't tried?
 - Be resourceful. The information is on the site — you just need to find the right path to it.
 
-Distinguish a challenge from a hard block:
-- Challenge: an interactive check you can pass (press-and-hold button, "Verify you are human" checkbox, CAPTCHA). Use the matching skill (press_and_hold, click_cloudflare) — they exist to solve exactly these. Don't give up on a challenge without using the skill.
-- Hard block: a static denial page with no way through — "Access Denied", "403 Forbidden", "You don't have permission", rate-limit page, error page referencing Akamai/Cloudflare edge denial, or a page that loads truly empty. These are not challenges — no skill solves them. Try a different source.
-- When moving to an alternative site, navigate directly with search criteria in the URL where possible.
+When the page itself is the problem (not a removable overlay):
+- Hard block — "Access Denied" / "403 Forbidden" / "You don't have permission" / rate-limit / edge denial. No skill solves these; try a different source.
+- Not-found page — "Page not found" / "404" / "We can't find this page". The URL you built is wrong. Don't scroll or extract; fix the URL or switch to the site's search UI.
+
+When results don't appear — suspect the page first:
+- If the snapshot is sparse (only footer/nav/cookie banner) AND extracts return empty or errors, don't keep writing new selectors — confirm what page you're on.
+- Read the page text directly: extract with 'document.body.innerText.slice(0, 500)' or 'document.title'. The text will tell you: error page → fix the URL; cookie banner → accept/dismiss it; blank → the page hasn't loaded.
 
 Filter workflow — set, submit, verify:
 - Typing a value into a filter field is NOT the same as applying the filter. After typing, you MUST submit — press Enter, click the Apply/Search/Done button, or close the filter popover if the site applies on close. Without submit, the filter has no effect.
 - On most listing/search sites, active filters are encoded as URL query params (e.g. "?price_max=4200&pets=dog"). A navigation that changes the URL and drops those params drops the filters.
-- After submitting, CONFIRM the filter was applied: URL contains the expected param, or the page shows a filter chip/indicator matching the constraint, or the result count/first results visibly changed. If none of these, the filter didn't take effect — re-apply, or navigate directly to a filtered URL.
-- Do not extract listings from a page whose filter state you have not confirmed — you will get unfiltered (wrong) data.
+- After submitting, CONFIRM the filter took effect. URL params alone aren't enough — a 404 URL can still contain them. Require a visible filter chip matching the constraint OR a change in the result count/first results. Don't extract listings until confirmed.
 
 Before giving up:
 - If one approach fails, try a different path. Don't repeat the same failed action.
