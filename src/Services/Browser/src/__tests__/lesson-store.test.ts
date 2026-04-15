@@ -36,7 +36,7 @@ describe('extractDomainLessons', () => {
     expect(lesson?.status).toBe('worked');
   });
 
-  it('marks domain blocked when press_and_hold is the last action', () => {
+  it('does not mark blocked when anti-bot challenge was encountered but not solved — it is transient', () => {
     const steps = [
       makeStep('navigate', 'https://site.com/page'),
       makeStep('press_and_hold', 'https://site.com/page'),
@@ -44,31 +44,28 @@ describe('extractDomainLessons', () => {
     ];
     const lessons = extractDomainLessons(steps, false);
     const lesson = lessons.find((l) => l.domain === 'site.com');
-    expect(lesson?.status).toBe('blocked');
+    expect(lesson?.status).not.toBe('blocked');
   });
 
-  it('marks domain blocked when click_cloudflare is the last meaningful action', () => {
+  it('does not mark blocked on click_cloudflare alone', () => {
     const steps = [makeStep('navigate', 'https://cf.com/'), makeStep('click_cloudflare', 'https://cf.com/')];
     const lessons = extractDomainLessons(steps, false);
     const lesson = lessons.find((l) => l.domain === 'cf.com');
+    expect(lesson?.status).not.toBe('blocked');
+  });
+
+  it('marks domain blocked on hard-block response text', () => {
+    const steps = [
+      makeStep('navigate', 'https://hostile.com/', {
+        error_feedback: 'HTTP 403: access denied',
+      }),
+    ];
+    const lessons = extractDomainLessons(steps, false);
+    const lesson = lessons.find((l) => l.domain === 'hostile.com');
     expect(lesson?.status).toBe('blocked');
   });
 
-  it('marks domain worked when click_cloudflare solved and agent continues', () => {
-    const steps = [
-      makeStep('navigate', 'https://cf.com/'),
-      makeStep('click_cloudflare', 'https://cf.com/'),
-      makeStep('scroll', 'https://cf.com/listings'),
-      makeStep('extract', 'https://cf.com/listings'),
-      makeStep('done', 'https://cf.com/listings'),
-    ];
-    const lessons = extractDomainLessons(steps, true);
-    const lesson = lessons.find((l) => l.domain === 'cf.com');
-    expect(lesson?.status).toBe('worked');
-  });
-
-  it('marks domain blocked when agent navigates away after anti-bot without acting', () => {
-    // Agent tried press_and_hold on sitea.com, gave up and moved to siteb.com
+  it('does not blacklist a site just because agent moved on after anti-bot', () => {
     const steps = [
       makeStep('navigate', 'https://sitea.com/'),
       makeStep('press_and_hold', 'https://sitea.com/'),
@@ -79,7 +76,7 @@ describe('extractDomainLessons', () => {
     const lessons = extractDomainLessons(steps, true);
     const siteA = lessons.find((l) => l.domain === 'sitea.com');
     const siteB = lessons.find((l) => l.domain === 'siteb.com');
-    expect(siteA?.status).toBe('blocked');
+    expect(siteA?.status).not.toBe('blocked');
     expect(siteB?.status).toBe('worked');
   });
 

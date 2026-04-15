@@ -116,8 +116,8 @@ Rules:
 - "keyboard" to press special keys: Enter (submit forms), Escape (close dropdowns/dialogs/popups/date pickers/calendars), Tab (move between fields), ArrowDown/ArrowUp (navigate dropdowns).
 - If a popup, modal, date picker, calendar widget, or overlay is blocking the UI, dismiss it immediately: click its "Cancel", "Close", or "X" button, or use "keyboard" with "Escape". Do NOT try to click elements behind a blocking overlay — dismiss the overlay first.
 - "back" to go back in browser history. Use this instead of manually tracking URLs when you need to return to the previous page.
-- "press_and_hold" for press-and-hold anti-bot challenges. Wait after, check if it worked. If the challenge cleared but the page still looks the same (no new content loaded), refresh the page by navigating to the current URL. Try twice before asking user.
-- "click_cloudflare" for Cloudflare security checks ("Verify you are human" checkbox). The system will find and click the checkbox. Wait after, check if it worked. Try twice before asking user.
+- "press_and_hold" solves press-and-hold human-verification challenges. Include "hold_ms" (milliseconds) to override the default duration when a prior attempt was too short or the UI specifies a time.
+- "click_cloudflare" solves Cloudflare "Verify you are human" checkbox challenges. The system locates and clicks the checkbox.
 - "extract" when the accessibility snapshot is missing data you need — prices, descriptions, table values, form field values, counts, or any text that's visually on the page but absent from the snapshot. Provide a JavaScript expression; the result appears in the next step. Examples: 'document.querySelector(".price")?.textContent', 'Array.from(document.querySelectorAll("td")).map(el=>el.textContent.trim())'. Use this like a human would: when you can see there's content but can't read it from the snapshot.
 - "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
 - "close_tab" to close a tab by tab_id. Use only when a tab is no longer needed.
@@ -183,11 +183,9 @@ When you hit a wall:
 - Think about alternative paths to the same information. Can you use the site's navigation differently? Is there a direct URL? A different section of the site? A search box you haven't tried?
 - Be resourceful. The information is on the site — you just need to find the right path to it.
 
-Site blocking — when to move on:
-- If a site shows anti-bot challenges (press-and-hold, Cloudflare, CAPTCHA) more than once, the site is actively blocking automation. Do NOT waste more steps — navigate to a different site that has the same information.
-- If clicks keep failing, the page is mostly empty after loading, or you're getting access-denied/403 pages — the site is hostile. Move on immediately.
-- There are always multiple sites with the same information. Real estate: Zillow, Apartments.com, Realtor.com, Redfin. Flights: Google Flights, Kayak, Skyscanner. Hotels: Booking.com, Hotels.com, Google Hotels. Shopping: Amazon, Google Shopping, Best Buy.
-- When moving to a new site, navigate directly to it with your search criteria in the URL if possible (e.g. apartments.com/chelsea-new-york-ny).
+When a site is hostile:
+- Hard signals of a block (403, access denied, rate-limit message, page truly empty after loading): the site is not serving you — try another source. Any anti-bot encounter by itself is not a hard signal; use the appropriate skill first.
+- The same information usually exists on multiple sites. When moving to an alternative, navigate directly with search criteria in the URL where possible.
 
 Before giving up:
 - If one approach fails, try a different path. Don't repeat the same failed action.
@@ -1193,7 +1191,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 Analyze what's been tried, what failed, and suggest a DIFFERENT approach.
 Don't repeat strategies that already failed. Be creative — try different site sections, different URLs, different interaction patterns.
 Include a specific alternative strategy, not just "try something different".
-IMPORTANT: If the agent hit anti-bot challenges (press_and_hold, click_cloudflare, CAPTCHA), the current site is blocking automation. Your new plan MUST use a completely different website. Navigate directly to the alternative with search criteria in the URL.
 Respond with JSON: {"plan": "your revised plan here"}`,
           message: `Original task: ${refinedPrompt}\n\nOriginal plan: ${planText ?? 'none'}\n\nCurrent page: ${title} (${url})${progressContext}\n\nMemory: ${lastMemory ?? 'none'}\n\nRecent actions:\n${recentSummary}\n\nStep ${String(step)} of ${String(maxSteps)} — ${replanReason}.`,
           maxTokens: 256,
