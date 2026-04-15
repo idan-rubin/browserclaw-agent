@@ -46,8 +46,6 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [view, setView] = useState<'human' | 'agent'>('human');
   const [skillMd, setSkillMd] = useState<string | null>(null);
   const [skillError, setSkillError] = useState<string | null>(null);
-  const [openPopover, setOpenPopover] = useState<'prompt' | 'plan' | null>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const startTime = useRef(Date.now());
 
@@ -233,24 +231,6 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   }, [id]);
 
   useEffect(() => {
-    if (openPopover === null) return;
-    const onClickOutside = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setOpenPopover(null);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpenPopover(null);
-    };
-    document.addEventListener('mousedown', onClickOutside);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onClickOutside);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [openPopover]);
-
-  useEffect(() => {
     if (view !== 'agent' || skillMd !== null || skillError !== null) return;
     let cancelled = false;
     fetch('/api/v1/skill')
@@ -334,62 +314,26 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <Link href="/" className="font-[family-name:var(--font-heading)] text-lg tracking-tight">
             <BrowserClawWordmark />
           </Link>
-          <div ref={popoverRef} className="flex items-center gap-2">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenPopover(openPopover === 'prompt' ? null : 'prompt');
-                }}
-                aria-expanded={openPopover === 'prompt'}
-                aria-controls="popover-prompt"
-                className={`rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
-                  openPopover === 'prompt'
-                    ? 'bg-muted text-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-                }`}
-              >
+          <div className="flex items-center gap-2">
+            <div className="group relative">
+              <button className="rounded-md bg-muted/50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted focus:bg-muted focus:outline-none">
                 Prompt
               </button>
-              {openPopover === 'prompt' && (
-                <div
-                  id="popover-prompt"
-                  role="dialog"
-                  className="absolute left-0 top-full z-50 mt-1 w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg"
-                >
-                  <p className="text-sm text-foreground break-words">
-                    {plan?.prompt ?? <span className="text-muted-foreground">Loading…</span>}
-                  </p>
-                </div>
-              )}
+              <div className="pointer-events-none absolute left-0 top-full z-50 hidden w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block group-focus-within:block">
+                <p className="text-sm text-foreground break-words">
+                  {plan?.prompt ?? <span className="text-muted-foreground">Loading…</span>}
+                </p>
+              </div>
             </div>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenPopover(openPopover === 'plan' ? null : 'plan');
-                }}
-                aria-expanded={openPopover === 'plan'}
-                aria-controls="popover-plan"
-                className={`rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
-                  openPopover === 'plan'
-                    ? 'bg-primary/25 text-primary'
-                    : 'bg-primary/10 text-primary hover:bg-primary/20'
-                }`}
-              >
+            <div className="group relative">
+              <button className="rounded-md bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary hover:bg-primary/20 focus:bg-primary/20 focus:outline-none">
                 Plan
               </button>
-              {openPopover === 'plan' && (
-                <div
-                  id="popover-plan"
-                  role="dialog"
-                  className="absolute left-0 top-full z-50 mt-1 w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg"
-                >
-                  <p className="text-sm text-foreground break-words">
-                    {plan?.plan ?? <span className="text-muted-foreground">Loading…</span>}
-                  </p>
-                </div>
-              )}
+              <div className="pointer-events-none absolute left-0 top-full z-50 hidden w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block group-focus-within:block">
+                <p className="text-sm text-foreground break-words">
+                  {plan?.plan ?? <span className="text-muted-foreground">Loading…</span>}
+                </p>
+              </div>
             </div>
           </div>
         </div>
