@@ -8,6 +8,10 @@ vi.mock('../llm.js', () => ({
   llmJson: vi.fn(),
   llmVision: vi.fn(),
   sanitizeErrorText: (s: string) => s,
+  getTokenUsage: vi.fn(() => ({ input: 0, output: 0, total: 0 })),
+  getLLMCallCount: vi.fn(() => 0),
+  resetLLMCallCount: vi.fn(),
+  runWithLlmConfig: <T>(_config: unknown, fn: () => Promise<T>) => fn(),
 }));
 
 vi.mock('../skills/press-and-hold.js', () => ({
@@ -142,6 +146,35 @@ describe('runAgentLoop', () => {
     expect(mock.click).toHaveBeenCalledWith('42');
     expect(result.success).toBe(true);
     expect(result.steps).toHaveLength(2);
+  });
+
+  it('aborts remaining queued actions when URL changes mid-batch', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'batch click' })
+      .mockResolvedValueOnce({
+        reasoning: 'Click two buttons',
+        actions: [
+          { action: 'click', reasoning: 'first click navigates', ref: '1' },
+          { action: 'click', reasoning: 'second click on stale ref', ref: '2' },
+        ],
+      })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'done after abort', answer: 'ok' });
+
+    const { page, mock } = mockPage();
+    mock.url.mockResolvedValue('https://example.com/a');
+    mock.click.mockImplementation((ref: string) => {
+      if (ref === '1') mock.url.mockResolvedValue('https://example.com/b');
+    });
+
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('batch', page, emit, controller.signal);
+
+    expect(mock.click).toHaveBeenCalledTimes(1);
+    expect(mock.click).toHaveBeenCalledWith('1');
+    const aborted = result.steps.find((s) => s.outcome?.includes('Aborting') === true);
+    expect(aborted).toBeDefined();
   });
 
   it('executes type action correctly', async () => {

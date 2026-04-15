@@ -1492,8 +1492,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     }
 
     // Execute batch of actions sequentially
-    for (const action of actions) {
+    for (let actionIdx = 0; actionIdx < actions.length; actionIdx++) {
       if (step >= maxSteps) break;
+      const action = actions[actionIdx];
+      const hasMoreQueued = actionIdx < actions.length - 1;
 
       const agentStep: AgentStep = {
         step,
@@ -1683,8 +1685,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         }
 
         // Validate action outcome — provide natural language feedback
+        let postActionUrl = preActionUrl;
         try {
-          const postActionUrl = await holder.page.url();
+          postActionUrl = await holder.page.url();
           const postSnapshot = (await holder.page.snapshot({ interactive: true, compact: true })).snapshot;
           const outcome = validateAction(action, preActionUrl, postActionUrl, snapshot.length, postSnapshot.length);
           if (outcome !== undefined) {
@@ -1692,6 +1695,16 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           }
         } catch {
           // Validation snapshot failed — not critical, skip
+        }
+
+        // Stale-DOM abort: if URL changed and more actions are queued, their refs
+        // point into a prior snapshot. Abort the batch so the LLM re-snapshots.
+        if (hasMoreQueued && postActionUrl !== preActionUrl) {
+          const remaining = actions.length - actionIdx - 1;
+          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.`;
+          logger.info({ step, remaining, preActionUrl, postActionUrl }, 'Stale-DOM abort');
+          step++;
+          break;
         }
       } catch (err) {
         const feedback = describeActionError(action, err);

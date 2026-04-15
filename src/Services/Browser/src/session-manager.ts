@@ -27,6 +27,7 @@ import {
 import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig } from './llm.js';
 import { extractDomain, getSkillForDomain, getSkillsForDomains, saveSkill } from './skill-store.js';
 import { saveLesson, extractDomainLessons } from './lesson-store.js';
+import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
 import { logger } from './logger.js';
 
 interface ManagedSession {
@@ -331,6 +332,17 @@ async function startAgentLoop(sessionId: string): Promise<void> {
           managed.domain = extractDomain(result.final_url);
         }
       }
+
+      await saveTrajectory({
+        session_id: sessionId,
+        prompt: managed.prompt,
+        status: result.success ? TRAJECTORY_STATUS.completed : TRAJECTORY_STATUS.failed,
+        steps: result.steps,
+        answer: result.answer,
+        error: result.error,
+        duration_ms: result.duration_ms,
+        saved_at: new Date().toISOString(),
+      });
 
       // Save lessons from every run (both success and failure).
       // skipPostprocessing runs don't contribute to the shared catalog.
