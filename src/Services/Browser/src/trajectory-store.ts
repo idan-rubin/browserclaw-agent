@@ -1,27 +1,10 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand, NoSuchKey } from '@aws-sdk/client-s3';
 import { getMinioConfig } from './config.js';
 import type { AgentStep } from './types.js';
 import { logger } from './logger.js';
 
-let s3: S3Client;
-let bucket: string;
-
-export function initTrajectoryStore(): void {
-  const config = getMinioConfig();
-  bucket = config.bucket;
-
-  s3 = new S3Client({
-    endpoint: config.endpoint,
-    region: 'us-east-1',
-    credentials: {
-      accessKeyId: config.accessKey,
-      secretAccessKey: config.secretKey,
-    },
-    forcePathStyle: true,
-  });
-
-  logger.info('Trajectory store ready');
-}
+const KEY_PREFIX = 'trajectories/';
+const CONTENT_TYPE = 'application/json';
 
 export const TRAJECTORY_STATUS = {
   completed: 'completed',
@@ -40,15 +23,28 @@ export interface TrajectoryRecord {
   saved_at: string;
 }
 
-function key(sessionId: string): string {
-  return `trajectories/${sessionId}.json`;
+let s3: S3Client;
+let bucket: string;
+
+export function initTrajectoryStore(): void {
+  const config = getMinioConfig();
+  bucket = config.bucket;
+  s3 = new S3Client({
+    endpoint: config.endpoint,
+    region: 'us-east-1',
+    credentials: { accessKeyId: config.accessKey, secretAccessKey: config.secretKey },
+    forcePathStyle: true,
+  });
+  logger.info('Trajectory store ready');
 }
 
-async function streamToString(body: unknown): Promise<string> {
+function keyFor(sessionId: string): string {
+  return `${KEY_PREFIX}${sessionId}.json`;
+}
+
+async function readBody(body: AsyncIterable<Uint8Array>): Promise<string> {
   const chunks: Buffer[] = [];
-  for await (const chunk of body as AsyncIterable<Uint8Array>) {
-    chunks.push(Buffer.from(chunk));
-  }
+  for await (const chunk of body) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString('utf8');
 }
 
@@ -57,9 +53,9 @@ export async function saveTrajectory(record: TrajectoryRecord): Promise<void> {
     await s3.send(
       new PutObjectCommand({
         Bucket: bucket,
-        Key: key(record.session_id),
+        Key: keyFor(record.session_id),
         Body: JSON.stringify(record),
-        ContentType: 'application/json',
+        ContentType: CONTENT_TYPE,
       }),
     );
     logger.info(
@@ -73,10 +69,13 @@ export async function saveTrajectory(record: TrajectoryRecord): Promise<void> {
 
 export async function loadTrajectory(sessionId: string): Promise<TrajectoryRecord | null> {
   try {
-    const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key(sessionId) }));
-    const body = await streamToString(res.Body);
+    const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: keyFor(sessionId) }));
+    if (res.Body === undefined) return null;
+    const body = await readBody(res.Body as AsyncIterable<Uint8Array>);
     return JSON.parse(body) as TrajectoryRecord;
-  } catch {
+  } catch (err) {
+    if (err instanceof NoSuchKey) return null;
+    logger.warn({ err, sessionId }, 'Failed to load trajectory');
     return null;
   }
 }

@@ -8,6 +8,10 @@ vi.mock('../llm.js', () => ({
   llmJson: vi.fn(),
   llmVision: vi.fn(),
   sanitizeErrorText: (s: string) => s,
+  getTokenUsage: vi.fn(() => ({ input: 0, output: 0, total: 0 })),
+  getLLMCallCount: vi.fn(() => 0),
+  resetLLMCallCount: vi.fn(),
+  runWithLlmConfig: <T>(_config: unknown, fn: () => Promise<T>) => fn(),
 }));
 
 vi.mock('../skills/press-and-hold.js', () => ({
