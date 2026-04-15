@@ -119,6 +119,7 @@ Rules:
 - "press_and_hold" solves press-and-hold human-verification challenges. Include "hold_ms" (milliseconds) to override the default duration when a prior attempt was too short or the UI specifies a time.
 - "click_cloudflare" solves Cloudflare "Verify you are human" checkbox challenges. The system locates and clicks the checkbox.
 - "extract" when the accessibility snapshot is missing data you need — prices, descriptions, table values, form field values, counts, or any text that's visually on the page but absent from the snapshot. Provide a JavaScript expression; the result appears in the next step. Examples: 'document.querySelector(".price")?.textContent', 'Array.from(document.querySelectorAll("td")).map(el=>el.textContent.trim())'. Use this like a human would: when you can see there's content but can't read it from the snapshot.
+- On modern JS/SPA sites (Next.js, React apps), listing and detail data is usually embedded in structured state — try these first before hand-rolling selectors: JSON.parse(document.getElementById('__NEXT_DATA__').textContent), window.__APOLLO_STATE__, window.__INITIAL_STATE__, or JSON-LD via document.querySelectorAll('script[type="application/ld+json"]'). One well-aimed extract from structured state beats five DOM-selector attempts.
 - "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
 - "close_tab" to close a tab by tab_id. Use only when a tab is no longer needed.
 - Perception ladder: use the cheapest sufficient method first — accessibility snapshot -> DOM text -> extract -> screenshot fallback -> ask_user.
@@ -183,9 +184,16 @@ When you hit a wall:
 - Think about alternative paths to the same information. Can you use the site's navigation differently? Is there a direct URL? A different section of the site? A search box you haven't tried?
 - Be resourceful. The information is on the site — you just need to find the right path to it.
 
-When a site is hostile:
-- Hard signals of a block (403, access denied, rate-limit message, page truly empty after loading): the site is not serving you — try another source. Any anti-bot encounter by itself is not a hard signal; use the appropriate skill first.
-- The same information usually exists on multiple sites. When moving to an alternative, navigate directly with search criteria in the URL where possible.
+Distinguish a challenge from a hard block:
+- Challenge: an interactive check you can pass (press-and-hold button, "Verify you are human" checkbox, CAPTCHA). Use the matching skill (press_and_hold, click_cloudflare) — they exist to solve exactly these. Don't give up on a challenge without using the skill.
+- Hard block: a static denial page with no way through — "Access Denied", "403 Forbidden", "You don't have permission", rate-limit page, error page referencing Akamai/Cloudflare edge denial, or a page that loads truly empty. These are not challenges — no skill solves them. Try a different source.
+- When moving to an alternative site, navigate directly with search criteria in the URL where possible.
+
+Filter workflow — set, submit, verify:
+- Typing a value into a filter field is NOT the same as applying the filter. After typing, you MUST submit — press Enter, click the Apply/Search/Done button, or close the filter popover if the site applies on close. Without submit, the filter has no effect.
+- On most listing/search sites, active filters are encoded as URL query params (e.g. "?price_max=4200&pets=dog"). A navigation that changes the URL and drops those params drops the filters.
+- After submitting, CONFIRM the filter was applied: URL contains the expected param, or the page shows a filter chip/indicator matching the constraint, or the result count/first results visibly changed. If none of these, the filter didn't take effect — re-apply, or navigate directly to a filtered URL.
+- Do not extract listings from a page whose filter state you have not confirmed — you will get unfiltered (wrong) data.
 
 Before giving up:
 - If one approach fails, try a different path. Don't repeat the same failed action.
@@ -314,6 +322,8 @@ const TERMINATION_CHECK_INTERVAL = 4;
 const JUDGE_FATIGUE_LIMIT = 3;
 const REPLAN_FAILURE_THRESHOLD = 3;
 const CONTEXT_COMPRESS_INTERVAL = 20;
+const EXTRACT_RESULT_MAX_CHARS = 2000;
+const EXTRACT_PREVIEW_MAX_CHARS = 500;
 
 function truncateHistory(history: AgentStep[], contextSummary?: string): string {
   if (history.length <= HISTORY_RECENT_WINDOW) {
@@ -365,8 +375,8 @@ function truncateHistory(history: AgentStep[], contextSummary?: string): string 
 function formatStep(step: AgentStep): string {
   let line = `  Step ${String(step.step)}: ${step.action.action} — ${step.action.reasoning}\n`;
   if (step.action.extract_result !== undefined) {
-    const preview = step.action.extract_result.slice(0, 500);
-    const truncated = step.action.extract_result.length > 500 ? '…(truncated)' : '';
+    const preview = step.action.extract_result.slice(0, EXTRACT_PREVIEW_MAX_CHARS);
+    const truncated = step.action.extract_result.length > EXTRACT_PREVIEW_MAX_CHARS ? '…(truncated)' : '';
     line += `    📊 Extracted: ${preview}${truncated}\n`;
   }
   if (step.outcome !== undefined) {
@@ -1587,8 +1597,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             assertExtractExpressionAllowed(action.expression);
             const raw = await holder.page.evaluate(action.expression);
             const result = typeof raw === 'string' ? raw : JSON.stringify(raw);
-            agentStep.action.extract_result = result.slice(0, 2000);
-            if (result.length > 2000) {
+            agentStep.action.extract_result = result.slice(0, EXTRACT_RESULT_MAX_CHARS);
+            if (result.length > EXTRACT_RESULT_MAX_CHARS) {
               agentStep.action.extract_result += '\n…(truncated)';
             }
           } catch (evalErr) {
