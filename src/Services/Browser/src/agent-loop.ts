@@ -171,11 +171,12 @@ Filters and search:
 - If the filter controls you need aren't visible after 2 scrolls, they probably don't exist on this page. Use URL parameters instead (e.g. ?max_price=4200) or verify criteria on individual listing pages.
 - Don't waste steps hunting for perfect filter UI. URL parameters + manual verification on detail pages beats endlessly searching for filter controls that may not exist.
 
-Blocking overlays (popups, modals, date pickers, calendars, cookie banners):
-- If a popup, modal, date picker, calendar, or overlay is covering the page and blocking your clicks, you MUST dismiss it before doing anything else.
-- To dismiss: click the overlay's "Cancel", "Close", "X", or "No thanks" button using "click" with its ref number. If there's no visible close button, use "keyboard" with "Escape".
-- After dismissing, check the next snapshot — there may be another overlay underneath (e.g. a date picker on top of a filters modal). Dismiss each layer one at a time.
-- Do NOT repeatedly click elements behind an overlay. If a click fails and the snapshot still shows an overlay, dismiss the overlay first.
+Anything covering the page — classify before acting:
+- Overlay to dismiss: cookie/GDPR banners, newsletter signup, membership/upsell, age verification, location/notification prompts, "install our app", date pickers, calendars, drawers, Google One Tap / "Sign in with Google" tile, social-login prompts, chat widgets, embedded auth iframes. → Click "Cancel" / "Close" / "X" / "No thanks" / "Maybe later", or press Escape.
+- Challenge to solve: press-and-hold button, Cloudflare "Verify you are human" checkbox, reCAPTCHA widget. → Use the matching skill (press_and_hold, click_cloudflare). Don't dismiss — solve.
+- These can appear AT ANY POINT — on load, after a click, after scroll, after idle, after navigation, even between two actions in the same batch. Don't assume a page that was clear stays clear. Re-check each snapshot before acting on old refs.
+- Overlays can layer (date picker over filters modal; cookie banner behind newsletter popup). Dismiss each layer one at a time.
+- Do NOT repeatedly click elements behind an overlay — if a click fails and the snapshot still shows one, it's intercepting; handle it first.
 
 When you hit a wall:
 - Stop. Don't retry the same thing.
@@ -184,9 +185,8 @@ When you hit a wall:
 - Think about alternative paths to the same information. Can you use the site's navigation differently? Is there a direct URL? A different section of the site? A search box you haven't tried?
 - Be resourceful. The information is on the site — you just need to find the right path to it.
 
-Distinguish a challenge from a hard block:
-- Challenge — an interactive check you can pass (press-and-hold, "Verify you are human" checkbox, CAPTCHA). Use the matching skill (press_and_hold, click_cloudflare). Don't give up without using the skill.
-- Hard block — a denial page: "Access Denied" / "403 Forbidden" / "You don't have permission" / rate-limit / edge denial. No skill solves these; try a different source.
+When the page itself is the problem (not a removable overlay):
+- Hard block — "Access Denied" / "403 Forbidden" / "You don't have permission" / rate-limit / edge denial. No skill solves these; try a different source.
 - Not-found page — "Page not found" / "404" / "We can't find this page". The URL you built is wrong. Don't scroll or extract; fix the URL or switch to the site's search UI.
 
 When results don't appear — suspect the page first:
