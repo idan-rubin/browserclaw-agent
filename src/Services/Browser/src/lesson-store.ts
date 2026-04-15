@@ -291,15 +291,11 @@ export async function saveLesson(prompt: string, domains: DomainLesson[]): Promi
 
 // ── Extract lessons from step history ──────────────────────────────────────────
 
-const BLOCKED_PATTERNS =
-  /anti-bot|blocked|access denied|captcha|verify.*human|press.*hold|cloudflare|security check|forbidden|\b403\b|bot detected|rate limit/i;
+const BLOCKED_PATTERNS = /access denied|\b403\b|rate limit|forbidden/i;
 
 export function extractDomainLessons(steps: AgentStep[], success: boolean): DomainLesson[] {
   const now = new Date().toISOString();
-  const domainInfo = new Map<
-    string,
-    { actions: number; errors: number; blocked: boolean; antiBotSeen: boolean; actionsAfterAntiBot: number }
-  >();
+  const domainInfo = new Map<string, { actions: number; errors: number; blocked: boolean }>();
 
   for (const step of steps) {
     const url = step.url;
@@ -307,39 +303,15 @@ export function extractDomainLessons(steps: AgentStep[], success: boolean): Doma
     const domain = extractDomain(url);
     if (domain === '') continue;
 
-    const info = domainInfo.get(domain) ?? {
-      actions: 0,
-      errors: 0,
-      blocked: false,
-      antiBotSeen: false,
-      actionsAfterAntiBot: 0,
-    };
+    const info = domainInfo.get(domain) ?? { actions: 0, errors: 0, blocked: false };
 
-    // Count meaningful actions — track whether they occur after an anti-bot challenge
     if (!['done', 'fail', 'wait', 'ask_user'].includes(step.action.action)) {
       info.actions++;
-      if (info.antiBotSeen) {
-        info.actionsAfterAntiBot++;
-      }
-    }
-
-    // Detect blocking signals from errors/reasoning
-    if (step.action.error_feedback !== undefined && BLOCKED_PATTERNS.test(step.action.error_feedback)) {
-      info.blocked = true;
-      info.errors++;
-    }
-    if (BLOCKED_PATTERNS.test(step.action.reasoning)) {
-      info.blocked = true;
-    }
-
-    // Mark that anti-bot was encountered — set AFTER counting actions so the
-    // challenge step itself doesn't count toward actionsAfterAntiBot
-    if (step.action.action === 'press_and_hold' || step.action.action === 'click_cloudflare') {
-      info.antiBotSeen = true;
     }
 
     if (step.action.error_feedback !== undefined) {
       info.errors++;
+      if (BLOCKED_PATTERNS.test(step.action.error_feedback)) info.blocked = true;
     }
 
     domainInfo.set(domain, info);
@@ -347,16 +319,11 @@ export function extractDomainLessons(steps: AgentStep[], success: boolean): Doma
 
   const lessons: DomainLesson[] = [];
   for (const [domain, info] of domainInfo) {
-    // Anti-bot with no recovery means the agent gave up — treat as blocked.
-    // If the agent continued with meaningful actions after solving the challenge,
-    // the domain is NOT blocked.
-    const antiBotFailed = info.antiBotSeen && info.actionsAfterAntiBot === 0;
-
-    if (info.blocked || antiBotFailed) {
+    if (info.blocked) {
       lessons.push({
         domain,
         status: 'blocked',
-        reason: 'anti-bot detection',
+        reason: 'hard block response',
         last_seen: now,
       });
     } else if (success && info.actions >= 2 && info.errors === 0) {
