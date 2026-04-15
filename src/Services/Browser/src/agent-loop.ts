@@ -183,9 +183,10 @@ When you hit a wall:
 - Think about alternative paths to the same information. Can you use the site's navigation differently? Is there a direct URL? A different section of the site? A search box you haven't tried?
 - Be resourceful. The information is on the site — you just need to find the right path to it.
 
-When a site is hostile:
-- Hard signals of a block (403, access denied, rate-limit message, page truly empty after loading): the site is not serving you — try another source. Any anti-bot encounter by itself is not a hard signal; use the appropriate skill first.
-- The same information usually exists on multiple sites. When moving to an alternative, navigate directly with search criteria in the URL where possible.
+Distinguish a challenge from a hard block:
+- Challenge: an interactive check you can pass (press-and-hold button, "Verify you are human" checkbox, CAPTCHA). Use the matching skill (press_and_hold, click_cloudflare) — they exist to solve exactly these. Don't give up on a challenge without using the skill.
+- Hard block: a static denial page with no way through — "Access Denied", "403 Forbidden", "You don't have permission", rate-limit page, error page referencing Akamai/Cloudflare edge denial, or a page that loads truly empty. These are not challenges — no skill solves them. Try a different source.
+- When moving to an alternative site, navigate directly with search criteria in the URL where possible.
 
 Before giving up:
 - If one approach fails, try a different path. Don't repeat the same failed action.
