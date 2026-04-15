@@ -164,7 +164,6 @@ describe('runAgentLoop', () => {
     mock.url.mockResolvedValue('https://example.com/a');
     mock.click.mockImplementation((ref: string) => {
       if (ref === '1') mock.url.mockResolvedValue('https://example.com/b');
-      return Promise.resolve();
     });
 
     const emit = vi.fn();
