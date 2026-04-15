@@ -9,6 +9,7 @@ import {
   sessionCount,
   enqueueUserMessage,
 } from './session-manager.js';
+import { loadTrajectory } from './trajectory-store.js';
 import { INTERJECTION_MAX_CHARS } from './config.js';
 import { BYOK_PROVIDERS } from './llm.js';
 import { HttpError } from './types.js';
@@ -205,6 +206,21 @@ const routes: Route[] = [
         domain_skills,
       });
       return Promise.resolve();
+    },
+  },
+
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/sessions\/([^/]+)\/trajectory$/,
+    paramNames: ['id'],
+    handler: async ({ res, params }) => {
+      const sessionId = params.id;
+      const record = await loadTrajectory(sessionId);
+      if (record === null) {
+        sendError(res, 404, 'Trajectory not found');
+        return;
+      }
+      json(res, 200, record);
     },
   },
 
