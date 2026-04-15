@@ -334,62 +334,64 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <Link href="/" className="font-[family-name:var(--font-heading)] text-lg tracking-tight">
             <BrowserClawWordmark />
           </Link>
-          {plan && (
-            <div ref={popoverRef} className="flex items-center gap-2">
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenPopover(openPopover === 'prompt' ? null : 'prompt');
-                  }}
-                  aria-expanded={openPopover === 'prompt'}
-                  aria-controls="popover-prompt"
-                  className={`rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
-                    openPopover === 'prompt'
-                      ? 'bg-muted text-foreground'
-                      : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-                  }`}
+          <div ref={popoverRef} className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenPopover(openPopover === 'prompt' ? null : 'prompt');
+                }}
+                aria-expanded={openPopover === 'prompt'}
+                aria-controls="popover-prompt"
+                className={`rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                  openPopover === 'prompt'
+                    ? 'bg-muted text-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                Prompt
+              </button>
+              {openPopover === 'prompt' && (
+                <div
+                  id="popover-prompt"
+                  role="dialog"
+                  className="absolute left-0 top-full z-50 mt-1 w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg"
                 >
-                  Prompt
-                </button>
-                {openPopover === 'prompt' && (
-                  <div
-                    id="popover-prompt"
-                    role="dialog"
-                    className="absolute left-0 top-full z-50 mt-1 w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg"
-                  >
-                    <p className="text-sm text-foreground break-words">{plan.prompt}</p>
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenPopover(openPopover === 'plan' ? null : 'plan');
-                  }}
-                  aria-expanded={openPopover === 'plan'}
-                  aria-controls="popover-plan"
-                  className={`rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
-                    openPopover === 'plan'
-                      ? 'bg-primary/25 text-primary'
-                      : 'bg-primary/10 text-primary hover:bg-primary/20'
-                  }`}
-                >
-                  Plan
-                </button>
-                {openPopover === 'plan' && (
-                  <div
-                    id="popover-plan"
-                    role="dialog"
-                    className="absolute left-0 top-full z-50 mt-1 w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg"
-                  >
-                    <p className="text-sm text-foreground break-words">{plan.plan}</p>
-                  </div>
-                )}
-              </div>
+                  <p className="text-sm text-foreground break-words">
+                    {plan?.prompt ?? <span className="text-muted-foreground">Loading…</span>}
+                  </p>
+                </div>
+              )}
             </div>
-          )}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenPopover(openPopover === 'plan' ? null : 'plan');
+                }}
+                aria-expanded={openPopover === 'plan'}
+                aria-controls="popover-plan"
+                className={`rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                  openPopover === 'plan'
+                    ? 'bg-primary/25 text-primary'
+                    : 'bg-primary/10 text-primary hover:bg-primary/20'
+                }`}
+              >
+                Plan
+              </button>
+              {openPopover === 'plan' && (
+                <div
+                  id="popover-plan"
+                  role="dialog"
+                  className="absolute left-0 top-full z-50 mt-1 w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg"
+                >
+                  <p className="text-sm text-foreground break-words">
+                    {plan?.plan ?? <span className="text-muted-foreground">Loading…</span>}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-3 sm:gap-4">
           <ThemeToggle />
