@@ -42,6 +42,18 @@ vi.mock('../config.js', () => ({
   SCROLL_PIXELS: 500,
   LLM_MAX_TOKENS: 1024,
   MAX_STEPS: 100,
+  INTERJECTION_INJECTION_MAX_CHARS: 2000,
+  defaultAgentConfig: (overrides?: Record<string, unknown>) => ({
+    waitAfterTypeMs: 100,
+    waitAfterClickMs: 100,
+    waitAfterOtherMs: 100,
+    waitActionMs: 100,
+    scrollPixels: 500,
+    userResponseTimeoutMs: 300_000,
+    maxSteps: 100,
+    llmMaxTokens: 1024,
+    ...overrides,
+  }),
 }));
 
 vi.mock('../logger.js', () => ({

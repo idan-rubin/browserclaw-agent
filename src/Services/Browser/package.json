@@ -7,8 +7,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
@@ -21,9 +21,7 @@
     "dist/parse-json-response.*",
     "dist/content-policy.*",
     "dist/judge.*",
-    "dist/lesson-store.*",
     "dist/web-search.*",
-    "dist/recovery.*",
     "dist/skills/"
   ],
   "scripts": {
