@@ -314,28 +314,26 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <Link href="/" className="font-[family-name:var(--font-heading)] text-lg tracking-tight">
             <BrowserClawWordmark />
           </Link>
-          <div className="flex items-center gap-2">
-            <div className="group relative">
-              <button className="rounded-md bg-muted/50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted focus:bg-muted focus:outline-none">
-                Prompt
-              </button>
-              <div className="pointer-events-none absolute left-0 top-full z-50 w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:pointer-events-auto hover:opacity-100">
-                <p className="text-sm text-foreground break-words">
-                  {plan?.prompt ?? <span className="text-muted-foreground">Loading…</span>}
-                </p>
+          {plan && (
+            <div className="flex items-center gap-2">
+              <div className="group relative">
+                <button className="rounded-md bg-muted/50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted">
+                  Prompt
+                </button>
+                <div className="absolute left-0 top-full z-50 hidden w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block">
+                  <p className="text-sm text-foreground">{plan.prompt}</p>
+                </div>
+              </div>
+              <div className="group relative">
+                <button className="rounded-md bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary hover:bg-primary/20">
+                  Plan
+                </button>
+                <div className="absolute left-0 top-full z-50 hidden w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block">
+                  <p className="text-sm text-foreground">{plan.plan}</p>
+                </div>
               </div>
             </div>
-            <div className="group relative">
-              <button className="rounded-md bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary hover:bg-primary/20 focus:bg-primary/20 focus:outline-none">
-                Plan
-              </button>
-              <div className="pointer-events-none absolute left-0 top-full z-50 w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:pointer-events-auto hover:opacity-100">
-                <p className="text-sm text-foreground break-words">
-                  {plan?.plan ?? <span className="text-muted-foreground">Loading…</span>}
-                </p>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
         <div className="flex items-center gap-3 sm:gap-4">
           <ThemeToggle />
