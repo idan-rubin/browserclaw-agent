@@ -1,8 +1,22 @@
 {
-  "name": "browserclaw-browser",
+  "name": "browserclaw-agent",
   "version": "0.1.0",
-  "private": true,
+  "description": "Autonomous browser agent loop powering browserclaw.cloud",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.js.map",
+    "!dist/__tests__/**"
+  ],
   "scripts": {
     "dev": "tsx watch --env-file=.env.local src/server.ts",
     "build": "tsc",

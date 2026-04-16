@@ -186,8 +186,7 @@ export function getActiveProvider(): ProviderConfig {
 export function getModel(): string {
   const model = process.env.LLM_MODEL;
   if (model === undefined || model === '') {
-    logger.fatal('LLM_MODEL is required but not set');
-    process.exit(1);
+    throw new Error('LLM_MODEL is required but not set');
   }
   return model;
 }

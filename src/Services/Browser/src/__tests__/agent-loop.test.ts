@@ -595,16 +595,7 @@ describe('runAgentLoop', () => {
     const emit = vi.fn();
     const controller = new AbortController();
 
-    const result: AgentLoopResult = await runAgentLoop(
-      'Scroll',
-      page,
-      emit,
-      controller.signal,
-      undefined,
-      undefined,
-      undefined,
-      3,
-    );
+    const result: AgentLoopResult = await runAgentLoop('Scroll', page, emit, controller.signal, { maxSteps: 3 });
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('maximum step limit');

@@ -24,15 +24,24 @@ export function requireEnvInt(name: string): number {
   return parsed;
 }
 
-// Agent timing (ms)
-export const WAIT_AFTER_TYPE_MS = requireEnvInt('WAIT_AFTER_TYPE_MS');
-export const WAIT_AFTER_CLICK_MS = requireEnvInt('WAIT_AFTER_CLICK_MS');
-export const WAIT_AFTER_OTHER_MS = requireEnvInt('WAIT_AFTER_OTHER_MS');
-export const WAIT_ACTION_MS = requireEnvInt('WAIT_ACTION_MS');
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const parsed = parseInt(raw, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+// Agent timing (ms) — env vars override defaults; safe to import without env
+export const WAIT_AFTER_TYPE_MS = envInt('WAIT_AFTER_TYPE_MS', 1500);
+export const WAIT_AFTER_CLICK_MS = envInt('WAIT_AFTER_CLICK_MS', 1500);
+export const WAIT_AFTER_OTHER_MS = envInt('WAIT_AFTER_OTHER_MS', 500);
+export const WAIT_ACTION_MS = envInt('WAIT_ACTION_MS', 2000);
 export const SCROLL_PIXELS = 500;
-export const USER_RESPONSE_TIMEOUT_MS = requireEnvInt('USER_RESPONSE_TIMEOUT_MS');
-export const MAX_STEPS = requireEnvInt('MAX_STEPS');
-export const LLM_MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS ?? '1024', 10);
+export const USER_RESPONSE_TIMEOUT_MS = envInt('USER_RESPONSE_TIMEOUT_MS', 120_000);
+export const MAX_STEPS = envInt('MAX_STEPS', 50);
+export const LLM_MAX_TOKENS = envInt('LLM_MAX_TOKENS', 1024);
+export const MAX_SESSIONS = envInt('MAX_SESSIONS', 10);
+export const SESSION_IDLE_TIMEOUT_MS = envInt('SESSION_IDLE_TIMEOUT_MS', 300_000);
 
 // User-interjection limits (always-on user chat feature).
 export const USER_INTERJECTION_ENABLED = process.env.ENABLE_USER_INTERJECTION === 'true';

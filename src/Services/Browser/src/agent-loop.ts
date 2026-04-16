@@ -689,7 +689,15 @@ export function assertExtractExpressionAllowed(expression: string): void {
   }
 }
 
-async function executeAction(action: AgentAction, page: CrawlPage): Promise<void> {
+async function executeAction(
+  action: AgentAction,
+  page: CrawlPage,
+  customActions?: Record<string, (action: AgentAction, page: CrawlPage) => Promise<void>>,
+): Promise<void> {
+  if (customActions?.[action.action] !== undefined) {
+    await customActions[action.action](action, page);
+    return;
+  }
   switch (action.action) {
     case 'click':
       if (action.ref === undefined || action.ref === '') throw new Error('click action requires ref');
@@ -960,17 +968,38 @@ export interface UserChatHooks {
   nonce: string;
 }
 
+export interface AgentLoopOptions {
+  waitForUser?: () => Promise<string>;
+  browser?: BrowserClaw;
+  domainSkill?: CatalogSkill | null;
+  maxSteps?: number;
+  userChat?: UserChatHooks;
+  /** Custom action handlers keyed by action name. Called before built-in actions. */
+  customActions?: Record<string, (action: AgentAction, page: CrawlPage) => Promise<void>>;
+  /** Override the default agent system prompt. */
+  systemPrompt?: string;
+  /** Transform the prompt before it reaches the planner and agent loop. */
+  buildTask?: (prompt: string) => string;
+}
+
 export async function runAgentLoop(
   prompt: string,
   pageOrHolder: CrawlPage | PageHolder,
   emit: (event: string, data: unknown) => void,
   signal: AbortSignal,
-  waitForUser?: () => Promise<string>,
-  browser?: BrowserClaw,
-  domainSkill?: CatalogSkill | null,
-  maxSteps = MAX_STEPS,
-  userChat?: UserChatHooks,
+  options?: AgentLoopOptions,
 ): Promise<AgentLoopResult> {
+  const {
+    waitForUser,
+    browser,
+    domainSkill,
+    maxSteps = MAX_STEPS,
+    userChat,
+    customActions,
+    systemPrompt: customSystemPrompt,
+    buildTask,
+  } = options ?? {};
+
   // Accept either a bare CrawlPage or a PageHolder. When a PageHolder is
   // provided the caller's reference is updated on tab switches.
   const holder: PageHolder =
@@ -1020,10 +1049,12 @@ export async function runAgentLoop(
     };
   };
 
+  const effectivePrompt = buildTask !== undefined ? buildTask(prompt) : prompt;
+
   // ── Load task lessons ──────────────────────────────────────────────────────
   let taskLesson: TaskLesson | null = null;
   try {
-    taskLesson = await getLesson(prompt);
+    taskLesson = await getLesson(effectivePrompt);
     if (taskLesson !== null) {
       const blocked = taskLesson.domains.filter((d) => d.status === 'blocked').length;
       const worked = taskLesson.domains.filter((d) => d.status === 'worked').length;
@@ -1036,10 +1067,10 @@ export async function runAgentLoop(
   // ── Planning + goal refinement (single LLM call) ──────────────────────────
   // If the prompt is vague (e.g. "find apartments in Chelsea"), the planner
   // also produces a SMART task with clear scope and stopping criteria.
-  let refinedPrompt = prompt;
+  let refinedPrompt = effectivePrompt;
   let planText: string | null = null;
   try {
-    let planMessage = `User prompt: ${prompt}`;
+    let planMessage = `User prompt: ${effectivePrompt}`;
     if (domainSkill !== undefined && domainSkill !== null) {
       planMessage += `\n\nWe have a proven skill for this site: "${domainSkill.skill.title}" — ${domainSkill.skill.description}`;
       planMessage += '\nLeverage it — no need to rediscover what already works.';
@@ -1367,7 +1398,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
     // On the last step, force the agent to produce a final answer
     const isLastStep = stepsRemaining === 0;
-    const systemPrompt = isLastStep ? LAST_STEP_PROMPT : SYSTEM_PROMPT;
+    const systemPrompt = isLastStep ? LAST_STEP_PROMPT : (customSystemPrompt ?? SYSTEM_PROMPT);
 
     let actions: AgentAction[];
     try {
@@ -1687,7 +1718,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       const preActionUrl = await holder.page.url();
 
       try {
-        await executeAction(action, holder.page);
+        await executeAction(action, holder.page, customActions);
 
         // After typing, detect autocomplete/combobox fields
         if (action.action === 'type') {
