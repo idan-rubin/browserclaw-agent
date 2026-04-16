@@ -1,8 +1,31 @@
 {
-  "name": "browserclaw-browser",
+  "name": "browserclaw-agent",
   "version": "0.1.0",
-  "private": true,
+  "description": "Browser automation agent loop powered by browserclaw",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist/index.*",
+    "dist/agent-loop.*",
+    "dist/config.*",
+    "dist/llm.*",
+    "dist/types.*",
+    "dist/logger.*",
+    "dist/parse-json-response.*",
+    "dist/content-policy.*",
+    "dist/judge.*",
+    "dist/lesson-store.*",
+    "dist/web-search.*",
+    "dist/recovery.*",
+    "dist/skills/"
+  ],
   "scripts": {
     "dev": "tsx watch --env-file=.env.local src/server.ts",
     "build": "tsc",
@@ -14,15 +37,15 @@
     "format:check": "prettier --check src/"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.750.0",
-    "@types/ws": "^8.18.1",
     "browserclaw": "^0.12.7",
     "openai": "^4.80.0",
-    "pino": "^10.3.1",
-    "ws": "^8.19.0"
+    "pino": "^10.3.1"
   },
   "optionalDependencies": {
-    "@anthropic-ai/sdk": "^0.39.0"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@aws-sdk/client-s3": "^3.750.0",
+    "@types/ws": "^8.18.1",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
