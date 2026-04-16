@@ -10,7 +10,6 @@ import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
 import { webSearch } from './web-search.js';
 import type { UserMessage } from './types.js';
 import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
-import { getLesson, formatLessonForPrompt } from './lesson-store.js';
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
 import { logger } from './logger.js';
@@ -24,6 +23,16 @@ import {
   MAX_STEPS,
   INTERJECTION_INJECTION_MAX_CHARS,
 } from './config.js';
+
+function formatLessonForPrompt(lesson: TaskLesson): string {
+  const blocked = lesson.domains.filter((d) => d.status === 'blocked');
+  const worked = lesson.domains.filter((d) => d.status === 'worked');
+  if (blocked.length === 0 && worked.length === 0) return '';
+  const lines: string[] = ['LESSONS FROM PREVIOUS RUNS:'];
+  for (const d of blocked) lines.push(`  AVOID ${d.domain} (${d.reason})`);
+  for (const d of worked) lines.push(`  USE ${d.domain} instead (${d.reason})`);
+  return lines.join('\n');
+}
 
 /**
  * Wrap drained user interjections in a nonce-tagged block so the LLM can
@@ -953,6 +962,27 @@ export interface PageHolder {
   page: CrawlPage;
 }
 
+/**
+ * Extension points for consumers of the agent loop.
+ *
+ * - `systemPrompt`   — Replace or extend the main system prompt.
+ * - `customActions`  — Handle action types not built into the agent.
+ *                      Return `{ outcome }` to override the step outcome text.
+ * - `buildTask`      — Pre-process the user prompt before the planner sees it.
+ *                      Useful for adding context or domain constraints.
+ * - `getLesson`      — Inject a lesson provider (replaces the default S3-backed store).
+ *                      Return `null` to skip lesson loading.
+ */
+export interface AgentLoopOptions {
+  systemPrompt?: string | ((defaultPrompt: string) => string);
+  customActions?: Record<
+    string,
+    (action: AgentAction, page: CrawlPage, browser?: BrowserClaw) => Promise<{ outcome?: string } | undefined>
+  >;
+  buildTask?: (prompt: string) => string | Promise<string>;
+  getLesson?: (prompt: string) => Promise<TaskLesson | null>;
+}
+
 export interface UserChatHooks {
   /** Drain all pending user interjections. Called at the top of each step. */
   drainMessages: () => UserMessage[];
@@ -970,6 +1000,7 @@ export async function runAgentLoop(
   domainSkill?: CatalogSkill | null,
   maxSteps = MAX_STEPS,
   userChat?: UserChatHooks,
+  options?: AgentLoopOptions,
 ): Promise<AgentLoopResult> {
   // Accept either a bare CrawlPage or a PageHolder. When a PageHolder is
   // provided the caller's reference is updated on tab switches.
@@ -1022,15 +1053,17 @@ export async function runAgentLoop(
 
   // ── Load task lessons ──────────────────────────────────────────────────────
   let taskLesson: TaskLesson | null = null;
-  try {
-    taskLesson = await getLesson(prompt);
-    if (taskLesson !== null) {
-      const blocked = taskLesson.domains.filter((d) => d.status === 'blocked').length;
-      const worked = taskLesson.domains.filter((d) => d.status === 'worked').length;
-      logger.info({ blocked, worked, hash: taskLesson.task_hash }, 'Loaded task lessons');
+  if (options?.getLesson !== undefined) {
+    try {
+      taskLesson = await options.getLesson(prompt);
+      if (taskLesson !== null) {
+        const blocked = taskLesson.domains.filter((d) => d.status === 'blocked').length;
+        const worked = taskLesson.domains.filter((d) => d.status === 'worked').length;
+        logger.info({ blocked, worked, hash: taskLesson.task_hash }, 'Loaded task lessons');
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to load task lessons');
     }
-  } catch (err) {
-    logger.error({ err }, 'Failed to load task lessons');
   }
 
   // ── Planning + goal refinement (single LLM call) ──────────────────────────
@@ -1039,7 +1072,8 @@ export async function runAgentLoop(
   let refinedPrompt = prompt;
   let planText: string | null = null;
   try {
-    let planMessage = `User prompt: ${prompt}`;
+    const taskInput = options?.buildTask !== undefined ? await options.buildTask(prompt) : prompt;
+    let planMessage = `User prompt: ${taskInput}`;
     if (domainSkill !== undefined && domainSkill !== null) {
       planMessage += `\n\nWe have a proven skill for this site: "${domainSkill.skill.title}" — ${domainSkill.skill.description}`;
       planMessage += '\nLeverage it — no need to rediscover what already works.';
@@ -1367,7 +1401,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
     // On the last step, force the agent to produce a final answer
     const isLastStep = stepsRemaining === 0;
-    const systemPrompt = isLastStep ? LAST_STEP_PROMPT : SYSTEM_PROMPT;
+    const resolvedSystemPrompt =
+      options?.systemPrompt === undefined
+        ? SYSTEM_PROMPT
+        : typeof options.systemPrompt === 'function'
+          ? options.systemPrompt(SYSTEM_PROMPT)
+          : options.systemPrompt;
+    const systemPrompt = isLastStep ? LAST_STEP_PROMPT : resolvedSystemPrompt;
 
     let actions: AgentAction[];
     try {
@@ -1687,7 +1727,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       const preActionUrl = await holder.page.url();
 
       try {
-        await executeAction(action, holder.page);
+        const customHandler = options?.customActions?.[action.action];
+        if (customHandler !== undefined) {
+          const result = await customHandler(action, holder.page, browser);
+          if (result?.outcome !== undefined) agentStep.outcome = result.outcome;
+        } else {
+          await executeAction(action, holder.page);
+        }
 
         // After typing, detect autocomplete/combobox fields
         if (action.action === 'type') {

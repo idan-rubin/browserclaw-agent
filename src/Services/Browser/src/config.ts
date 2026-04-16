@@ -24,14 +24,54 @@ export function requireEnvInt(name: string): number {
   return parsed;
 }
 
-// Agent timing (ms)
-export const WAIT_AFTER_TYPE_MS = requireEnvInt('WAIT_AFTER_TYPE_MS');
-export const WAIT_AFTER_CLICK_MS = requireEnvInt('WAIT_AFTER_CLICK_MS');
-export const WAIT_AFTER_OTHER_MS = requireEnvInt('WAIT_AFTER_OTHER_MS');
-export const WAIT_ACTION_MS = requireEnvInt('WAIT_ACTION_MS');
+export interface AgentConfig {
+  waitAfterTypeMs: number;
+  waitAfterClickMs: number;
+  waitAfterOtherMs: number;
+  waitActionMs: number;
+  scrollPixels: number;
+  userResponseTimeoutMs: number;
+  maxSteps: number;
+  llmMaxTokens: number;
+}
+
+const AGENT_DEFAULTS: AgentConfig = {
+  waitAfterTypeMs: 800,
+  waitAfterClickMs: 500,
+  waitAfterOtherMs: 300,
+  waitActionMs: 2000,
+  scrollPixels: 500,
+  userResponseTimeoutMs: 300_000,
+  maxSteps: 50,
+  llmMaxTokens: 1024,
+};
+
+export function defaultAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
+  return {
+    waitAfterTypeMs: parseInt(process.env.WAIT_AFTER_TYPE_MS ?? String(AGENT_DEFAULTS.waitAfterTypeMs), 10),
+    waitAfterClickMs: parseInt(process.env.WAIT_AFTER_CLICK_MS ?? String(AGENT_DEFAULTS.waitAfterClickMs), 10),
+    waitAfterOtherMs: parseInt(process.env.WAIT_AFTER_OTHER_MS ?? String(AGENT_DEFAULTS.waitAfterOtherMs), 10),
+    waitActionMs: parseInt(process.env.WAIT_ACTION_MS ?? String(AGENT_DEFAULTS.waitActionMs), 10),
+    scrollPixels: AGENT_DEFAULTS.scrollPixels,
+    userResponseTimeoutMs: parseInt(
+      process.env.USER_RESPONSE_TIMEOUT_MS ?? String(AGENT_DEFAULTS.userResponseTimeoutMs),
+      10,
+    ),
+    maxSteps: parseInt(process.env.MAX_STEPS ?? String(AGENT_DEFAULTS.maxSteps), 10),
+    llmMaxTokens: parseInt(process.env.LLM_MAX_TOKENS ?? String(AGENT_DEFAULTS.llmMaxTokens), 10),
+    ...overrides,
+  };
+}
+
+// Agent timing (ms) — read from env with safe defaults; server.ts may override
+// via requireEnvInt for strict validation, but the library needs no env vars set.
+export const WAIT_AFTER_TYPE_MS = parseInt(process.env.WAIT_AFTER_TYPE_MS ?? '800', 10);
+export const WAIT_AFTER_CLICK_MS = parseInt(process.env.WAIT_AFTER_CLICK_MS ?? '500', 10);
+export const WAIT_AFTER_OTHER_MS = parseInt(process.env.WAIT_AFTER_OTHER_MS ?? '300', 10);
+export const WAIT_ACTION_MS = parseInt(process.env.WAIT_ACTION_MS ?? '2000', 10);
 export const SCROLL_PIXELS = 500;
-export const USER_RESPONSE_TIMEOUT_MS = requireEnvInt('USER_RESPONSE_TIMEOUT_MS');
-export const MAX_STEPS = requireEnvInt('MAX_STEPS');
+export const USER_RESPONSE_TIMEOUT_MS = parseInt(process.env.USER_RESPONSE_TIMEOUT_MS ?? '300000', 10);
+export const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? '50', 10);
 export const LLM_MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS ?? '1024', 10);
 
 // User-interjection limits (always-on user chat feature).
