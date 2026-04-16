@@ -256,13 +256,7 @@ export async function saveLesson(prompt: string, domains: DomainLesson[]): Promi
   const { hash, terms } = hashTaskCategory(prompt);
   const now = new Date().toISOString();
 
-  // Merge with existing lesson
-  let existing: TaskLesson | null = null;
-  try {
-    existing = await getLesson(prompt);
-  } catch {
-    // fresh lesson
-  }
+  const existing = await getLesson(prompt);
 
   const merged = new Map<string, DomainLesson>();
 

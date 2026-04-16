@@ -62,15 +62,19 @@ export async function webSearch(query: string): Promise<string> {
       controller.abort();
     }, FETCH_TIMEOUT_MS);
 
-    const res = await fetch(`${SEARCH_URL}?${params.toString()}`, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; browserclaw/1.0)',
-        Accept: 'text/html',
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+    let res: Response;
+    try {
+      res = await fetch(`${SEARCH_URL}?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; browserclaw/1.0)',
+          Accept: 'text/html',
+        },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!res.ok) {
       return `Search failed: HTTP ${String(res.status)}`;
