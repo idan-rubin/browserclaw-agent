@@ -1,6 +1,6 @@
 {
   "name": "browserclaw-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Browser automation agent loop powered by browserclaw",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,27 +12,19 @@
     }
   },
   "files": [
-    "dist/index.*",
-    "dist/agent-loop.*",
-    "dist/config.*",
-    "dist/llm.*",
-    "dist/types.*",
-    "dist/logger.*",
-    "dist/parse-json-response.*",
-    "dist/content-policy.*",
-    "dist/judge.*",
-    "dist/web-search.*",
-    "dist/skills/"
+    "dist"
   ],
   "scripts": {
     "dev": "tsx watch --env-file=.env.local src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "vitest run",
+    "test:pack": "node scripts/test-pack.mjs",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write src/",
-    "format:check": "prettier --check src/"
+    "format:check": "prettier --check src/",
+    "prepublishOnly": "npm run build && npm run test:pack"
   },
   "dependencies": {
     "browserclaw": "^0.12.7",
