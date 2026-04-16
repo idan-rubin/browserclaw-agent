@@ -309,7 +309,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   /* --- Running view --- */
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <nav className="flex shrink-0 items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-md sm:px-6">
+      <nav className="relative z-20 flex shrink-0 items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-md sm:px-6">
         <div className="flex items-center gap-3">
           <Link href="/" className="font-[family-name:var(--font-heading)] text-lg tracking-tight">
             <BrowserClawWordmark />
