@@ -7,6 +7,7 @@ import { detectPageState, shouldBlockDone } from './skills/page-state.js';
 import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
 import { TabManager } from './skills/tab-manager.js';
 import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
+import { webSearch } from './web-search.js';
 import type { UserMessage } from './types.js';
 import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
 import { getLesson, formatLessonForPrompt } from './lesson-store.js';
@@ -81,7 +82,7 @@ Respond with valid JSON:
   "reasoning": "Brief explanation of what you're doing right now",
   "actions": [
     {
-      "action": "click" | "type" | "navigate" | "back" | "select" | "scroll" | "keyboard" | "wait" | "press_and_hold" | "click_cloudflare" | "extract" | "switch_tab" | "close_tab" | "ask_user" | "done" | "fail",
+      "action": "click" | "type" | "navigate" | "back" | "select" | "scroll" | "keyboard" | "wait" | "press_and_hold" | "click_cloudflare" | "extract" | "web_search" | "switch_tab" | "close_tab" | "ask_user" | "done" | "fail",
       "ref": "element ref number (for click, type, select)",
       "text": "text to type (for type) or question (for ask_user)",
       "url": "URL (for navigate)",
@@ -91,6 +92,7 @@ Respond with valid JSON:
       "expression": "JavaScript expression to evaluate (for extract) — e.g. 'Array.from(document.querySelectorAll(\".price\")).map(el => el.textContent)'",
       "tab_id": "target ID of the tab to switch to or close (for switch_tab / close_tab)",
       "hold_ms": "optional hold duration in ms (for press_and_hold) — set when the button/UI specifies a hold time or a prior attempt was too short",
+      "query": "search query (for web_search) — e.g. 'best apartment listing sites NYC'",
       "answer": "direct answer to the user's question (for done)"
     }
   ]
@@ -120,6 +122,7 @@ Rules:
 - "click_cloudflare" solves Cloudflare "Verify you are human" checkbox challenges. The system locates and clicks the checkbox.
 - "extract" when the accessibility snapshot is missing data you need — prices, descriptions, table values, form field values, counts, or any text that's visually on the page but absent from the snapshot. Provide a JavaScript expression; the result appears in the next step. Examples: 'document.querySelector(".price")?.textContent', 'Array.from(document.querySelectorAll("td")).map(el=>el.textContent.trim())'. Use this like a human would: when you can see there's content but can't read it from the snapshot.
 - On modern JS/SPA sites (Next.js, React apps), listing and detail data is usually embedded in structured state — try these first before hand-rolling selectors: JSON.parse(document.getElementById('__NEXT_DATA__').textContent), window.__APOLLO_STATE__, window.__INITIAL_STATE__, or JSON-LD via document.querySelectorAll('script[type="application/ld+json"]'). One well-aimed extract from structured state beats five DOM-selector attempts.
+- "web_search" to search the web when you don't know which site to use, need to find a specific service, or want to compare options across sources. Provide "query"; returns top results with titles, URLs, and snippets. Use this instead of guessing URLs.
 - "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
 - "close_tab" to close a tab by tab_id. Use only when a tab is no longer needed.
 - Perception ladder: use the right method for the situation — accessibility snapshot -> DOM text -> extract -> screenshot fallback -> ask_user. Start with the snapshot; escalate when it doesn't contain what you need.
@@ -739,6 +742,7 @@ async function executeAction(action: AgentAction, page: CrawlPage): Promise<void
     case 'press_and_hold':
     case 'click_cloudflare':
     case 'extract':
+    case 'web_search':
     case 'switch_tab':
     case 'close_tab':
       break;
@@ -760,6 +764,7 @@ function getWaitMs(action: AgentAction['action']): number {
     case 'press_and_hold':
     case 'click_cloudflare':
     case 'extract':
+    case 'web_search':
     case 'switch_tab':
     case 'close_tab':
     case 'done':
@@ -830,6 +835,7 @@ function validateAction(
     case 'press_and_hold':
     case 'click_cloudflare':
     case 'extract':
+    case 'web_search':
     case 'switch_tab':
     case 'close_tab':
       return undefined;
@@ -1613,6 +1619,21 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           agentStep.action.extract_result = 'Error: no expression provided';
         }
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
+        step++;
+        break;
+      }
+
+      if (action.action === 'web_search') {
+        if (action.query !== undefined && action.query !== '') {
+          const searchResult = await webSearch(action.query);
+          agentStep.action.extract_result = searchResult.slice(0, EXTRACT_RESULT_MAX_CHARS);
+          if (searchResult.length > EXTRACT_RESULT_MAX_CHARS) {
+            agentStep.action.extract_result += '\n…(truncated)';
+          }
+        } else {
+          agentStep.action.extract_result = 'Error: no query provided';
+        }
+        logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Web search action');
         step++;
         break;
       }

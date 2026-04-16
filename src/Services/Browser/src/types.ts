@@ -48,6 +48,7 @@ export type AgentActionType =
   | 'press_and_hold'
   | 'click_cloudflare'
   | 'extract'
+  | 'web_search'
   | 'switch_tab'
   | 'close_tab'
   | 'done'
@@ -76,6 +77,8 @@ export interface AgentAction {
   tab_id?: string;
   /** Hold duration in ms (for press_and_hold). Omit for the default 4–10s randomized hold. */
   hold_ms?: number;
+  /** Search query (for web_search action) */
+  query?: string;
   /** Result of extract action — set by the agent loop, shown in next step's history */
   extract_result?: string;
   /** Set by the agent loop when action execution fails — fed back to LLM in next step */
