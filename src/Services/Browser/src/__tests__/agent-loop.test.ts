@@ -35,13 +35,17 @@ vi.mock('../skills/tab-manager.js', () => ({
 }));
 
 vi.mock('../config.js', () => ({
-  WAIT_AFTER_TYPE_MS: 100,
-  WAIT_AFTER_CLICK_MS: 100,
-  WAIT_AFTER_OTHER_MS: 100,
-  WAIT_ACTION_MS: 100,
-  SCROLL_PIXELS: 500,
-  LLM_MAX_TOKENS: 1024,
-  MAX_STEPS: 100,
+  INTERJECTION_INJECTION_MAX_CHARS: 2000,
+  defaultAgentConfig: (overrides?: Record<string, unknown>) => ({
+    waitAfterTypeMs: 100,
+    waitAfterClickMs: 100,
+    waitAfterOtherMs: 100,
+    waitActionMs: 100,
+    scrollPixels: 500,
+    maxSteps: 100,
+    llmMaxTokens: 1024,
+    ...overrides,
+  }),
 }));
 
 vi.mock('../logger.js', () => ({

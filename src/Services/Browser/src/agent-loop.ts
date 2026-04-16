@@ -12,17 +12,9 @@ import type { UserMessage } from './types.js';
 import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
+import type { AgentConfig } from './config.js';
+import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS } from './config.js';
 import { logger } from './logger.js';
-import {
-  WAIT_AFTER_TYPE_MS,
-  WAIT_AFTER_CLICK_MS,
-  WAIT_AFTER_OTHER_MS,
-  WAIT_ACTION_MS,
-  SCROLL_PIXELS,
-  LLM_MAX_TOKENS,
-  MAX_STEPS,
-  INTERJECTION_INJECTION_MAX_CHARS,
-} from './config.js';
 
 function formatLessonForPrompt(lesson: TaskLesson): string {
   const blocked = lesson.domains.filter((d) => d.status === 'blocked');
@@ -698,7 +690,7 @@ export function assertExtractExpressionAllowed(expression: string): void {
   }
 }
 
-async function executeAction(action: AgentAction, page: CrawlPage): Promise<void> {
+async function executeAction(action: AgentAction, page: CrawlPage, config: AgentConfig): Promise<void> {
   switch (action.action) {
     case 'click':
       if (action.ref === undefined || action.ref === '') throw new Error('click action requires ref');
@@ -736,13 +728,13 @@ async function executeAction(action: AgentAction, page: CrawlPage): Promise<void
     case 'scroll':
       await page.evaluate(
         action.direction === 'up'
-          ? `window.scrollBy(0, -${String(SCROLL_PIXELS)})`
-          : `window.scrollBy(0, ${String(SCROLL_PIXELS)})`,
+          ? `window.scrollBy(0, -${String(config.scrollPixels)})`
+          : `window.scrollBy(0, ${String(config.scrollPixels)})`,
       );
       break;
 
     case 'wait':
-      await page.waitFor({ timeMs: WAIT_ACTION_MS });
+      await page.waitFor({ timeMs: config.waitActionMs });
       break;
 
     case 'done':
@@ -758,12 +750,12 @@ async function executeAction(action: AgentAction, page: CrawlPage): Promise<void
   }
 }
 
-function getWaitMs(action: AgentAction['action']): number {
+function getWaitMs(action: AgentAction['action'], config: AgentConfig): number {
   switch (action) {
     case 'type':
-      return WAIT_AFTER_TYPE_MS;
+      return config.waitAfterTypeMs;
     case 'click':
-      return WAIT_AFTER_CLICK_MS;
+      return config.waitAfterClickMs;
     case 'navigate':
     case 'back':
     case 'select':
@@ -779,7 +771,7 @@ function getWaitMs(action: AgentAction['action']): number {
     case 'done':
     case 'fail':
     case 'ask_user':
-      return WAIT_AFTER_OTHER_MS;
+      return config.waitAfterOtherMs;
   }
 }
 
@@ -981,6 +973,7 @@ export interface AgentLoopOptions {
   >;
   buildTask?: (prompt: string) => string | Promise<string>;
   getLesson?: (prompt: string) => Promise<TaskLesson | null>;
+  config?: Partial<AgentConfig>;
 }
 
 export interface UserChatHooks {
@@ -998,10 +991,12 @@ export async function runAgentLoop(
   waitForUser?: () => Promise<string>,
   browser?: BrowserClaw,
   domainSkill?: CatalogSkill | null,
-  maxSteps = MAX_STEPS,
+  maxSteps?: number,
   userChat?: UserChatHooks,
   options?: AgentLoopOptions,
 ): Promise<AgentLoopResult> {
+  const cfg = defaultAgentConfig(options?.config);
+  maxSteps ??= cfg.maxSteps;
   // Accept either a bare CrawlPage or a PageHolder. When a PageHolder is
   // provided the caller's reference is updated on tab switches.
   const holder: PageHolder =
@@ -1414,7 +1409,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       const parsed = await llmJson<Record<string, unknown>>({
         system: systemPrompt,
         message: userMessage,
-        maxTokens: LLM_MAX_TOKENS,
+        maxTokens: cfg.llmMaxTokens,
       });
       try {
         actions = parseActions(parsed);
@@ -1732,7 +1727,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           const result = await customHandler(action, holder.page, browser);
           if (result?.outcome !== undefined) agentStep.outcome = result.outcome;
         } else {
-          await executeAction(action, holder.page);
+          await executeAction(action, holder.page, cfg);
         }
 
         // After typing, detect autocomplete/combobox fields
@@ -1822,7 +1817,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         }
       }
 
-      const waitMs = getWaitMs(action.action);
+      const waitMs = getWaitMs(action.action, cfg);
       await holder.page.waitFor({ timeMs: waitMs });
       step++;
     }
