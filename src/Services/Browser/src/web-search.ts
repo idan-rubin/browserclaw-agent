@@ -10,6 +10,17 @@ interface SearchResult {
   snippet: string;
 }
 
+function stripHtml(raw: string): string {
+  const TAG_RE = /<[^>]+>/g;
+  let text = raw;
+  let prev: string;
+  do {
+    prev = text;
+    text = text.replace(TAG_RE, '');
+  } while (text !== prev);
+  return text.trim();
+}
+
 function parseResults(html: string): SearchResult[] {
   const results: SearchResult[] = [];
   const linkRegex = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gs;
@@ -21,8 +32,8 @@ function parseResults(html: string): SearchResult[] {
   for (let i = 0; i < Math.min(links.length, MAX_RESULTS); i++) {
     const link = links[i];
     const rawUrl = link[1];
-    const title = link[2].replace(/<[^>]+>/g, '').trim();
-    const snippet = (snippets[i]?.[1] ?? '').replace(/<[^>]+>/g, '').trim();
+    const title = stripHtml(link[2]);
+    const snippet = stripHtml(snippets[i]?.[1] ?? '');
 
     let url = rawUrl;
     const uddg = /[?&]uddg=([^&]+)/.exec(rawUrl);
