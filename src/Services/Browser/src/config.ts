@@ -30,7 +30,6 @@ export interface AgentConfig {
   waitAfterOtherMs: number;
   waitActionMs: number;
   scrollPixels: number;
-  userResponseTimeoutMs: number;
   maxSteps: number;
   llmMaxTokens: number;
 }
@@ -41,7 +40,6 @@ const AGENT_DEFAULTS: AgentConfig = {
   waitAfterOtherMs: 300,
   waitActionMs: 2000,
   scrollPixels: 500,
-  userResponseTimeoutMs: 300_000,
   maxSteps: 50,
   llmMaxTokens: 1024,
 };
@@ -53,10 +51,6 @@ export function defaultAgentConfig(overrides?: Partial<AgentConfig>): AgentConfi
     waitAfterOtherMs: parseInt(process.env.WAIT_AFTER_OTHER_MS ?? String(AGENT_DEFAULTS.waitAfterOtherMs), 10),
     waitActionMs: parseInt(process.env.WAIT_ACTION_MS ?? String(AGENT_DEFAULTS.waitActionMs), 10),
     scrollPixels: AGENT_DEFAULTS.scrollPixels,
-    userResponseTimeoutMs: parseInt(
-      process.env.USER_RESPONSE_TIMEOUT_MS ?? String(AGENT_DEFAULTS.userResponseTimeoutMs),
-      10,
-    ),
     maxSteps: parseInt(process.env.MAX_STEPS ?? String(AGENT_DEFAULTS.maxSteps), 10),
     llmMaxTokens: parseInt(process.env.LLM_MAX_TOKENS ?? String(AGENT_DEFAULTS.llmMaxTokens), 10),
     ...overrides,
