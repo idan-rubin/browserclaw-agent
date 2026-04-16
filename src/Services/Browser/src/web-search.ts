@@ -79,6 +79,9 @@ export async function webSearch(query: string): Promise<string> {
     const html = await res.text();
     const results = parseResults(html);
     logger.info({ query, resultCount: results.length }, 'Web search');
+    if (results.length === 0 && html.length > 0) {
+      return 'Search returned no parseable results (page structure may have changed).';
+    }
     return formatResults(results);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown error';

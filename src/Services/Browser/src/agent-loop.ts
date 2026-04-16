@@ -1725,7 +1725,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         // point into a prior snapshot. Abort the batch so the LLM re-snapshots.
         if (hasMoreQueued && postActionUrl !== preActionUrl) {
           const remaining = actions.length - actionIdx - 1;
-          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.`;
+          const abortMsg = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.`;
+          agentStep.outcome = agentStep.outcome !== undefined ? `${agentStep.outcome} ${abortMsg}` : abortMsg;
           logger.info({ step, remaining, preActionUrl, postActionUrl }, 'Stale-DOM abort');
           step++;
           break;

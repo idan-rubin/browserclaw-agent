@@ -42,12 +42,6 @@ function keyFor(sessionId: string): string {
   return `${KEY_PREFIX}${sessionId}.json`;
 }
 
-async function readBody(body: AsyncIterable<Uint8Array>): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of body) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString('utf8');
-}
-
 export async function saveTrajectory(record: TrajectoryRecord): Promise<void> {
   try {
     await s3.send(
@@ -70,9 +64,9 @@ export async function saveTrajectory(record: TrajectoryRecord): Promise<void> {
 export async function loadTrajectory(sessionId: string): Promise<TrajectoryRecord | null> {
   try {
     const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: keyFor(sessionId) }));
-    if (res.Body === undefined) return null;
-    const body = await readBody(res.Body as AsyncIterable<Uint8Array>);
-    return JSON.parse(body) as TrajectoryRecord;
+    const raw = await res.Body?.transformToString();
+    if (raw === undefined || raw === '') return null;
+    return JSON.parse(raw) as TrajectoryRecord;
   } catch (err) {
     if (err instanceof NoSuchKey) return null;
     logger.warn({ err, sessionId }, 'Failed to load trajectory');

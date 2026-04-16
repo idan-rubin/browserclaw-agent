@@ -291,7 +291,7 @@ export async function saveLesson(prompt: string, domains: DomainLesson[]): Promi
 
 // ── Extract lessons from step history ──────────────────────────────────────────
 
-const BLOCKED_PATTERNS = /access denied|\b403\b|rate limit|forbidden/i;
+const BLOCKED_PATTERNS = /access denied|\bblocked\b|\b403\b|rate limit|forbidden/i;
 
 export function extractDomainLessons(steps: AgentStep[], success: boolean): DomainLesson[] {
   const now = new Date().toISOString();

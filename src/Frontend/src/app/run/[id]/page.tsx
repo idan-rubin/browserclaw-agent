@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, use } from 'react';
 import Link from 'next/link';
 import { BrowserClawWordmark } from '@/components/browserclaw-wordmark';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { AgentViewToggle } from '@/components/agent-view-toggle';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { isLocalBrowserMode } from '@/lib/env';
@@ -271,21 +272,24 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   /* --- Summary view --- */
   if (done) {
     return (
-      <RunSummary
-        status={status}
-        answer={answer}
-        error={error}
-        duration={duration}
-        entries={entries}
-        skill={skill}
-        skillStats={skillStats}
-        domainSkills={domainSkills}
-      />
+      <AgentViewToggle>
+        <RunSummary
+          status={status}
+          answer={answer}
+          error={error}
+          duration={duration}
+          entries={entries}
+          skill={skill}
+          skillStats={skillStats}
+          domainSkills={domainSkills}
+        />
+      </AgentViewToggle>
     );
   }
 
   /* --- Running view --- */
   return (
+    <AgentViewToggle>
     <div className="flex h-screen flex-col overflow-hidden">
       <nav className="relative z-20 flex shrink-0 items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-md sm:px-6">
         <div className="flex items-center gap-3">
@@ -388,5 +392,6 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         />
       )}
     </div>
+    </AgentViewToggle>
   );
 }
