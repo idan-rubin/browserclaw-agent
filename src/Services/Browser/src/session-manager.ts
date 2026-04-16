@@ -175,20 +175,26 @@ export async function createSession(
 
   const cdpPort = await nextAvailableCdpPort();
 
-  const browser = await BrowserClaw.launch({
-    headless,
-    noSandbox: process.platform === 'linux',
-    cdpPort,
-    ssrfPolicy: {
-      dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
-    },
-    chromeArgs: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-downloads',
-      '--disable-file-system',
-      ...(headless === true ? [] : ['--start-maximized']),
-    ],
-  });
+  let browser: BrowserClaw;
+  try {
+    browser = await BrowserClaw.launch({
+      headless,
+      noSandbox: process.platform === 'linux',
+      cdpPort,
+      ssrfPolicy: {
+        dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
+      },
+      chromeArgs: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-downloads',
+        '--disable-file-system',
+        ...(headless === true ? [] : ['--start-maximized']),
+      ],
+    });
+  } catch (err) {
+    logger.error({ cdpPort, err }, 'BrowserClaw.launch failed — a Chrome process may be orphaned on this CDP port');
+    throw err;
+  }
 
   let page: CrawlPage;
   try {

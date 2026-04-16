@@ -115,36 +115,46 @@ const REFRESH_BUFFER_MS = 60 * 60 * 1000; // refresh 1 hour before expiry
 
 let oauthTokenIssuedAt: number | null = null;
 const clientCache = new Map<string, OpenAI>();
+// Concurrent callers share a single in-flight refresh so we don't race on process.env.
+let oauthRefreshInFlight: Promise<void> | null = null;
 
 async function refreshOAuthToken(): Promise<void> {
-  const refreshToken = process.env.OPENAI_REFRESH_TOKEN;
-  if (refreshToken === undefined || refreshToken === '')
-    throw new Error('OPENAI_REFRESH_TOKEN is required to refresh the access token');
+  if (oauthRefreshInFlight !== null) return oauthRefreshInFlight;
+  oauthRefreshInFlight = (async () => {
+    const refreshToken = process.env.OPENAI_REFRESH_TOKEN;
+    if (refreshToken === undefined || refreshToken === '')
+      throw new Error('OPENAI_REFRESH_TOKEN is required to refresh the access token');
 
-  logger.info('Refreshing OpenAI OAuth token');
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: CLIENT_ID,
-      refresh_token: refreshToken,
-    }),
-  });
+    logger.info('Refreshing OpenAI OAuth token');
+    const res = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: CLIENT_ID,
+        refresh_token: refreshToken,
+      }),
+    });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OAuth token refresh failed (${String(res.status)}): ${sanitizeErrorText(text)}`);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`OAuth token refresh failed (${String(res.status)}): ${sanitizeErrorText(text)}`);
+    }
+
+    const token = (await res.json()) as { access_token: string; refresh_token?: string };
+    process.env.OPENAI_OAUTH_TOKEN = token.access_token;
+    if (token.refresh_token !== undefined) {
+      process.env.OPENAI_REFRESH_TOKEN = token.refresh_token;
+    }
+    oauthTokenIssuedAt = Date.now();
+    clientCache.delete('openai-oauth');
+    logger.info('OpenAI OAuth token refreshed successfully');
+  })();
+  try {
+    await oauthRefreshInFlight;
+  } finally {
+    oauthRefreshInFlight = null;
   }
-
-  const token = (await res.json()) as { access_token: string; refresh_token?: string };
-  process.env.OPENAI_OAUTH_TOKEN = token.access_token;
-  if (token.refresh_token !== undefined) {
-    process.env.OPENAI_REFRESH_TOKEN = token.refresh_token;
-  }
-  oauthTokenIssuedAt = Date.now();
-  clientCache.delete('openai-oauth');
-  logger.info('OpenAI OAuth token refreshed successfully');
 }
 
 function shouldRefreshOAuthToken(): boolean {
