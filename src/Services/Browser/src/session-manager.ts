@@ -26,7 +26,7 @@ import {
 } from './config.js';
 import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig } from './llm.js';
 import { extractDomain, getSkillForDomain, getSkillsForDomains, saveSkill } from './skill-store.js';
-import { saveLesson, extractDomainLessons } from './lesson-store.js';
+import { saveLesson, extractDomainLessons, getLesson } from './lesson-store.js';
 import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
 import { logger } from './logger.js';
 
@@ -313,6 +313,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
         domainSkill,
         undefined,
         userChatHooks,
+        { getLesson },
       );
       const llmCalls = getLLMCallCount();
 
