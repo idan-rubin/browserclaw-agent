@@ -18,7 +18,6 @@ import { judgeRun } from './judge.js';
 import { moderatePrompt } from './content-policy.js';
 import { logPrompt } from './prompt-log.js';
 import {
-  requireEnvInt,
   USER_RESPONSE_TIMEOUT_MS,
   USER_INTERJECTION_ENABLED,
   MAX_INTERJECTIONS_PER_RUN,
@@ -63,8 +62,8 @@ interface ManagedSession {
   lastInterjectionAt: Date | null;
 }
 
-const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
-const SESSION_IDLE_TIMEOUT_MS = requireEnvInt('SESSION_IDLE_TIMEOUT_MS');
+const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS ?? '10', 10);
+const SESSION_IDLE_TIMEOUT_MS = parseInt(process.env.SESSION_IDLE_TIMEOUT_MS ?? '900000', 10);
 const BASE_CDP_PORT = 9222;
 const MIN_STEPS_FOR_SKILL = 3;
 const MIN_STEPS_FOR_LESSON = 3;

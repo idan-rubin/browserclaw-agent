@@ -960,6 +960,15 @@ export interface UserChatHooks {
   nonce: string;
 }
 
+export interface AgentLoopOptions {
+  /** Domain-specific custom actions keyed by action name. Checked before built-in actions. */
+  customActions?: Record<string, (action: AgentAction, page: CrawlPage) => Promise<void>>;
+  /** Override the default system prompt (main loop only — the final-step prompt is always fixed). */
+  systemPrompt?: string;
+  /** Transform the user prompt before planning. Useful for injecting domain-specific task framing. */
+  buildTask?: (prompt: string) => Promise<string>;
+}
+
 export async function runAgentLoop(
   prompt: string,
   pageOrHolder: CrawlPage | PageHolder,
@@ -970,6 +979,7 @@ export async function runAgentLoop(
   domainSkill?: CatalogSkill | null,
   maxSteps = MAX_STEPS,
   userChat?: UserChatHooks,
+  options?: AgentLoopOptions,
 ): Promise<AgentLoopResult> {
   // Accept either a bare CrawlPage or a PageHolder. When a PageHolder is
   // provided the caller's reference is updated on tab switches.
@@ -1019,6 +1029,15 @@ export async function runAgentLoop(
       final_url: currentUrl,
     };
   };
+
+  // ── Optional task transformation ──────────────────────────────────────────
+  if (options?.buildTask !== undefined) {
+    try {
+      prompt = await options.buildTask(prompt);
+    } catch (err) {
+      logger.error({ err }, 'buildTask threw — using original prompt');
+    }
+  }
 
   // ── Load task lessons ──────────────────────────────────────────────────────
   let taskLesson: TaskLesson | null = null;
@@ -1367,7 +1386,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
     // On the last step, force the agent to produce a final answer
     const isLastStep = stepsRemaining === 0;
-    const systemPrompt = isLastStep ? LAST_STEP_PROMPT : SYSTEM_PROMPT;
+    const systemPrompt = isLastStep ? LAST_STEP_PROMPT : (options?.systemPrompt ?? SYSTEM_PROMPT);
 
     let actions: AgentAction[];
     try {
@@ -1677,6 +1696,27 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         } else {
           agentStep.action.error_feedback = 'close_tab requires tab_id and browser context';
           recentFailureCount++;
+        }
+        step++;
+        break;
+      }
+
+      // --- Custom actions (checked before built-ins) ---
+
+      const customHandler = options?.customActions?.[action.action];
+      if (customHandler !== undefined) {
+        try {
+          await customHandler(action, holder.page);
+        } catch (err) {
+          const feedback = describeActionError(action, err);
+          logger.error(
+            { step, action: action.action, error: err instanceof Error ? err.message : 'unknown' },
+            'Custom action failed',
+          );
+          agentStep.action.error_feedback = feedback;
+          recentFailureCount++;
+          step++;
+          break;
         }
         step++;
         break;
