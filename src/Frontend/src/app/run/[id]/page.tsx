@@ -316,7 +316,13 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           </Link>
           <div className="flex items-center gap-2">
             <div className="group relative">
-              <button className="rounded-md bg-muted/50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.focus();
+                }}
+                className="rounded-md bg-muted/50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted"
+              >
                 Prompt
               </button>
               <div className="absolute left-0 top-full z-50 hidden w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block group-focus-within:block">
@@ -326,7 +332,13 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               </div>
             </div>
             <div className="group relative">
-              <button className="rounded-md bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary hover:bg-primary/20">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.focus();
+                }}
+                className="rounded-md bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary hover:bg-primary/20"
+              >
                 Plan
               </button>
               <div className="absolute left-0 top-full z-50 hidden w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block group-focus-within:block">
