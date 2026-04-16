@@ -290,71 +290,50 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   /* --- Running view --- */
   return (
     <AgentViewToggle>
-    <div className="flex h-screen flex-col overflow-hidden">
-      <nav className="relative z-20 flex shrink-0 items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-md sm:px-6">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="font-[family-name:var(--font-heading)] text-lg tracking-tight">
-            <BrowserClawWordmark />
-          </Link>
-          {plan && (
-            <div className="hidden sm:flex items-center gap-2">
-              <div className="group relative">
-                <button className="rounded-md bg-muted/50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted">
-                  Prompt
-                </button>
-                <div className="absolute left-0 top-full z-50 hidden w-72 rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block">
-                  <p className="text-sm text-foreground">{plan.prompt}</p>
+      <div className="flex h-screen flex-col overflow-hidden">
+        <nav className="relative z-20 flex shrink-0 items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-md sm:px-6">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="font-[family-name:var(--font-heading)] text-lg tracking-tight">
+              <BrowserClawWordmark />
+            </Link>
+            {plan && (
+              <div className="hidden sm:flex items-center gap-2">
+                <div className="group relative">
+                  <button className="rounded-md bg-muted/50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted">
+                    Prompt
+                  </button>
+                  <div className="absolute left-0 top-full z-50 hidden w-72 rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block">
+                    <p className="text-sm text-foreground">{plan.prompt}</p>
+                  </div>
+                </div>
+                <div className="group relative">
+                  <button className="rounded-md bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary hover:bg-primary/20">
+                    Plan
+                  </button>
+                  <div className="absolute left-0 top-full z-50 hidden w-72 rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block">
+                    <p className="text-sm text-foreground">{plan.plan}</p>
+                  </div>
                 </div>
               </div>
-              <div className="group relative">
-                <button className="rounded-md bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary hover:bg-primary/20">
-                  Plan
-                </button>
-                <div className="absolute left-0 top-full z-50 hidden w-72 rounded-lg border border-border bg-card p-3 shadow-lg group-hover:block">
-                  <p className="text-sm text-foreground">{plan.plan}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-3 sm:gap-4">
-          <ThemeToggle />
-          <button
-            onClick={() => {
-              setShowCancelConfirm(true);
-            }}
-            className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/50"
-          >
-            Cancel
-          </button>
-          <span className="font-[family-name:var(--font-jetbrains-mono)] text-sm tabular-nums text-muted-foreground">
-            {minutes}:{seconds.toString().padStart(2, '0')}
-          </span>
-        </div>
-      </nav>
-
-      {isLocalBrowserMode() ? (
-        <RunConsole
-          entries={entries}
-          chatInput={chatInput}
-          onChatInputChange={setChatInput}
-          onSubmit={() => {
-            void handleRespond();
-          }}
-          pendingQuestion={pendingQuestion}
-          isSending={isSending}
-          chatInputRef={chatInputRef}
-          variant="local"
-        />
-      ) : (
-        <>
-          <div className="relative flex-1 bg-black">
-            <iframe
-              src={vncUrl}
-              className={`h-full w-full border-0 ${isDragging ? 'pointer-events-none' : ''}`}
-              title="Browser stream"
-            />
+            )}
           </div>
+          <div className="flex items-center gap-3 sm:gap-4">
+            <ThemeToggle />
+            <button
+              onClick={() => {
+                setShowCancelConfirm(true);
+              }}
+              className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/50"
+            >
+              Cancel
+            </button>
+            <span className="font-[family-name:var(--font-jetbrains-mono)] text-sm tabular-nums text-muted-foreground">
+              {minutes}:{seconds.toString().padStart(2, '0')}
+            </span>
+          </div>
+        </nav>
+
+        {isLocalBrowserMode() ? (
           <RunConsole
             entries={entries}
             chatInput={chatInput}
@@ -365,33 +344,54 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             pendingQuestion={pendingQuestion}
             isSending={isSending}
             chatInputRef={chatInputRef}
-            variant="compact"
-            onDraggingChange={setIsDragging}
+            variant="local"
           />
-        </>
-      )}
+        ) : (
+          <>
+            <div className="relative flex-1 bg-black">
+              <iframe
+                src={vncUrl}
+                className={`h-full w-full border-0 ${isDragging ? 'pointer-events-none' : ''}`}
+                title="Browser stream"
+              />
+            </div>
+            <RunConsole
+              entries={entries}
+              chatInput={chatInput}
+              onChatInputChange={setChatInput}
+              onSubmit={() => {
+                void handleRespond();
+              }}
+              pendingQuestion={pendingQuestion}
+              isSending={isSending}
+              chatInputRef={chatInputRef}
+              variant="compact"
+              onDraggingChange={setIsDragging}
+            />
+          </>
+        )}
 
-      {showCancelConfirm && (
-        <ConfirmDialog
-          title="Cancel this run?"
-          description="The browser session will be stopped and any progress will be lost."
-          confirmLabel="Cancel run"
-          cancelLabel="Keep running"
-          destructive
-          onCancel={() => {
-            setShowCancelConfirm(false);
-          }}
-          onConfirm={() => {
-            setShowCancelConfirm(false);
-            void fetch(`/api/v1/runs/${id}`, { method: 'DELETE' }).catch(() => {
-              /* noop */
-            });
-            setStatus('failed');
-            setError('Run cancelled');
-          }}
-        />
-      )}
-    </div>
+        {showCancelConfirm && (
+          <ConfirmDialog
+            title="Cancel this run?"
+            description="The browser session will be stopped and any progress will be lost."
+            confirmLabel="Cancel run"
+            cancelLabel="Keep running"
+            destructive
+            onCancel={() => {
+              setShowCancelConfirm(false);
+            }}
+            onConfirm={() => {
+              setShowCancelConfirm(false);
+              void fetch(`/api/v1/runs/${id}`, { method: 'DELETE' }).catch(() => {
+                /* noop */
+              });
+              setStatus('failed');
+              setError('Run cancelled');
+            }}
+          />
+        )}
+      </div>
     </AgentViewToggle>
   );
 }
