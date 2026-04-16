@@ -192,10 +192,7 @@ export async function createSession(
       ],
     });
   } catch (err) {
-    logger.error(
-      { cdpPort, err },
-      'BrowserClaw.launch failed — a Chrome process may be orphaned on this CDP port',
-    );
+    logger.error({ cdpPort, err }, 'BrowserClaw.launch failed — a Chrome process may be orphaned on this CDP port');
     throw err;
   }
 
