@@ -708,14 +708,7 @@ async function executeAction(action: AgentAction, page: CrawlPage, config: Agent
     case 'navigate':
       if (action.url === undefined || action.url === '') throw new Error('navigate action requires url');
       assertNavigateUrlAllowed(action.url);
-      await Promise.race([
-        page.goto(action.url, { timeoutMs: 20000 }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => {
-            reject(new Error(`navigate: hard timeout after 25s on ${action.url ?? ''}`));
-          }, 25000),
-        ),
-      ]);
+      await page.goto(action.url, { timeoutMs: 20000 });
       break;
 
     case 'back':
