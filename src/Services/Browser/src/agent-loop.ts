@@ -17,12 +17,10 @@ import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS } from './config.j
 import { logger } from './logger.js';
 
 function formatLessonForPrompt(lesson: TaskLesson): string {
-  const blocked = lesson.domains.filter((d) => d.status === 'blocked');
   const worked = lesson.domains.filter((d) => d.status === 'worked');
-  if (blocked.length === 0 && worked.length === 0) return '';
-  const lines: string[] = ['LESSONS FROM PREVIOUS RUNS:'];
-  for (const d of blocked) lines.push(`  AVOID ${d.domain} (${d.reason})`);
-  for (const d of worked) lines.push(`  USE ${d.domain} instead (${d.reason})`);
+  if (worked.length === 0) return '';
+  const lines: string[] = ['Sites that completed this type of task before (use if they still fit):'];
+  for (const d of worked) lines.push(`  ${d.domain} (${d.reason})`);
   return lines.join('\n');
 }
 
@@ -1080,7 +1078,7 @@ export async function runAgentLoop(
     if (taskLesson !== null) {
       const lessonText = formatLessonForPrompt(taskLesson);
       if (lessonText !== '') {
-        planMessage += `\n\n${lessonText}\nDo NOT navigate to blocked domains. Use alternatives that worked before.`;
+        planMessage += `\n\n${lessonText}`;
       }
     }
     const plan = await llmJson<{ task?: string; plan: string }>({
