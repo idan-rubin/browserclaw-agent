@@ -152,6 +152,34 @@ describe('runAgentLoop', () => {
     expect(result.steps).toHaveLength(2);
   });
 
+  it('hard-rejects a click on a ref that failed twice with "not visible"', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Click' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'First try', ref: '99' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Second try', ref: '99' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Third try on same ref', ref: '99' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Give up', answer: 'no' });
+
+    const { page, mock } = mockPage();
+    mock.click.mockRejectedValue(
+      new Error('Element "99" not found or not visible. Run a new snapshot to see current page elements.'),
+    );
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    await runAgentLoop('Click banned ref', page, emit, controller.signal);
+
+    const parseErrors = emit.mock.calls.filter(
+      (c) =>
+        c[0] === 'step_error' &&
+        typeof c[1] === 'object' &&
+        c[1] !== null &&
+        (c[1] as { type?: string }).type === 'parse_error',
+    );
+    expect(parseErrors.length).toBeGreaterThanOrEqual(1);
+    expect(mock.click.mock.calls.filter((c) => c[0] === '99').length).toBeLessThanOrEqual(2);
+  });
+
   it('aborts remaining queued actions when URL changes mid-batch', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'batch click' })
