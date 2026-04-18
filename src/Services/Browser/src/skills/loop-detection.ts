@@ -15,9 +15,7 @@ interface LoopNudge {
 export function detectLoop(action: { action: string; ref?: string }, history: AgentStep[]): LoopNudge | null {
   const actionKey = `${action.action}:${action.ref ?? ''}`;
 
-  // Fast-path: two consecutive FAILED attempts on the same (action, ref) — the ref
-  // is almost certainly blocked or stale. Fire immediately so the next turn stops
-  // re-targeting it instead of waiting for the generic repetition threshold.
+  // Two back-to-back failures on the same ref → fire now, don't wait for the 5+ threshold.
   if (action.ref !== undefined && action.ref !== '' && history.length >= 2) {
     const lastTwo = history.slice(-2);
     const bothFailed = lastTwo.every(
