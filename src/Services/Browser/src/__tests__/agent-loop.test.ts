@@ -208,10 +208,7 @@ describe('runAgentLoop', () => {
 
     await runAgentLoop('Go to test.com', page, emit, controller.signal);
 
-    expect(mock.goto).toHaveBeenCalledWith(
-      'https://test.com',
-      expect.objectContaining({ timeoutMs: expect.any(Number) }),
-    );
+    expect(mock.goto).toHaveBeenCalledWith('https://test.com');
   });
 
   it('aborts on signal', async () => {

@@ -708,7 +708,7 @@ async function executeAction(action: AgentAction, page: CrawlPage, config: Agent
     case 'navigate':
       if (action.url === undefined || action.url === '') throw new Error('navigate action requires url');
       assertNavigateUrlAllowed(action.url);
-      await page.goto(action.url, { timeoutMs: 20000 });
+      await page.goto(action.url);
       break;
 
     case 'back':
