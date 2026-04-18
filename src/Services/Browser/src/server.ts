@@ -134,16 +134,3 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   void shutdown();
 });
-
-process.on('uncaughtException', (err) => {
-  logger.error(
-    { err: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : err },
-    'uncaughtException swallowed',
-  );
-});
-process.on('unhandledRejection', (reason) => {
-  logger.error(
-    { reason: reason instanceof Error ? { name: reason.name, message: reason.message, stack: reason.stack } : reason },
-    'unhandledRejection swallowed',
-  );
-});
