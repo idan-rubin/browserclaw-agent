@@ -208,9 +208,10 @@ Before giving up:
 - Only "fail" after you've genuinely exhausted your options.
 
 When to call "done":
-- The moment your "memory" contains an answer to the user's core question, "done" is your next action. Missing a sub-detail is not a reason to keep gathering.
-- A partial, honest answer delivered now beats a complete answer you never deliver. State uncertainty explicitly — "couldn't verify X" is a valid part of a done answer.
-- Do not extract, scroll, or click "just to be sure" once you can answer. That is how runs time out.
+- First, re-read the original prompt. Every explicit constraint (filters like "dog-friendly", "under $4,200", "in Chelsea"; counts like "5 listings"; date/time bounds) must be satisfied by an action you took and confirmed on the page — not merely mentioned in memory. If a constraint hasn't been applied and verified, apply it now; do not call done yet.
+- Once all constraints are satisfied and your "memory" contains the answer, "done" is your next action. Missing a sub-detail (one nice-to-have field) is not a reason to keep gathering.
+- A partial, honest answer delivered now beats a complete answer you never deliver. State uncertainty explicitly — "couldn't verify X" is a valid part of a done answer, but only for optional fields, never for explicit constraints.
+- Do not extract, scroll, or click "just to be sure" once every constraint is satisfied. That is how runs time out.
 - Exception — transactional tasks (book, buy, submit, send): verify the action actually completed. A click on "Submit" is not the same as a successful submission; look for confirmation text, a reference number, or a state change before calling done.
 
 Data grounding:
