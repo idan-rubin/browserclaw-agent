@@ -15,7 +15,18 @@ interface LoopNudge {
 export function detectLoop(action: { action: string; ref?: string }, history: AgentStep[]): LoopNudge | null {
   const actionKey = `${action.action}:${action.ref ?? ''}`;
 
-  // Two back-to-back failures on the same ref → fire now, don't wait for the 5+ threshold.
+  if (
+    action.action === 'web_search' &&
+    history.length >= 1 &&
+    history[history.length - 1].action.action === 'web_search'
+  ) {
+    return {
+      level: 'urgent',
+      message:
+        'You just ran web_search twice in a row. The previous search already returned results — pick one URL from those results and navigate there. Do not refine the query again. If every returned site turned out to be blocked, navigate directly to a known working alternative (e.g. Zumper, Apartments.com) instead of searching yet again.',
+    };
+  }
+
   if (action.ref !== undefined && action.ref !== '' && history.length >= 2) {
     const lastTwo = history.slice(-2);
     const bothFailed = lastTwo.every(
@@ -34,7 +45,6 @@ export function detectLoop(action: { action: string; ref?: string }, history: Ag
   const window = history.slice(-LOOP_WINDOW);
   const windowKeys = window.map((h) => `${h.action.action}:${h.action.ref ?? ''}`);
 
-  // Count how many times this exact action appears in the window
   const repetitions = windowKeys.filter((k) => k === actionKey).length;
 
   if (repetitions >= 12) {

@@ -119,4 +119,15 @@ describe('detectLoop', () => {
     const history = [makeFailedStep('scroll', undefined, 0), makeFailedStep('scroll', undefined, 1)];
     expect(detectLoop({ action: 'scroll' }, history)).toBeNull();
   });
+
+  it('fires urgently on two consecutive web_search calls', () => {
+    const history = [makeStep('web_search', undefined, 0)];
+    const nudge = detectLoop({ action: 'web_search' }, history);
+    expect(nudge).toEqual(expect.objectContaining({ level: 'urgent' }));
+  });
+
+  it('does not fire web_search rule when previous action was different', () => {
+    const history = [makeStep('navigate', undefined, 0)];
+    expect(detectLoop({ action: 'web_search' }, history)).toBeNull();
+  });
 });
