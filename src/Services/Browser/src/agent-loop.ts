@@ -592,6 +592,7 @@ interface ParsedActionItem {
   options?: string[];
   direction?: string;
   expression?: string;
+  query?: string;
   tab_id?: string;
   confidence?: string;
   answer?: string;
@@ -650,6 +651,7 @@ function parseActions(parsed: Record<string, unknown>): AgentAction[] {
       options: item.options,
       direction: item.direction as AgentAction['direction'],
       expression: item.expression,
+      query: item.query,
       tab_id: item.tab_id,
     };
   });
