@@ -435,7 +435,6 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
     _fallbackLlmCallCount++;
   }
 
-  // Check for BYOK session config first
   if (ctx) {
     const byokConfig = ctx.llmConfig;
     const providerConfig = resolveByokProvider(byokConfig);

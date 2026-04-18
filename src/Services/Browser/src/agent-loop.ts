@@ -1021,6 +1021,8 @@ export async function runAgentLoop(
   let pendingSiteSwitch: string | null = null;
   let duplicateMemoryCount = 0;
   let consecutiveNotReadyJudgments = 0;
+  const bannedRefs = new Map<string, { action: string; failures: number }>();
+  const BAN_THRESHOLD = 2;
 
   const forceComplete = async (reason: string, precomputedAnswer?: string): Promise<AgentLoopResult> => {
     logger.warn({ step, reason }, 'Force-completing run');
@@ -1421,6 +1423,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           JSON.stringify(parsed).slice(0, 200),
         );
       }
+      const banned = actions[0]?.ref !== undefined ? bannedRefs.get(actions[0].ref) : undefined;
+      if (banned !== undefined && banned.failures >= BAN_THRESHOLD && banned.action === actions[0].action) {
+        throw new LlmParseError(
+          `Ref "${actions[0].ref ?? ''}" is blocked after ${String(banned.failures)} consecutive "${actions[0].action}" failures on it. Pick a different ref from the current snapshot, or try a different approach (URL parameters, keyboard, different element). Do NOT use "${actions[0].ref ?? ''}" again.`,
+          JSON.stringify(parsed).slice(0, 200),
+        );
+      }
       consecutiveParseFailures = 0;
       crossSiteParseFailures = 0;
       consecutiveApiFailures = 0;
@@ -1780,6 +1789,12 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('step_error', { step, action: action.action, error: rawMessage });
         agentStep.action.error_feedback = feedback;
         recentFailureCount++;
+        if (action.ref !== undefined && action.ref !== '' && /not found or not visible/i.test(rawMessage)) {
+          const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
+          entry.failures += 1;
+          entry.action = action.action;
+          bannedRefs.set(action.ref, entry);
+        }
         await holder.page.waitFor({ timeMs: 1000 });
 
         if (await detectPopup(holder.page)) {
