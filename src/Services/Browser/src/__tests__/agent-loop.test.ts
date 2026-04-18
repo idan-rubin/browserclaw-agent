@@ -199,16 +199,16 @@ describe('runAgentLoop', () => {
   it('executes navigate action correctly', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Navigate' })
-      .mockResolvedValueOnce({ action: 'navigate', reasoning: 'Go to URL', url: 'https://test.com' })
+      .mockResolvedValueOnce({ action: 'navigate', reasoning: 'Go to URL', url: 'https://demo.playwright.dev/todomvc' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Done' });
 
     const { page, mock } = mockPage();
     const emit = vi.fn();
     const controller = new AbortController();
 
-    await runAgentLoop('Go to test.com', page, emit, controller.signal);
+    await runAgentLoop('Go to the Playwright TodoMVC demo', page, emit, controller.signal);
 
-    expect(mock.goto).toHaveBeenCalledWith('https://test.com');
+    expect(mock.goto).toHaveBeenCalledWith('https://demo.playwright.dev/todomvc');
   });
 
   it('aborts on signal', async () => {
