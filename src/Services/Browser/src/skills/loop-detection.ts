@@ -13,9 +13,26 @@ interface LoopNudge {
  * by recovery.ts which provides richer diagnostics.
  */
 export function detectLoop(action: { action: string; ref?: string }, history: AgentStep[]): LoopNudge | null {
+  const actionKey = `${action.action}:${action.ref ?? ''}`;
+
+  // Fast-path: two consecutive FAILED attempts on the same (action, ref) — the ref
+  // is almost certainly blocked or stale. Fire immediately so the next turn stops
+  // re-targeting it instead of waiting for the generic repetition threshold.
+  if (action.ref !== undefined && action.ref !== '' && history.length >= 2) {
+    const lastTwo = history.slice(-2);
+    const bothFailed = lastTwo.every(
+      (h) => h.action.error_feedback !== undefined && `${h.action.action}:${h.action.ref ?? ''}` === actionKey,
+    );
+    if (bothFailed) {
+      return {
+        level: 'urgent',
+        message: `STOP: ref "${action.ref}" just failed twice on "${action.action}". Do NOT try this ref again — it is blocked or not actionable. Pick a DIFFERENT ref from the current snapshot, or press "Escape" to dismiss any overlay before retrying. If neither helps, try a different element or navigate to a different page.`,
+      };
+    }
+  }
+
   if (history.length < 5) return null;
 
-  const actionKey = `${action.action}:${action.ref ?? ''}`;
   const window = history.slice(-LOOP_WINDOW);
   const windowKeys = window.map((h) => `${h.action.action}:${h.action.ref ?? ''}`);
 
