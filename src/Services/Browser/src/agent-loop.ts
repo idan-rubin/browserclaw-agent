@@ -7,6 +7,7 @@ import { detectPageState, shouldBlockDone } from './skills/page-state.js';
 import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
 import { TabManager } from './skills/tab-manager.js';
 import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
+import { extractItems } from './skills/extract-items.js';
 import { webSearch } from './web-search.js';
 import type { UserMessage } from './types.js';
 import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
@@ -119,7 +120,9 @@ Rules:
 - "back" to go back in browser history. Use this instead of manually tracking URLs when you need to return to the previous page.
 - "press_and_hold" solves press-and-hold human-verification challenges. Include "hold_ms" (milliseconds) to override the default duration when a prior attempt was too short or the UI specifies a time.
 - "click_cloudflare" solves Cloudflare "Verify you are human" checkbox challenges. The system locates and clicks the checkbox.
-- "extract" when the accessibility snapshot is missing data you need — prices, descriptions, table values, form field values, counts, or any text that's visually on the page but absent from the snapshot. Provide a JavaScript expression; the result appears in the next step. Examples: 'document.querySelector(".price")?.textContent', 'Array.from(document.querySelectorAll("td")).map(el=>el.textContent.trim())'. Use this like a human would: when you can see there's content but can't read it from the snapshot.
+- "extract" when the accessibility snapshot is missing data you need — prices, descriptions, table values, form field values, counts, or any text that's visually on the page but absent from the snapshot.
+  - With an "expression" (JavaScript string): runs that expression and returns the value. Examples: 'document.querySelector(".price")?.textContent', 'Array.from(document.querySelectorAll("td")).map(el=>el.textContent.trim())'.
+  - Without an "expression": runs a built-in structured-items extractor that tries __NEXT_DATA__ → Apollo state → __INITIAL_STATE__ → JSON-LD → DOM card heuristics, in that order, and returns an array of records with fields like price, address, bedrooms, url. Prefer this on list/results pages — it is more reliable than hand-written selector code.
 - On modern JS/SPA sites (Next.js, React apps), listing and detail data is usually embedded in structured state — try these first before hand-rolling selectors: JSON.parse(document.getElementById('__NEXT_DATA__').textContent), window.__APOLLO_STATE__, window.__INITIAL_STATE__, or JSON-LD via document.querySelectorAll('script[type="application/ld+json"]'). One well-aimed extract from structured state beats five DOM-selector attempts.
 - When you are on a filtered search-results page and the snapshot shows cards but no readable card text (mostly images, icons, or empty container refs), don't "done" or pivot yet — the data exists in the SPA state. Your NEXT action must be an extract against __NEXT_DATA__ / __APOLLO_STATE__ / __INITIAL_STATE__ / JSON-LD. Only after a structured-state extract genuinely returns nothing usable may you pivot to a different page or fail.
 - On cards with nested links (photo, title, container), the outer link often routes to a promo or profile rather than the listing. When similar links stack within a card, extract hrefs first to disambiguate — click the link whose URL path matches the target, not one guessed from the visible label.
@@ -1649,7 +1652,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         break;
       }
 
-      // #1 Evaluate fallback: LLM-requested JS extraction
       if (action.action === 'extract') {
         if (action.expression !== undefined && action.expression !== '') {
           try {
@@ -1664,7 +1666,18 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
           }
         } else {
-          agentStep.action.extract_result = 'Error: no expression provided';
+          const items = await extractItems(holder.page);
+          const payload = JSON.stringify({
+            source: items.source,
+            count: items.count,
+            truncated: items.truncated,
+            records: items.records,
+          });
+          agentStep.action.extract_result = payload.slice(0, EXTRACT_RESULT_MAX_CHARS);
+          if (payload.length > EXTRACT_RESULT_MAX_CHARS) {
+            agentStep.action.extract_result += '\n…(truncated)';
+          }
+          logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
         }
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
         step++;
