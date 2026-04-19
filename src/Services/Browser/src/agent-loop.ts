@@ -1034,6 +1034,7 @@ export async function runAgentLoop(
   let pendingSiteSwitch: string | null = null;
   let duplicateMemoryCount = 0;
   let consecutiveNotReadyJudgments = 0;
+  let lastJudgmentMemoryLength = 0;
   const bannedRefs = new Map<string, { action: string; failures: number }>();
   const BAN_THRESHOLD = 2;
 
@@ -1322,7 +1323,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           logger.info({ step }, 'Judge: answer ready — force-completing');
           return await forceComplete('Judge ruled answer ready', judgment.answer);
         }
-        consecutiveNotReadyJudgments++;
+        const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
+        lastJudgmentMemoryLength = mem.length;
+        if (memoryGrew) {
+          consecutiveNotReadyJudgments = 0;
+        } else {
+          consecutiveNotReadyJudgments++;
+        }
         if (consecutiveNotReadyJudgments >= JUDGE_FATIGUE_LIMIT) {
           logger.warn(
             { step, nudges: consecutiveNotReadyJudgments, stillMissing: judgment.missing },
