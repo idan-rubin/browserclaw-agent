@@ -1499,7 +1499,12 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         consecutiveParseFailures++;
         crossSiteParseFailures++;
         logger.warn(
-          { step, consecutive: consecutiveParseFailures, crossSite: crossSiteParseFailures },
+          {
+            step,
+            consecutive: consecutiveParseFailures,
+            crossSite: crossSiteParseFailures,
+            rawSnippet: err.responseSnippet,
+          },
           'LLM returned non-JSON response',
         );
         emit('step_error', {
@@ -1540,7 +1545,15 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
       // API/network error — don't burn a step, the agent never got to act
       consecutiveApiFailures++;
-      logger.error({ step, attempt: consecutiveApiFailures, maxAttempts: MAX_API_FAILURES }, 'LLM API error');
+      logger.error(
+        {
+          step,
+          attempt: consecutiveApiFailures,
+          maxAttempts: MAX_API_FAILURES,
+          errorMessage: err instanceof Error ? sanitizeErrorText(err.message).slice(0, 300) : 'unknown',
+        },
+        'LLM API error',
+      );
       emit('step_error', { step, error: 'AI service temporarily unavailable', type: 'api_error' });
       if (consecutiveApiFailures >= MAX_API_FAILURES) {
         return {

@@ -6,6 +6,7 @@ import { LlmParseError } from './types.js';
 import type { LlmConfig } from './types.js';
 
 const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS ?? '30000', 10);
+const LLM_OAUTH_TIMEOUT_MS = parseInt(process.env.LLM_OAUTH_TIMEOUT_MS ?? '90000', 10);
 
 // ── Sanitization ─────────────────────────────────────────────────────────────
 
@@ -444,7 +445,7 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
           () => callCodexResponsesAPI(providerConfig, byokConfig.model, req, byokConfig.api_key),
           'BYOK Codex API',
         ),
-        LLM_TIMEOUT_MS,
+        LLM_OAUTH_TIMEOUT_MS,
         'LLM call (BYOK OAuth)',
       );
     }
