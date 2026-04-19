@@ -4,7 +4,7 @@ import { extractItems } from '../skills/extract-items.js';
 
 function mockPage(evaluateImpl: (expr: string) => unknown): CrawlPage {
   return {
-    evaluate: vi.fn().mockImplementation(async (expr: string) => evaluateImpl(expr)),
+    evaluate: vi.fn().mockImplementation((expr: string) => Promise.resolve(evaluateImpl(expr))),
   } as unknown as CrawlPage;
 }
 

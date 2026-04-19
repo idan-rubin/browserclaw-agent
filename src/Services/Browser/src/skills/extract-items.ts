@@ -125,7 +125,7 @@ export async function extractItems(page: CrawlPage): Promise<ExtractItemsResult>
     }
     const result = raw as { source: string; records: unknown };
     const records = Array.isArray(result.records) ? (result.records as Record<string, unknown>[]) : [];
-    const source = (result.source as ExtractItemsResult['source']) ?? 'none';
+    const source = result.source as ExtractItemsResult['source'];
     logger.info({ source, count: records.length }, 'extract-items');
     return {
       source,
