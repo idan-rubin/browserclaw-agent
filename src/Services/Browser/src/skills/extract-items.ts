@@ -1,4 +1,4 @@
-import type { CrawlPage } from 'browserclaw';
+import type { BrowserClaw, CrawlPage } from 'browserclaw';
 import { logger } from '../logger.js';
 
 export interface ExtractItemsResult {
@@ -137,4 +137,62 @@ export async function extractItems(page: CrawlPage): Promise<ExtractItemsResult>
     logger.warn({ err: err instanceof Error ? err.message : err }, 'extract-items failed');
     return { source: 'none', count: 0, records: [], truncated: false };
   }
+}
+
+export interface ExtractItemsFromUrlsResult {
+  count: number;
+  records: Record<string, unknown>[];
+  failedUrls: string[];
+}
+
+const URL_EXTRACT_TIMEOUT_MS = 20000;
+const DEFAULT_CONCURRENCY = 5;
+const MAX_URLS = 10;
+
+export async function extractItemsFromUrls(
+  browser: BrowserClaw,
+  urls: string[],
+  opts?: { concurrency?: number },
+): Promise<ExtractItemsFromUrlsResult> {
+  const deduped = Array.from(new Set(urls.filter((u) => typeof u === 'string' && u !== ''))).slice(0, MAX_URLS);
+  const concurrency = Math.max(1, Math.min(opts?.concurrency ?? DEFAULT_CONCURRENCY, deduped.length));
+  const records: Record<string, unknown>[] = [];
+  const failedUrls: string[] = [];
+  let cursor = 0;
+
+  const worker = async (): Promise<void> => {
+    while (cursor < deduped.length) {
+      const url = deduped[cursor++];
+      const t0 = Date.now();
+      let tabId: string | undefined;
+      try {
+        const tab = await browser.open(url);
+        tabId = tab.id;
+        await tab.waitFor({ timeMs: 500 });
+        const result = await extractItems(tab);
+        const recordsWithUrl = result.records.map((r) => ({ sourceUrl: url, ...r }));
+        records.push(...recordsWithUrl);
+        logger.info(
+          { url, source: result.source, count: result.records.length, ms: Date.now() - t0 },
+          'extract-items-url',
+        );
+      } catch (err) {
+        logger.warn({ url, err: err instanceof Error ? err.message : err }, 'extract-items-url failed');
+        failedUrls.push(url);
+      } finally {
+        if (tabId !== undefined) {
+          await browser.close(tabId).catch(() => undefined);
+        }
+      }
+    }
+  };
+
+  const workers = Array.from({ length: concurrency }, () => worker());
+  await Promise.all(workers);
+
+  return {
+    count: records.length,
+    records,
+    failedUrls,
+  };
 }

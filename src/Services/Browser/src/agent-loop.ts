@@ -7,7 +7,7 @@ import { detectPageState, shouldBlockDone } from './skills/page-state.js';
 import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
 import { TabManager } from './skills/tab-manager.js';
 import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
-import { extractItems } from './skills/extract-items.js';
+import { extractItems, extractItemsFromUrls } from './skills/extract-items.js';
 import { webSearch } from './web-search.js';
 import type { UserMessage } from './types.js';
 import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
@@ -123,9 +123,10 @@ Rules:
 - "extract" when the accessibility snapshot is missing data you need — prices, descriptions, table values, form field values, counts, or any text that's visually on the page but absent from the snapshot.
   - With an "expression" (JavaScript string): runs that expression and returns the value. Examples: 'document.querySelector(".price")?.textContent', 'Array.from(document.querySelectorAll("td")).map(el=>el.textContent.trim())'.
   - Without an "expression": runs a built-in structured-items extractor that tries __NEXT_DATA__ → Apollo state → __INITIAL_STATE__ → JSON-LD → DOM card heuristics, in that order, and returns an array of records with fields like price, address, bedrooms, url. Prefer this on list/results pages — it is more reliable than hand-written selector code.
+  - With "urls" (array of up to 10): opens each URL in a parallel tab, runs the built-in extractor on each, and returns merged records with sourceUrl. Use this to enrich list results that have URLs but missing per-item fields — it replaces N separate navigate → snapshot → extract cycles with ONE action.
 - On modern JS/SPA sites (Next.js, React apps), listing and detail data is usually embedded in structured state — try these first before hand-rolling selectors: JSON.parse(document.getElementById('__NEXT_DATA__').textContent), window.__APOLLO_STATE__, window.__INITIAL_STATE__, or JSON-LD via document.querySelectorAll('script[type="application/ld+json"]'). One well-aimed extract from structured state beats five DOM-selector attempts.
 - On any filtered search-results page where you need structured item data (prices, addresses, names, URLs across multiple cards), your FIRST extract must use the built-in extractor: call "extract" with NO "expression" field at all. It auto-tries __NEXT_DATA__ / Apollo / __INITIAL_STATE__ / JSON-LD / DOM cards and returns an array of records. Do not write your own selector code for list pages — it fails more often than it succeeds. Only if the built-in extractor's "source" comes back "none" should you attempt a custom "expression".
-- If the built-in extract returned items whose URLs are present but some named per-item fields are missing (e.g. JSON-LD often carries only the URL), do not give up. Navigate to each item URL in turn and run another "extract" with NO "expression" — the built-in extractor also handles single-item detail pages and will return the missing fields. Collect enough complete items to satisfy the task's count before calling done.
+- If the built-in extract returned items whose URLs are present but some named per-item fields are missing (e.g. JSON-LD often carries only the URL), do not give up and do not visit each URL sequentially. Instead, call "extract" with a "urls" array listing up to 10 detail URLs. The agent will open all of them in parallel tabs, run the built-in extractor on each, and return aggregated records keyed by sourceUrl. This is the fastest way to enrich partial list results.
 - On cards with nested links (photo, title, container), the outer link often routes to a promo or profile rather than the listing. When similar links stack within a card, extract hrefs first to disambiguate — click the link whose URL path matches the target, not one guessed from the visible label.
 - "web_search" to search the web when you don't know which site to use, need to find a specific service, or want to compare options across sources. Provide "query"; returns top results with titles, URLs, and snippets. Use this instead of guessing URLs.
 - "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
@@ -599,6 +600,7 @@ interface ParsedActionItem {
   ref?: string;
   text?: string;
   url?: string;
+  urls?: string[];
   key?: string;
   options?: string[];
   direction?: string;
@@ -663,6 +665,7 @@ function parseActions(parsed: Record<string, unknown>): AgentAction[] {
       direction: item.direction as AgentAction['direction'],
       expression: item.expression,
       query: item.query,
+      urls: item.urls,
       tab_id: item.tab_id,
     };
   });
@@ -1693,6 +1696,19 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           } catch (evalErr) {
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
           }
+        } else if (action.urls !== undefined && action.urls.length > 0 && browser !== undefined) {
+          for (const url of action.urls) assertNavigateUrlAllowed(url);
+          const batch = await extractItemsFromUrls(browser, action.urls);
+          const payload = JSON.stringify({
+            count: batch.count,
+            records: batch.records,
+            failedUrls: batch.failedUrls,
+          });
+          agentStep.action.extract_result = payload.slice(0, EXTRACT_RESULT_MAX_CHARS);
+          if (payload.length > EXTRACT_RESULT_MAX_CHARS) {
+            agentStep.action.extract_result += '\n…(truncated)';
+          }
+          logger.info({ step, count: batch.count, failedCount: batch.failedUrls.length }, 'extract items batch');
         } else {
           const items = await extractItems(holder.page);
           const payload = JSON.stringify({

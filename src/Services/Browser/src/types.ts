@@ -79,6 +79,8 @@ export interface AgentAction {
   hold_ms?: number;
   /** Search query (for web_search action) */
   query?: string;
+  /** Batch of URLs to extract items from in parallel (for extract action) */
+  urls?: string[];
   /** Result of extract action — set by the agent loop, shown in next step's history */
   extract_result?: string;
   /** Set by the agent loop when action execution fails — fed back to LLM in next step */
