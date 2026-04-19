@@ -145,7 +145,6 @@ export interface ExtractItemsFromUrlsResult {
   failedUrls: string[];
 }
 
-const URL_EXTRACT_TIMEOUT_MS = 20000;
 const DEFAULT_CONCURRENCY = 5;
 const MAX_URLS = 10;
 

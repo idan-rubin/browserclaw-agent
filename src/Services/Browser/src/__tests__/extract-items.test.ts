@@ -62,7 +62,7 @@ describe('extractItemsFromUrls', () => {
       open: vi.fn().mockImplementation((url: string) => {
         opened.push(url);
         return Promise.resolve({
-          id: `t-${opened.length}`,
+          id: `t-${String(opened.length)}`,
           waitFor: vi.fn().mockResolvedValue(undefined),
           evaluate: vi.fn().mockResolvedValue({
             source: 'next-data',
@@ -106,18 +106,19 @@ describe('extractItemsFromUrls', () => {
   });
 
   it('dedupes and caps urls at 10', async () => {
+    const openMock = vi.fn().mockResolvedValue({
+      id: 't',
+      waitFor: vi.fn().mockResolvedValue(undefined),
+      evaluate: vi.fn().mockResolvedValue({ source: 'none', records: [] }),
+    });
     const browser = {
-      open: vi.fn().mockResolvedValue({
-        id: 't',
-        waitFor: vi.fn().mockResolvedValue(undefined),
-        evaluate: vi.fn().mockResolvedValue({ source: 'none', records: [] }),
-      }),
+      open: openMock,
       close: vi.fn().mockResolvedValue(undefined),
     } as unknown as BrowserClaw;
 
-    const urls = [...Array(15).fill('https://x/dup'), 'https://x/unique'];
+    const urls: string[] = [...(Array(15).fill('https://x/dup') as string[]), 'https://x/unique'];
     await extractItemsFromUrls(browser, urls);
 
-    expect(browser.open).toHaveBeenCalledTimes(2);
+    expect(openMock).toHaveBeenCalledTimes(2);
   });
 });
