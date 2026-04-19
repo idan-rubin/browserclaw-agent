@@ -236,7 +236,7 @@ async function callCodexResponsesAPI(
       input: [{ role: 'user', content: req.message }],
       store: false,
       stream: true,
-      reasoning: { effort: 'low' },
+      reasoning: { effort: 'minimal' },
     }),
   });
 
