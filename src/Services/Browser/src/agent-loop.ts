@@ -7,6 +7,7 @@ import { detectPageState, shouldBlockDone } from './skills/page-state.js';
 import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
 import { TabManager } from './skills/tab-manager.js';
 import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
+import { extractItems } from './skills/extract-items.js';
 import { webSearch } from './web-search.js';
 import type { UserMessage } from './types.js';
 import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
@@ -17,12 +18,10 @@ import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS } from './config.j
 import { logger } from './logger.js';
 
 function formatLessonForPrompt(lesson: TaskLesson): string {
-  const blocked = lesson.domains.filter((d) => d.status === 'blocked');
   const worked = lesson.domains.filter((d) => d.status === 'worked');
-  if (blocked.length === 0 && worked.length === 0) return '';
-  const lines: string[] = ['LESSONS FROM PREVIOUS RUNS:'];
-  for (const d of blocked) lines.push(`  AVOID ${d.domain} (${d.reason})`);
-  for (const d of worked) lines.push(`  USE ${d.domain} instead (${d.reason})`);
+  if (worked.length === 0) return '';
+  const lines: string[] = ['Sites that completed this type of task before (use if they still fit):'];
+  for (const d of worked) lines.push(`  ${d.domain} (${d.reason})`);
   return lines.join('\n');
 }
 
@@ -121,8 +120,13 @@ Rules:
 - "back" to go back in browser history. Use this instead of manually tracking URLs when you need to return to the previous page.
 - "press_and_hold" solves press-and-hold human-verification challenges. Include "hold_ms" (milliseconds) to override the default duration when a prior attempt was too short or the UI specifies a time.
 - "click_cloudflare" solves Cloudflare "Verify you are human" checkbox challenges. The system locates and clicks the checkbox.
-- "extract" when the accessibility snapshot is missing data you need — prices, descriptions, table values, form field values, counts, or any text that's visually on the page but absent from the snapshot. Provide a JavaScript expression; the result appears in the next step. Examples: 'document.querySelector(".price")?.textContent', 'Array.from(document.querySelectorAll("td")).map(el=>el.textContent.trim())'. Use this like a human would: when you can see there's content but can't read it from the snapshot.
+- "extract" when the accessibility snapshot is missing data you need — prices, descriptions, table values, form field values, counts, or any text that's visually on the page but absent from the snapshot.
+  - With an "expression" (JavaScript string): runs that expression and returns the value. Examples: 'document.querySelector(".price")?.textContent', 'Array.from(document.querySelectorAll("td")).map(el=>el.textContent.trim())'.
+  - Without an "expression": runs a built-in structured-items extractor that tries __NEXT_DATA__ → Apollo state → __INITIAL_STATE__ → JSON-LD → DOM card heuristics, in that order, and returns an array of records with fields like price, address, bedrooms, url. Prefer this on list/results pages — it is more reliable than hand-written selector code.
 - On modern JS/SPA sites (Next.js, React apps), listing and detail data is usually embedded in structured state — try these first before hand-rolling selectors: JSON.parse(document.getElementById('__NEXT_DATA__').textContent), window.__APOLLO_STATE__, window.__INITIAL_STATE__, or JSON-LD via document.querySelectorAll('script[type="application/ld+json"]'). One well-aimed extract from structured state beats five DOM-selector attempts.
+- On any filtered search-results page where you need structured item data (prices, addresses, names, URLs across multiple cards), your FIRST extract must use the built-in extractor: call "extract" with NO "expression" field at all. It auto-tries __NEXT_DATA__ / Apollo / __INITIAL_STATE__ / JSON-LD / DOM cards and returns an array of records. Do not write your own selector code for list pages — it fails more often than it succeeds. Only if the built-in extractor's "source" comes back "none" should you attempt a custom "expression".
+- If the built-in extract returned items whose URLs are present but some named per-item fields are missing (e.g. JSON-LD often carries only the URL), do not give up. Navigate to each item URL in turn and run another "extract" with NO "expression" — the built-in extractor also handles single-item detail pages and will return the missing fields. Collect enough complete items to satisfy the task's count before calling done.
+- On cards with nested links (photo, title, container), the outer link often routes to a promo or profile rather than the listing. When similar links stack within a card, extract hrefs first to disambiguate — click the link whose URL path matches the target, not one guessed from the visible label.
 - "web_search" to search the web when you don't know which site to use, need to find a specific service, or want to compare options across sources. Provide "query"; returns top results with titles, URLs, and snippets. Use this instead of guessing URLs.
 - "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
 - "close_tab" to close a tab by tab_id. Use only when a tab is no longer needed.
@@ -208,9 +212,12 @@ Before giving up:
 - Only "fail" after you've genuinely exhausted your options.
 
 When to call "done":
-- The moment your "memory" contains an answer to the user's core question, "done" is your next action. Missing a sub-detail is not a reason to keep gathering.
-- A partial, honest answer delivered now beats a complete answer you never deliver. State uncertainty explicitly — "couldn't verify X" is a valid part of a done answer.
-- Do not extract, scroll, or click "just to be sure" once you can answer. That is how runs time out.
+- First, re-read the original prompt. Every explicit constraint (filters like "dog-friendly", "under $4,200", "in Chelsea"; counts like "5 listings"; date/time bounds) must be satisfied by an action you took and confirmed on the page — not merely mentioned in memory. If a constraint hasn't been applied and verified, apply it now; do not call done yet.
+- Once all constraints are satisfied and your "memory" contains the answer, "done" is your next action. Missing a sub-detail (one nice-to-have field) is not a reason to keep gathering.
+- When the task asks for a list of items with named per-item fields, every named field is required for every item you report. If an item is missing any named field, do a focused follow-up extract for that field, or drop the item and get another that has all fields. Never call done with items that have "not recovered" or "unknown" in a named field.
+- If an item you considered fails one of the task's explicit constraints (price over cap, wrong location, wrong date, etc.), drop it and keep hunting — open the next candidate from the list, scroll for more, or paginate. Do not call done with fewer qualifying items than the task asked for just because the first few you inspected didn't qualify.
+- A partial, honest answer delivered now beats a complete answer you never deliver. State uncertainty explicitly — "couldn't verify X" is a valid part of a done answer, but only for optional fields, never for explicit constraints.
+- Do not extract, scroll, or click "just to be sure" once every constraint is satisfied. That is how runs time out.
 - Exception — transactional tasks (book, buy, submit, send): verify the action actually completed. A click on "Submit" is not the same as a successful submission; look for confirmation text, a reference number, or a state change before calling done.
 
 Data grounding:
@@ -241,11 +248,15 @@ function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
 
 const PAGE_READY_RETRIES = 2;
 const PAGE_READY_WAIT_MS = 2000;
+const SNAPSHOT_TIMEOUT_MS = 10000;
 
 async function safeSnapshot(page: CrawlPage): Promise<string> {
   let snapshot: string;
+  const t0 = Date.now();
+  logger.info('snapshot: starting');
   try {
-    snapshot = (await page.snapshot({ interactive: true, compact: true })).snapshot;
+    snapshot = (await page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })).snapshot;
+    logger.info({ ms: Date.now() - t0 }, 'snapshot: complete');
   } catch (firstErr) {
     logger.warn(
       { error: sanitizeErrorText(firstErr instanceof Error ? firstErr.message : 'unknown') },
@@ -253,7 +264,7 @@ async function safeSnapshot(page: CrawlPage): Promise<string> {
     );
     await page.waitFor({ timeMs: PAGE_READY_WAIT_MS });
     try {
-      snapshot = (await page.snapshot({ interactive: true, compact: true })).snapshot;
+      snapshot = (await page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })).snapshot;
     } catch (err) {
       logger.error(
         { error: sanitizeErrorText(err instanceof Error ? err.message : 'unknown') },
@@ -270,7 +281,7 @@ async function safeSnapshot(page: CrawlPage): Promise<string> {
     for (let i = 0; i < PAGE_READY_RETRIES; i++) {
       await page.waitFor({ timeMs: PAGE_READY_WAIT_MS });
       try {
-        snapshot = (await page.snapshot({ interactive: true, compact: true })).snapshot;
+        snapshot = (await page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })).snapshot;
         if (isPageReady(snapshot) === 'ready') break;
       } catch (retryErr) {
         logger.warn(
@@ -592,6 +603,7 @@ interface ParsedActionItem {
   options?: string[];
   direction?: string;
   expression?: string;
+  query?: string;
   tab_id?: string;
   confidence?: string;
   answer?: string;
@@ -650,6 +662,7 @@ function parseActions(parsed: Record<string, unknown>): AgentAction[] {
       options: item.options,
       direction: item.direction as AgentAction['direction'],
       expression: item.expression,
+      query: item.query,
       tab_id: item.tab_id,
     };
   });
@@ -706,7 +719,9 @@ async function executeAction(action: AgentAction, page: CrawlPage, config: Agent
     case 'navigate':
       if (action.url === undefined || action.url === '') throw new Error('navigate action requires url');
       assertNavigateUrlAllowed(action.url);
+      logger.info({ url: action.url }, 'navigate: starting');
       await page.goto(action.url);
+      logger.info({ url: action.url }, 'navigate: complete');
       break;
 
     case 'back':
@@ -1019,6 +1034,9 @@ export async function runAgentLoop(
   let pendingSiteSwitch: string | null = null;
   let duplicateMemoryCount = 0;
   let consecutiveNotReadyJudgments = 0;
+  let lastJudgmentMemoryLength = 0;
+  const bannedRefs = new Map<string, { action: string; failures: number }>();
+  const BAN_THRESHOLD = 2;
 
   const forceComplete = async (reason: string, precomputedAnswer?: string): Promise<AgentLoopResult> => {
     logger.warn({ step, reason }, 'Force-completing run');
@@ -1076,7 +1094,7 @@ export async function runAgentLoop(
     if (taskLesson !== null) {
       const lessonText = formatLessonForPrompt(taskLesson);
       if (lessonText !== '') {
-        planMessage += `\n\n${lessonText}\nDo NOT navigate to blocked domains. Use alternatives that worked before.`;
+        planMessage += `\n\n${lessonText}`;
       }
     }
     const plan = await llmJson<{ task?: string; plan: string }>({
@@ -1305,7 +1323,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           logger.info({ step }, 'Judge: answer ready — force-completing');
           return await forceComplete('Judge ruled answer ready', judgment.answer);
         }
-        consecutiveNotReadyJudgments++;
+        const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
+        lastJudgmentMemoryLength = mem.length;
+        if (memoryGrew) {
+          consecutiveNotReadyJudgments = 0;
+        } else {
+          consecutiveNotReadyJudgments++;
+        }
         if (consecutiveNotReadyJudgments >= JUDGE_FATIGUE_LIMIT) {
           logger.warn(
             { step, nudges: consecutiveNotReadyJudgments, stillMissing: judgment.missing },
@@ -1419,6 +1443,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           JSON.stringify(parsed).slice(0, 200),
         );
       }
+      const banned = actions[0]?.ref !== undefined ? bannedRefs.get(actions[0].ref) : undefined;
+      if (banned !== undefined && banned.failures >= BAN_THRESHOLD && banned.action === actions[0].action) {
+        throw new LlmParseError(
+          `Ref "${actions[0].ref ?? ''}" is blocked after ${String(banned.failures)} consecutive "${actions[0].action}" failures on it. Pick a different ref from the current snapshot, or try a different approach (URL parameters, keyboard, different element). Do NOT use "${actions[0].ref ?? ''}" again.`,
+          JSON.stringify(parsed).slice(0, 200),
+        );
+      }
       consecutiveParseFailures = 0;
       crossSiteParseFailures = 0;
       consecutiveApiFailures = 0;
@@ -1481,7 +1512,12 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         consecutiveParseFailures++;
         crossSiteParseFailures++;
         logger.warn(
-          { step, consecutive: consecutiveParseFailures, crossSite: crossSiteParseFailures },
+          {
+            step,
+            consecutive: consecutiveParseFailures,
+            crossSite: crossSiteParseFailures,
+            rawSnippet: err.responseSnippet,
+          },
           'LLM returned non-JSON response',
         );
         emit('step_error', {
@@ -1522,7 +1558,15 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
       // API/network error — don't burn a step, the agent never got to act
       consecutiveApiFailures++;
-      logger.error({ step, attempt: consecutiveApiFailures, maxAttempts: MAX_API_FAILURES }, 'LLM API error');
+      logger.error(
+        {
+          step,
+          attempt: consecutiveApiFailures,
+          maxAttempts: MAX_API_FAILURES,
+          errorMessage: err instanceof Error ? sanitizeErrorText(err.message).slice(0, 300) : 'unknown',
+        },
+        'LLM API error',
+      );
       emit('step_error', { step, error: 'AI service temporarily unavailable', type: 'api_error' });
       if (consecutiveApiFailures >= MAX_API_FAILURES) {
         return {
@@ -1636,7 +1680,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         break;
       }
 
-      // #1 Evaluate fallback: LLM-requested JS extraction
       if (action.action === 'extract') {
         if (action.expression !== undefined && action.expression !== '') {
           try {
@@ -1651,7 +1694,18 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
           }
         } else {
-          agentStep.action.extract_result = 'Error: no expression provided';
+          const items = await extractItems(holder.page);
+          const payload = JSON.stringify({
+            source: items.source,
+            count: items.count,
+            truncated: items.truncated,
+            records: items.records,
+          });
+          agentStep.action.extract_result = payload.slice(0, EXTRACT_RESULT_MAX_CHARS);
+          if (payload.length > EXTRACT_RESULT_MAX_CHARS) {
+            agentStep.action.extract_result += '\n…(truncated)';
+          }
+          logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
         }
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
         step++;
@@ -1734,7 +1788,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         if (action.action === 'type') {
           await holder.page.waitFor({ timeMs: 400 });
           try {
-            const postTypeSnapshot = (await holder.page.snapshot({ interactive: true, compact: true })).snapshot;
+            const postTypeSnapshot = (
+              await holder.page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })
+            ).snapshot;
             if (/combobox|listbox|aria-autocomplete|suggestion|dropdown/i.test(postTypeSnapshot)) {
               agentStep.action.error_feedback =
                 'AUTOCOMPLETE DETECTED: A dropdown/suggestion list appeared after typing. Wait for it to fully load, then click the correct suggestion. Do NOT press Enter.';
@@ -1753,7 +1809,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         let postActionUrl = preActionUrl;
         try {
           postActionUrl = await holder.page.url();
-          const postSnapshot = (await holder.page.snapshot({ interactive: true, compact: true })).snapshot;
+          const postSnapshot = (
+            await holder.page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })
+          ).snapshot;
           const outcome = validateAction(action, preActionUrl, postActionUrl, snapshot.length, postSnapshot.length);
           if (outcome !== undefined) {
             agentStep.outcome = outcome;
@@ -1778,6 +1836,12 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('step_error', { step, action: action.action, error: rawMessage });
         agentStep.action.error_feedback = feedback;
         recentFailureCount++;
+        if (action.ref !== undefined && action.ref !== '' && /not found or not visible/i.test(rawMessage)) {
+          const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
+          entry.failures += 1;
+          entry.action = action.action;
+          bannedRefs.set(action.ref, entry);
+        }
         await holder.page.waitFor({ timeMs: 1000 });
 
         if (await detectPopup(holder.page)) {
