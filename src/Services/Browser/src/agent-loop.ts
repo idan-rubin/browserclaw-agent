@@ -249,32 +249,12 @@ const PAGE_READY_RETRIES = 2;
 const PAGE_READY_WAIT_MS = 2000;
 const SNAPSHOT_TIMEOUT_MS = 10000;
 
-function withHardTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race<T>([
-    promise.finally(() => {
-      if (timer !== undefined) clearTimeout(timer);
-    }),
-    new Promise<T>((_, reject) => {
-      timer = setTimeout(() => {
-        reject(new Error(`${label}: hard timeout after ${String(ms)}ms`));
-      }, ms);
-    }),
-  ]);
-}
-
 async function safeSnapshot(page: CrawlPage): Promise<string> {
   let snapshot: string;
   const t0 = Date.now();
   logger.info('snapshot: starting');
   try {
-    snapshot = (
-      await withHardTimeout(
-        page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS }),
-        SNAPSHOT_TIMEOUT_MS + 2000,
-        'snapshot',
-      )
-    ).snapshot;
+    snapshot = (await page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })).snapshot;
     logger.info({ ms: Date.now() - t0 }, 'snapshot: complete');
   } catch (firstErr) {
     logger.warn(
@@ -739,7 +719,7 @@ async function executeAction(action: AgentAction, page: CrawlPage, config: Agent
       if (action.url === undefined || action.url === '') throw new Error('navigate action requires url');
       assertNavigateUrlAllowed(action.url);
       logger.info({ url: action.url }, 'navigate: starting');
-      await withHardTimeout(page.goto(action.url), 25000, 'navigate');
+      await page.goto(action.url);
       logger.info({ url: action.url }, 'navigate: complete');
       break;
 
