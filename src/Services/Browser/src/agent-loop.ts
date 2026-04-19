@@ -125,6 +125,7 @@ Rules:
   - Without an "expression": runs a built-in structured-items extractor that tries __NEXT_DATA__ → Apollo state → __INITIAL_STATE__ → JSON-LD → DOM card heuristics, in that order, and returns an array of records with fields like price, address, bedrooms, url. Prefer this on list/results pages — it is more reliable than hand-written selector code.
 - On modern JS/SPA sites (Next.js, React apps), listing and detail data is usually embedded in structured state — try these first before hand-rolling selectors: JSON.parse(document.getElementById('__NEXT_DATA__').textContent), window.__APOLLO_STATE__, window.__INITIAL_STATE__, or JSON-LD via document.querySelectorAll('script[type="application/ld+json"]'). One well-aimed extract from structured state beats five DOM-selector attempts.
 - On any filtered search-results page where you need structured item data (prices, addresses, names, URLs across multiple cards), your FIRST extract must use the built-in extractor: call "extract" with NO "expression" field at all. It auto-tries __NEXT_DATA__ / Apollo / __INITIAL_STATE__ / JSON-LD / DOM cards and returns an array of records. Do not write your own selector code for list pages — it fails more often than it succeeds. Only if the built-in extractor's "source" comes back "none" should you attempt a custom "expression".
+- If the built-in extract returned items whose URLs are present but some named per-item fields are missing (e.g. JSON-LD often carries only the URL), do not give up. Navigate to each item URL in turn and run another "extract" with NO "expression" — the built-in extractor also handles single-item detail pages and will return the missing fields. Collect enough complete items to satisfy the task's count before calling done.
 - On cards with nested links (photo, title, container), the outer link often routes to a promo or profile rather than the listing. When similar links stack within a card, extract hrefs first to disambiguate — click the link whose URL path matches the target, not one guessed from the visible label.
 - "web_search" to search the web when you don't know which site to use, need to find a specific service, or want to compare options across sources. Provide "query"; returns top results with titles, URLs, and snippets. Use this instead of guessing URLs.
 - "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
@@ -1782,8 +1783,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         let postActionUrl = preActionUrl;
         try {
           postActionUrl = await holder.page.url();
-          const postSnapshot = (await holder.page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS }))
-            .snapshot;
+          const postSnapshot = (
+            await holder.page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })
+          ).snapshot;
           const outcome = validateAction(action, preActionUrl, postActionUrl, snapshot.length, postSnapshot.length);
           if (outcome !== undefined) {
             agentStep.outcome = outcome;
