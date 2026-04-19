@@ -246,11 +246,12 @@ function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
 
 const PAGE_READY_RETRIES = 2;
 const PAGE_READY_WAIT_MS = 2000;
+const SNAPSHOT_TIMEOUT_MS = 10000;
 
 async function safeSnapshot(page: CrawlPage): Promise<string> {
   let snapshot: string;
   try {
-    snapshot = (await page.snapshot({ interactive: true, compact: true })).snapshot;
+    snapshot = (await page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })).snapshot;
   } catch (firstErr) {
     logger.warn(
       { error: sanitizeErrorText(firstErr instanceof Error ? firstErr.message : 'unknown') },
@@ -258,7 +259,7 @@ async function safeSnapshot(page: CrawlPage): Promise<string> {
     );
     await page.waitFor({ timeMs: PAGE_READY_WAIT_MS });
     try {
-      snapshot = (await page.snapshot({ interactive: true, compact: true })).snapshot;
+      snapshot = (await page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })).snapshot;
     } catch (err) {
       logger.error(
         { error: sanitizeErrorText(err instanceof Error ? err.message : 'unknown') },
@@ -275,7 +276,7 @@ async function safeSnapshot(page: CrawlPage): Promise<string> {
     for (let i = 0; i < PAGE_READY_RETRIES; i++) {
       await page.waitFor({ timeMs: PAGE_READY_WAIT_MS });
       try {
-        snapshot = (await page.snapshot({ interactive: true, compact: true })).snapshot;
+        snapshot = (await page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })).snapshot;
         if (isPageReady(snapshot) === 'ready') break;
       } catch (retryErr) {
         logger.warn(
@@ -1760,7 +1761,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         if (action.action === 'type') {
           await holder.page.waitFor({ timeMs: 400 });
           try {
-            const postTypeSnapshot = (await holder.page.snapshot({ interactive: true, compact: true })).snapshot;
+            const postTypeSnapshot = (
+              await holder.page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })
+            ).snapshot;
             if (/combobox|listbox|aria-autocomplete|suggestion|dropdown/i.test(postTypeSnapshot)) {
               agentStep.action.error_feedback =
                 'AUTOCOMPLETE DETECTED: A dropdown/suggestion list appeared after typing. Wait for it to fully load, then click the correct suggestion. Do NOT press Enter.';
@@ -1779,7 +1782,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         let postActionUrl = preActionUrl;
         try {
           postActionUrl = await holder.page.url();
-          const postSnapshot = (await holder.page.snapshot({ interactive: true, compact: true })).snapshot;
+          const postSnapshot = (await holder.page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS }))
+            .snapshot;
           const outcome = validateAction(action, preActionUrl, postActionUrl, snapshot.length, postSnapshot.length);
           if (outcome !== undefined) {
             agentStep.outcome = outcome;
