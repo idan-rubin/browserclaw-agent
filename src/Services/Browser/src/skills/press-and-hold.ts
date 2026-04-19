@@ -191,7 +191,6 @@ export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }):
     const { x, y } = coords;
     logger.info({ x, y }, 'press-and-hold: found button');
 
-    const urlBefore = await page.url();
     const jitterX = x + Math.floor(Math.random() * 20) - 10;
     const jitterY = y + Math.floor(Math.random() * 10) - 5;
     const holdMs = opts?.holdMs ?? humanHoldMs();
@@ -202,16 +201,8 @@ export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }):
     await page.waitFor({ timeMs: 2000 });
 
     const stillBlocked = await isStillBlocked(page, 'press_and_hold');
-    if (stillBlocked) {
-      logger.info('press-and-hold: still blocked, refreshing page');
-      await page.goto(urlBefore);
-      await page.waitFor({ timeMs: 3000 });
-      const blockedAfterRefresh = await isStillBlocked(page, 'press_and_hold');
-      logger.info({ blockedAfterRefresh }, 'press-and-hold: result after refresh');
-      return !blockedAfterRefresh;
-    }
-    logger.info('press-and-hold: resolved');
-    return true;
+    logger.info({ stillBlocked }, 'press-and-hold: resolved');
+    return !stillBlocked;
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : err }, 'press-and-hold: failed');
     return false;

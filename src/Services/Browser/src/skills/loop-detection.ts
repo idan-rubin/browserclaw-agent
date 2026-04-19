@@ -13,13 +13,38 @@ interface LoopNudge {
  * by recovery.ts which provides richer diagnostics.
  */
 export function detectLoop(action: { action: string; ref?: string }, history: AgentStep[]): LoopNudge | null {
+  const actionKey = `${action.action}:${action.ref ?? ''}`;
+
+  if (
+    action.action === 'web_search' &&
+    history.length >= 1 &&
+    history[history.length - 1].action.action === 'web_search'
+  ) {
+    return {
+      level: 'urgent',
+      message:
+        'You just ran web_search twice in a row. The previous search already returned results — pick one URL from those results and navigate there. Do not refine the query again. If every returned site turned out to be blocked, navigate directly to a known working alternative (e.g. Zumper, Apartments.com) instead of searching yet again.',
+    };
+  }
+
+  if (action.ref !== undefined && action.ref !== '' && history.length >= 2) {
+    const lastTwo = history.slice(-2);
+    const bothFailed = lastTwo.every(
+      (h) => h.action.error_feedback !== undefined && `${h.action.action}:${h.action.ref ?? ''}` === actionKey,
+    );
+    if (bothFailed) {
+      return {
+        level: 'urgent',
+        message: `STOP: ref "${action.ref}" just failed twice on "${action.action}". Do NOT try this ref again — it is blocked or not actionable. Pick a DIFFERENT ref from the current snapshot, or press "Escape" to dismiss any overlay before retrying. If neither helps, try a different element or navigate to a different page.`,
+      };
+    }
+  }
+
   if (history.length < 5) return null;
 
-  const actionKey = `${action.action}:${action.ref ?? ''}`;
   const window = history.slice(-LOOP_WINDOW);
   const windowKeys = window.map((h) => `${h.action.action}:${h.action.ref ?? ''}`);
 
-  // Count how many times this exact action appears in the window
   const repetitions = windowKeys.filter((k) => k === actionKey).length;
 
   if (repetitions >= 12) {

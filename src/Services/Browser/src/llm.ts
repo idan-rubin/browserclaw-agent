@@ -6,6 +6,7 @@ import { LlmParseError } from './types.js';
 import type { LlmConfig } from './types.js';
 
 const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS ?? '30000', 10);
+const LLM_OAUTH_TIMEOUT_MS = parseInt(process.env.LLM_OAUTH_TIMEOUT_MS ?? '90000', 10);
 
 // ── Sanitization ─────────────────────────────────────────────────────────────
 
@@ -235,6 +236,7 @@ async function callCodexResponsesAPI(
       input: [{ role: 'user', content: req.message }],
       store: false,
       stream: true,
+      reasoning: { effort: 'low' },
     }),
   });
 
@@ -435,7 +437,6 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
     _fallbackLlmCallCount++;
   }
 
-  // Check for BYOK session config first
   if (ctx) {
     const byokConfig = ctx.llmConfig;
     const providerConfig = resolveByokProvider(byokConfig);
@@ -445,7 +446,7 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
           () => callCodexResponsesAPI(providerConfig, byokConfig.model, req, byokConfig.api_key),
           'BYOK Codex API',
         ),
-        LLM_TIMEOUT_MS,
+        LLM_OAUTH_TIMEOUT_MS,
         'LLM call (BYOK OAuth)',
       );
     }
