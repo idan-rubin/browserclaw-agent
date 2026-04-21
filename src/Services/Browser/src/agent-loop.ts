@@ -798,6 +798,19 @@ function getWaitMs(action: AgentAction['action'], config: AgentConfig): number {
 
 const STATEFUL_ACTIONS = new Set<string>(['scroll', 'click', 'type', 'keyboard', 'select', 'press_and_hold']);
 
+function extractFilterSegments(pageUrl: string): string[] {
+  try {
+    const path = new URL(pageUrl).pathname;
+    const out: string[] = [];
+    for (const part of path.split('/')) {
+      if (part.includes(':') && /^[A-Za-z][\w-]*:/.test(part)) out.push(part);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function computeStateSig(url: string, snapshotText: string): string {
   const payload = `${url}\n${snapshotText.slice(0, 4000)}`;
   let h = 5381;
@@ -1163,6 +1176,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let lastStateSig: string | null = null;
   let noOpStreak = 0;
   let baselineModalSigs: Set<string> | null = null;
+  const seenFilterSegments = new Set<string>();
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1870,14 +1884,37 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           // Validation snapshot failed — not critical, skip
         }
 
+        // Track filter-segment additions and detect overwrite.
+        let filterLossMessage = '';
+        if (postActionUrl !== preActionUrl) {
+          const preSegs = extractFilterSegments(preActionUrl);
+          const postSegs = new Set(extractFilterSegments(postActionUrl));
+          for (const seg of preSegs) seenFilterSegments.add(seg);
+          for (const seg of postSegs) seenFilterSegments.add(seg);
+          const lost: string[] = [];
+          for (const seg of seenFilterSegments) {
+            if (!postSegs.has(seg) && preSegs.includes(seg)) lost.push(seg);
+          }
+          if (lost.length > 0) {
+            const merged = Array.from(seenFilterSegments).sort().join('/');
+            filterLossMessage = ` FILTER OVERWRITE: the URL segment(s) "${lost.join(', ')}" were dropped. Further checkbox clicks will keep overwriting. Combine all observed filter segments into one path and navigate once — e.g. /${merged}/.`;
+          }
+        }
+
         // Stale-DOM abort: if URL changed and more actions are queued, their refs
         // point into a prior snapshot. Abort the batch so the LLM re-snapshots.
         if (hasMoreQueued && postActionUrl !== preActionUrl) {
           const remaining = actions.length - actionIdx - 1;
-          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.`;
-          logger.info({ step, remaining, preActionUrl, postActionUrl }, 'Stale-DOM abort');
+          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.${filterLossMessage}`;
+          logger.info(
+            { step, remaining, preActionUrl, postActionUrl, filterLoss: filterLossMessage !== '' },
+            'Stale-DOM abort',
+          );
           step++;
           break;
+        }
+        if (filterLossMessage !== '') {
+          agentStep.outcome = `${agentStep.outcome ?? ''}${filterLossMessage}`.trim();
         }
       } catch (err) {
         const feedback = describeActionError(action, err);
