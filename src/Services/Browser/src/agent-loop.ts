@@ -257,6 +257,7 @@ function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
 const PAGE_READY_RETRIES = 2;
 const PAGE_READY_WAIT_MS = 2000;
 const SNAPSHOT_TIMEOUT_MS = 10000;
+const NAVIGATE_TIMEOUT_MS = 30000;
 
 async function safeSnapshot(page: CrawlPage): Promise<string> {
   let snapshot: string;
@@ -730,7 +731,18 @@ async function executeAction(action: AgentAction, page: CrawlPage, config: Agent
       if (action.url === undefined || action.url === '') throw new Error('navigate action requires url');
       assertNavigateUrlAllowed(action.url);
       logger.info({ url: action.url }, 'navigate: starting');
-      await page.goto(action.url);
+      await Promise.race([
+        page.goto(action.url),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => {
+            reject(
+              new Error(
+                `Navigation to ${action.url ?? ''} did not complete within ${String(NAVIGATE_TIMEOUT_MS)}ms — page is likely blocked or hanging on anti-bot. Try a different URL or site.`,
+              ),
+            );
+          }, NAVIGATE_TIMEOUT_MS),
+        ),
+      ]);
       logger.info({ url: action.url }, 'navigate: complete');
       break;
 
