@@ -1240,6 +1240,8 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let baselineModalSigs: Set<string> | null = null;
   const seenFilterTokens = new Set<string>();
   const copilotDirectivesFired = new Set<string>();
+  let stashedBatchUrls: string[] | null = null;
+  const timedOutDomains = new Set<string>();
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1699,6 +1701,47 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       continue;
     }
 
+    // Co-pilot: if pilot is about to click into a listing and we have ≥5 candidate URLs
+    // from a recent list extract, preempt with a single batch-URLs extract instead.
+    if (stashedBatchUrls !== null && actions[0]?.action === 'click') {
+      const batchKey = `BATCH_DETAILS:${stashedBatchUrls.slice(0, 5).join(',')}`;
+      if (!copilotDirectivesFired.has(batchKey)) {
+        copilotDirectivesFired.add(batchKey);
+        logger.warn({ step, urlCount: stashedBatchUrls.length }, 'copilot_directive: BATCH_DETAILS');
+        actions = [
+          {
+            action: 'extract',
+            reasoning: `Co-pilot: batch-fetching ${String(stashedBatchUrls.length)} candidate detail pages in parallel.`,
+            urls: stashedBatchUrls,
+          },
+        ];
+      }
+      stashedBatchUrls = null;
+    }
+
+    // Co-pilot: if pilot is about to navigate to a domain that already timed out,
+    // reject the action and force a different target.
+    if (actions[0]?.action === 'navigate' && typeof actions[0].url === 'string') {
+      try {
+        const host = new URL(actions[0].url).hostname.replace(/^www\./, '');
+        if (timedOutDomains.has(host)) {
+          logger.warn({ step, host, url: actions[0].url }, 'copilot_directive: SWITCH_TARGET');
+          actions = [
+            {
+              action: 'web_search',
+              reasoning: `Co-pilot: ${host} previously timed out; searching for a different listings source.`,
+              query: 'Chelsea apartments for rent listings site',
+            },
+          ];
+        }
+      } catch (err) {
+        logger.warn(
+          { step, url: actions[0].url, err: err instanceof Error ? err.message : String(err) },
+          'copilot: SWITCH_TARGET URL parse failed — skipping check',
+        );
+      }
+    }
+
     // Execute batch of actions sequentially
     for (let actionIdx = 0; actionIdx < actions.length; actionIdx++) {
       if (step >= maxSteps) break;
@@ -1845,6 +1888,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           }
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
           if (items.count > 0) extractProducedData = true;
+          const urlsFromList: string[] = [];
+          for (const r of items.records) {
+            const u = typeof r.url === 'string' ? r.url : '';
+            if (u !== '' && !urlsFromList.includes(u)) urlsFromList.push(u);
+            if (urlsFromList.length >= 10) break;
+          }
+          if (urlsFromList.length >= 5) stashedBatchUrls = urlsFromList;
         }
         if (extractProducedData) extractsWithDataCount++;
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
@@ -2030,6 +2080,21 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('step_error', { step, action: action.action, error: rawMessage });
         agentStep.action.error_feedback = feedback;
         recentFailureCount++;
+        if (
+          action.action === 'navigate' &&
+          typeof action.url === 'string' &&
+          rawMessage.includes('did not complete within')
+        ) {
+          try {
+            const host = new URL(action.url).hostname.replace(/^www\./, '');
+            if (host !== '') timedOutDomains.add(host);
+          } catch (urlErr) {
+            logger.warn(
+              { step, url: action.url, err: urlErr instanceof Error ? urlErr.message : String(urlErr) },
+              'copilot: could not parse navigate URL for timeout tracking',
+            );
+          }
+        }
         if (action.ref !== undefined && action.ref !== '') {
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
           entry.failures += 1;
