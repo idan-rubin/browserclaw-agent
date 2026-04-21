@@ -762,13 +762,27 @@ async function executeAction(action: AgentAction, page: CrawlPage, config: Agent
       await page.select(action.ref, ...action.options);
       break;
 
-    case 'scroll':
-      await page.evaluate(
-        action.direction === 'up'
-          ? `window.scrollBy(0, -${String(config.scrollPixels)})`
-          : `window.scrollBy(0, ${String(config.scrollPixels)})`,
-      );
+    case 'scroll': {
+      const dy = action.direction === 'up' ? -config.scrollPixels : config.scrollPixels;
+      await page.evaluate(`
+        (function(dy) {
+          var cx = Math.floor(window.innerWidth / 2);
+          var cy = Math.floor(window.innerHeight / 2);
+          var el = document.elementFromPoint(cx, cy);
+          while (el && el !== document.body && el !== document.documentElement) {
+            var s = window.getComputedStyle(el);
+            var oy = s.overflowY;
+            if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
+              el.scrollBy(0, dy);
+              return;
+            }
+            el = el.parentElement;
+          }
+          window.scrollBy(0, dy);
+        })(${String(dy)})
+      `);
       break;
+    }
 
     case 'wait':
       await page.waitFor({ timeMs: config.waitActionMs });
