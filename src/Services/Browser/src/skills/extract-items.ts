@@ -237,7 +237,13 @@ const EXTRACTION_FN = `
   }
 
   var domOnly = tryDom();
-  if (domOnly && domOnly.length >= 3) return { source: 'dom', records: domOnly.slice(0, MAX) };
+  if (domOnly && domOnly.length >= 3) {
+    var withSignals = 0;
+    for (var k = 0; k < domOnly.length; k++) {
+      if (Object.keys(domOnly[k]).length >= 3) withSignals++;
+    }
+    if (withSignals * 2 >= domOnly.length) return { source: 'dom', records: domOnly.slice(0, MAX) };
+  }
 
   var results = tryNextData();
   if (results) return mergeWithDom('next-data', results);

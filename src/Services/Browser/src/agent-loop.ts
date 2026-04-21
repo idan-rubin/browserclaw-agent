@@ -369,19 +369,28 @@ const TERMINATION_CHECK_INTERVAL = 4;
 const JUDGE_FATIGUE_LIMIT = 3;
 const REPLAN_FAILURE_THRESHOLD = 3;
 const CONTEXT_COMPRESS_INTERVAL = 20;
-const EXTRACT_RESULT_MAX_CHARS = 2000;
-const EXTRACT_PREVIEW_MAX_CHARS = 500;
+const EXTRACT_RESULT_MAX_CHARS = 2_000_000;
+const EXTRACT_OLDER_PREVIEW_MAX_CHARS = 500;
+
+function findLatestExtractIdx(history: AgentStep[]): number {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].action.extract_result !== undefined) return i;
+  }
+  return -1;
+}
 
 function truncateHistory(history: AgentStep[], contextSummary?: string): string {
+  const latestExtractIdx = findLatestExtractIdx(history);
   if (history.length <= HISTORY_RECENT_WINDOW) {
     let out = 'Previous actions:\n';
-    for (const step of history) {
-      out += formatStep(step);
+    for (let i = 0; i < history.length; i++) {
+      out += formatStep(history[i], i === latestExtractIdx);
     }
     return out;
   }
 
   const recent = history.slice(history.length - HISTORY_RECENT_WINDOW);
+  const recentStart = history.length - HISTORY_RECENT_WINDOW;
 
   let out = `Previous actions (${String(history.length)} total, showing last ${String(HISTORY_RECENT_WINDOW)} in detail):\n`;
 
@@ -413,18 +422,22 @@ function truncateHistory(history: AgentStep[], contextSummary?: string): string 
     out += `  [Context from step ${String(lastOlderStep.step)}]: ${lastOlderStep.action.reasoning.substring(0, 300)}\n\n`;
   }
 
-  for (const step of recent) {
-    out += formatStep(step);
+  for (let i = 0; i < recent.length; i++) {
+    out += formatStep(recent[i], recentStart + i === latestExtractIdx);
   }
   return out;
 }
 
-function formatStep(step: AgentStep): string {
+function formatStep(step: AgentStep, showFullExtract = false): string {
   let line = `  Step ${String(step.step)}: ${step.action.action} — ${step.action.reasoning}\n`;
   if (step.action.extract_result !== undefined) {
-    const preview = step.action.extract_result.slice(0, EXTRACT_PREVIEW_MAX_CHARS);
-    const truncated = step.action.extract_result.length > EXTRACT_PREVIEW_MAX_CHARS ? '…(truncated)' : '';
-    line += `    📊 Extracted: ${preview}${truncated}\n`;
+    if (showFullExtract) {
+      line += `    📊 Extracted: ${step.action.extract_result}\n`;
+    } else {
+      const preview = step.action.extract_result.slice(0, EXTRACT_OLDER_PREVIEW_MAX_CHARS);
+      const truncated = step.action.extract_result.length > EXTRACT_OLDER_PREVIEW_MAX_CHARS ? '…(truncated)' : '';
+      line += `    📊 Extracted: ${preview}${truncated}\n`;
+    }
   }
   if (step.outcome !== undefined) {
     line += `    → Outcome: ${step.outcome}\n`;
@@ -1442,9 +1455,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     if (lastStateSig !== null && currentStateSig === lastStateSig && previousWasStateful) {
       noOpStreak++;
       const noOpNudge =
-        noOpStreak >= 2
-          ? `NO-OP STREAK (${String(noOpStreak)}): Your last ${String(noOpStreak)} "${previousAction}" actions did not change the page (same URL, same DOM structure). Repeating "${previousAction}" will not make progress. You MUST choose a fundamentally different action now — close any open modal, navigate to a different URL, or use a different interaction type.`
-          : `NO-OP: Your last "${previousAction}" did not change the page (same URL, same DOM structure). The action had no effect. Try a different approach: a different element, a different interaction type, or a direct URL.`;
+        noOpStreak >= 4
+          ? `NO-OP STREAK (${String(noOpStreak)}) — PAGE IS STUCK. Your last ${String(noOpStreak)} actions on this page all had zero effect. This page or modal is broken or unresponsive. STOP clicking/typing on it entirely. Your NEXT action MUST be one of: (1) "navigate" to a target URL you know or can derive, (2) "navigate" to the site root to reload, or (3) "web_search" to find a working alternative. Do NOT try another ref on this page.`
+          : noOpStreak >= 2
+            ? `NO-OP STREAK (${String(noOpStreak)}): Your last ${String(noOpStreak)} "${previousAction}" actions did not change the page (same URL, same DOM structure). Repeating "${previousAction}" will not make progress. You MUST choose a fundamentally different action now — close any open modal, navigate to a different URL, or use a different interaction type.`
+            : `NO-OP: Your last "${previousAction}" did not change the page (same URL, same DOM structure). The action had no effect. Try a different approach: a different element, a different interaction type, or a direct URL.`;
       recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + noOpNudge;
       logger.warn({ step, action: previousAction, streak: noOpStreak }, 'No-op detected');
     } else {
@@ -1787,7 +1802,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       // --- Special actions (break batch — need new snapshot) ---
 
       if (action.action === 'press_and_hold') {
-        await pressAndHold(holder.page, { holdMs: action.hold_ms });
+        const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
+        if (!solved) {
+          agentStep.action.error_feedback =
+            'press_and_hold did NOT solve the challenge — the blocking page is still present. Do not retry press_and_hold. Try click_cloudflare, or ask_user for help.';
+        }
         step++;
         break;
       }
