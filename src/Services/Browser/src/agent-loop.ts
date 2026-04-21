@@ -179,6 +179,7 @@ Filters and search:
 - Do NOT proceed to browse results until you have confirmed filters are active. Browsing unfiltered results wastes every subsequent step.
 - If the filter controls you need aren't visible after 2 scrolls, they probably don't exist on this page. Use URL parameters instead (e.g. ?max_price=4200) or verify criteria on individual listing pages.
 - Don't waste steps hunting for perfect filter UI. URL parameters + manual verification on detail pages beats endlessly searching for filter controls that may not exist.
+- Inside any filter modal or drawer, you have a hard budget of 3 in-modal interactions to apply what you came for. If three in-modal actions have not produced the filter, close the modal and move on: use the URL with a value observed elsewhere on the site, verify the constraint on individual listing pages, or skip that filter. Modal-hunt loops burn the whole run.
 - Do NOT invent URL slugs based on assumptions about how a site "probably" works — invented URLs frequently return 403 or 404, and navigation to them can hang for minutes. Only construct a URL by swapping values within a pattern you have actually observed on the site (visible link href, or the URL after a filter click updated it). If no observed pattern exists for the filter you need, use the filter UI or skip the filter.
 
 Anything covering the page — classify before acting:
