@@ -798,12 +798,14 @@ function getWaitMs(action: AgentAction['action'], config: AgentConfig): number {
 
 const STATEFUL_ACTIONS = new Set<string>(['scroll', 'click', 'type', 'keyboard', 'select', 'press_and_hold']);
 
-function extractFilterSegments(pageUrl: string): string[] {
+function extractFilterTokens(pageUrl: string): string[] {
   try {
-    const path = new URL(pageUrl).pathname;
+    const path = decodeURIComponent(new URL(pageUrl).pathname);
     const out: string[] = [];
     for (const part of path.split('/')) {
-      if (part.includes(':') && /^[A-Za-z][\w-]*:/.test(part)) out.push(part);
+      for (const tok of part.split('|')) {
+        if (tok.includes(':') && /^[A-Za-z][\w-]*:.+$/.test(tok)) out.push(tok);
+      }
     }
     return out;
   } catch {
@@ -1176,7 +1178,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let lastStateSig: string | null = null;
   let noOpStreak = 0;
   let baselineModalSigs: Set<string> | null = null;
-  const seenFilterSegments = new Set<string>();
+  const seenFilterTokens = new Set<string>();
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1884,20 +1886,20 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           // Validation snapshot failed — not critical, skip
         }
 
-        // Track filter-segment additions and detect overwrite.
+        // Track filter tokens (key:value pairs) across URL changes and detect overwrite.
         let filterLossMessage = '';
         if (postActionUrl !== preActionUrl) {
-          const preSegs = extractFilterSegments(preActionUrl);
-          const postSegs = new Set(extractFilterSegments(postActionUrl));
-          for (const seg of preSegs) seenFilterSegments.add(seg);
-          for (const seg of postSegs) seenFilterSegments.add(seg);
+          const preTokens = new Set(extractFilterTokens(preActionUrl));
+          const postTokens = new Set(extractFilterTokens(postActionUrl));
+          for (const t of preTokens) seenFilterTokens.add(t);
+          for (const t of postTokens) seenFilterTokens.add(t);
           const lost: string[] = [];
-          for (const seg of seenFilterSegments) {
-            if (!postSegs.has(seg) && preSegs.includes(seg)) lost.push(seg);
+          for (const t of seenFilterTokens) {
+            if (!postTokens.has(t) && preTokens.has(t)) lost.push(t);
           }
           if (lost.length > 0) {
-            const merged = Array.from(seenFilterSegments).sort().join('/');
-            filterLossMessage = ` FILTER OVERWRITE: the URL segment(s) "${lost.join(', ')}" were dropped. Further checkbox clicks will keep overwriting. Combine all observed filter segments into one path and navigate once — e.g. /${merged}/.`;
+            const combined = Array.from(seenFilterTokens).sort().join('|');
+            filterLossMessage = ` FILTER OVERWRITE: checkbox click dropped token(s) "${lost.join(', ')}". Further checkbox clicks will keep overwriting. Combine all observed filter tokens into ONE path segment and navigate directly — e.g. ".../${combined}/".`;
           }
         }
 
