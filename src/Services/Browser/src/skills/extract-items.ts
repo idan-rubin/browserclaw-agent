@@ -41,6 +41,36 @@ const EXTRACTION_FN = `
     }
   }
 
+  function findHomogeneousItemArray(root) {
+    var best = null;
+    var bestScore = 0;
+    function visit(n, d) {
+      if (d > 12) return;
+      if (Array.isArray(n)) {
+        if (n.length >= 3) {
+          var items = [];
+          for (var i = 0; i < n.length; i++) {
+            if (isItemLike(n[i])) items.push(n[i]);
+          }
+          var ratio = items.length / n.length;
+          if (items.length >= 3 && ratio >= 0.6 && items.length > bestScore) {
+            bestScore = items.length;
+            best = items;
+          }
+        }
+        for (var j = 0; j < n.length; j++) visit(n[j], d + 1);
+        return;
+      }
+      if (n && typeof n === 'object') {
+        for (var k in n) {
+          if (Object.prototype.hasOwnProperty.call(n, k)) visit(n[k], d + 1);
+        }
+      }
+    }
+    visit(root, 0);
+    return best;
+  }
+
   function harvestFromJson(node, out, depth) {
     if (out.length >= MAX) return;
     if (depth > 10) return;
@@ -64,6 +94,8 @@ const EXTRACTION_FN = `
     if (!el || !el.textContent) return null;
     try {
       const data = JSON.parse(el.textContent);
+      const arr = findHomogeneousItemArray(data);
+      if (arr && arr.length > 0) return arr.slice(0, MAX);
       const out = [];
       harvestFromJson(data, out, 0);
       return out.length > 0 ? out : null;
@@ -73,6 +105,8 @@ const EXTRACTION_FN = `
   function tryGlobalState(name) {
     const v = window[name];
     if (!v || typeof v !== 'object') return null;
+    const arr = findHomogeneousItemArray(v);
+    if (arr && arr.length > 0) return arr.slice(0, MAX);
     const out = [];
     harvestFromJson(v, out, 0);
     return out.length > 0 ? out : null;
