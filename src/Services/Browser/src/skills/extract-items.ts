@@ -236,11 +236,6 @@ const EXTRACTION_FN = `
     return { source: source, records: combined };
   }
 
-  // DOM first: on list/results pages, cards are visually rendered and carry per-item URLs
-  // plus visible text. Structured state (next-data, apollo, json-ld) on those same pages
-  // often holds page-level aggregates (Organization, BreadcrumbList, nav) that the
-  // "item-like" heuristic confuses with listings — returning noise. Only fall back to
-  // structured state when the DOM doesn't expose enough cards.
   var domOnly = tryDom();
   if (domOnly && domOnly.length >= 3) return { source: 'dom', records: domOnly.slice(0, MAX) };
 
