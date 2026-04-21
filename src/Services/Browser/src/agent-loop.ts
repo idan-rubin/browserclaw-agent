@@ -1,7 +1,7 @@
 import type { CrawlPage, BrowserClaw } from 'browserclaw';
 import { pressAndHold, detectAntiBot, enrichSnapshot, getPageText } from './skills/press-and-hold.js';
 import { clickCloudflareCheckbox } from './skills/cloudflare-checkbox.js';
-import { detectPopup, dismissPopup } from './skills/dismiss-popup.js';
+import { capturePopupSignatures, detectPopup, dismissPopup } from './skills/dismiss-popup.js';
 import { detectLoop } from './skills/loop-detection.js';
 import { detectPageState, shouldBlockDone } from './skills/page-state.js';
 import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
@@ -796,16 +796,27 @@ function getWaitMs(action: AgentAction['action'], config: AgentConfig): number {
   }
 }
 
+const STATEFUL_ACTIONS = new Set<string>(['scroll', 'click', 'type', 'keyboard', 'select', 'press_and_hold']);
+
+function computeStateSig(url: string, snapshotText: string): string {
+  const payload = `${url}\n${snapshotText.slice(0, 4000)}`;
+  let h = 5381;
+  for (let i = 0; i < payload.length; i++) {
+    h = ((h << 5) + h + payload.charCodeAt(i)) | 0;
+  }
+  return `${String(payload.length)}:${String(h)}`;
+}
+
 function describeActionError(action: AgentAction, err: unknown): string {
   const raw = err instanceof Error ? err.message : 'Action execution failed';
   const lower = raw.toLowerCase();
   if (action.action === 'click' || action.action === 'type' || action.action === 'select') {
     if (lower.includes('not found') || lower.includes('no element'))
-      return `Element ref ${action.ref ?? '?'} not found — it may have been removed by a page update or is outside the visible area. Try scrolling or re-reading the page.`;
+      return `Element ref ${action.ref ?? '?'} was not in the current snapshot. Refs are scoped to the snapshot in which they were issued; after the page changes, ref numbers are regenerated. Do NOT reuse ref ${action.ref ?? '?'} — pick a ref that appears in the snapshot shown below.`;
     if (lower.includes('intercept') || lower.includes('covered') || lower.includes('obscured'))
       return `Click on ref ${action.ref ?? '?'} was intercepted by another element covering it — dismiss any overlays or popups first.`;
     if (lower.includes('detach') || lower.includes('stale'))
-      return `Element ref ${action.ref ?? '?'} became stale — the page content changed. Take a new snapshot and find the updated element.`;
+      return `Element ref ${action.ref ?? '?'} became stale — the page content changed. Refs from a previous snapshot are no longer valid. Use only refs shown in the current snapshot below.`;
     if (lower.includes('disabled') || lower.includes('not interactable'))
       return `Element ref ${action.ref ?? '?'} is disabled or not interactable — check if a prerequisite field needs to be filled first.`;
   }
@@ -1149,6 +1160,9 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let lastProgress: AgentProgress | null = null;
   let lastDomain = '';
   let lastScreenshotStep = -3; // throttle: skip if fired within last 3 steps
+  let lastStateSig: string | null = null;
+  let noOpStreak = 0;
+  let baselineModalSigs: Set<string> | null = null;
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1171,7 +1185,8 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       };
     }
 
-    if (await detectPopup(holder.page)) {
+    baselineModalSigs ??= await capturePopupSignatures(holder.page);
+    if (await detectPopup(holder.page, baselineModalSigs)) {
       await dismissPopup(holder.page);
     }
 
@@ -1359,6 +1374,22 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     if (terminationNudge !== null) {
       recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + terminationNudge;
     }
+
+    const currentStateSig = computeStateSig(url, snapshot);
+    const previousAction = history.length > 0 ? history[history.length - 1].action.action : null;
+    const previousWasStateful = previousAction !== null && STATEFUL_ACTIONS.has(previousAction);
+    if (lastStateSig !== null && currentStateSig === lastStateSig && previousWasStateful) {
+      noOpStreak++;
+      const noOpNudge =
+        noOpStreak >= 2
+          ? `NO-OP STREAK (${String(noOpStreak)}): Your last ${String(noOpStreak)} "${previousAction}" actions did not change the page (same URL, same DOM structure). Repeating "${previousAction}" will not make progress. You MUST choose a fundamentally different action now — close any open modal, navigate to a different URL, or use a different interaction type.`
+          : `NO-OP: Your last "${previousAction}" did not change the page (same URL, same DOM structure). The action had no effect. Try a different approach: a different element, a different interaction type, or a direct URL.`;
+      recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + noOpNudge;
+      logger.warn({ step, action: previousAction, streak: noOpStreak }, 'No-op detected');
+    } else {
+      noOpStreak = 0;
+    }
+    lastStateSig = currentStateSig;
 
     let tabCount: number | undefined;
     let tabs: TabInfo[] | undefined;
@@ -1863,7 +1894,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         }
         await holder.page.waitFor({ timeMs: 1000 });
 
-        if (await detectPopup(holder.page)) {
+        if (await detectPopup(holder.page, baselineModalSigs)) {
           await dismissPopup(holder.page);
         }
         step++;
