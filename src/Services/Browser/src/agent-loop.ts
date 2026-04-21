@@ -2,6 +2,13 @@ import type { CrawlPage, BrowserClaw } from 'browserclaw';
 import { pressAndHold, detectAntiBot, enrichSnapshot, getPageText } from './skills/press-and-hold.js';
 import { clickCloudflareCheckbox } from './skills/cloudflare-checkbox.js';
 import { capturePopupSignatures, detectPopup, dismissPopup } from './skills/dismiss-popup.js';
+import {
+  applyDirective,
+  buildFilterLossDirective,
+  evaluate as copilotEvaluate,
+  newCopilotState,
+  observe as copilotObserve,
+} from './co-pilot.js';
 import { detectLoop } from './skills/loop-detection.js';
 import { detectPageState, shouldBlockDone } from './skills/page-state.js';
 import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
@@ -832,45 +839,6 @@ function getWaitMs(action: AgentAction['action'], config: AgentConfig): number {
 
 const STATEFUL_ACTIONS = new Set<string>(['scroll', 'click', 'type', 'keyboard', 'select', 'press_and_hold']);
 
-function extractFilterTokens(pageUrl: string): string[] {
-  try {
-    const path = decodeURIComponent(new URL(pageUrl).pathname);
-    const out: string[] = [];
-    for (const part of path.split('/')) {
-      for (const tok of part.split('|')) {
-        if (tok.includes(':') && /^[A-Za-z][\w-]*:.+$/.test(tok)) out.push(tok);
-      }
-    }
-    return out;
-  } catch {
-    return [];
-  }
-}
-
-function buildCombinedTokenUrl(referenceUrl: string, tokens: Set<string>): string | null {
-  try {
-    const u = new URL(referenceUrl);
-    const parts = decodeURIComponent(u.pathname)
-      .split('/')
-      .filter((p) => p.length > 0);
-    const combined = [...tokens].sort().join('|');
-    if (combined === '') return null;
-    let tokenIdx = -1;
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i].includes(':') && /^[A-Za-z][\w-]*:/.test(parts[i])) {
-        tokenIdx = i;
-        break;
-      }
-    }
-    if (tokenIdx >= 0) parts[tokenIdx] = combined;
-    else parts.push(combined);
-    u.pathname = '/' + parts.join('/');
-    return u.toString();
-  } catch {
-    return null;
-  }
-}
-
 function computeStateSig(url: string, snapshotText: string): string {
   const payload = `${url}\n${snapshotText.slice(0, 4000)}`;
   let h = 5381;
@@ -1238,10 +1206,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let lastStateSig: string | null = null;
   let noOpStreak = 0;
   let baselineModalSigs: Set<string> | null = null;
-  const seenFilterTokens = new Set<string>();
-  const copilotDirectivesFired = new Set<string>();
-  let stashedBatchUrls: string[] | null = null;
-  const timedOutDomains = new Set<string>();
+  const copilot = newCopilotState();
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1701,45 +1666,15 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       continue;
     }
 
-    // Co-pilot: if pilot is about to click into a listing and we have ≥5 candidate URLs
-    // from a recent list extract, preempt with a single batch-URLs extract instead.
-    if (stashedBatchUrls !== null && actions[0]?.action === 'click') {
-      const batchKey = `BATCH_DETAILS:${stashedBatchUrls.slice(0, 5).join(',')}`;
-      if (!copilotDirectivesFired.has(batchKey)) {
-        copilotDirectivesFired.add(batchKey);
-        logger.warn({ step, urlCount: stashedBatchUrls.length }, 'copilot_directive: BATCH_DETAILS');
-        actions = [
-          {
-            action: 'extract',
-            reasoning: `Co-pilot: batch-fetching ${String(stashedBatchUrls.length)} candidate detail pages in parallel.`,
-            urls: stashedBatchUrls,
-          },
-        ];
-      }
-      stashedBatchUrls = null;
-    }
-
-    // Co-pilot: if pilot is about to navigate to a domain that already timed out,
-    // reject the action and force a different target.
-    if (actions[0]?.action === 'navigate' && typeof actions[0].url === 'string') {
-      try {
-        const host = new URL(actions[0].url).hostname.replace(/^www\./, '');
-        if (timedOutDomains.has(host)) {
-          logger.warn({ step, host, url: actions[0].url }, 'copilot_directive: SWITCH_TARGET');
-          actions = [
-            {
-              action: 'web_search',
-              reasoning: `Co-pilot: ${host} previously timed out; searching for a different listings source.`,
-              query: 'Chelsea apartments for rent listings site',
-            },
-          ];
-        }
-      } catch (err) {
-        logger.warn(
-          { step, url: actions[0].url, err: err instanceof Error ? err.message : String(err) },
-          'copilot: SWITCH_TARGET URL parse failed — skipping check',
-        );
-      }
+    const copilotDirective = copilotEvaluate(copilot, {
+      step,
+      stepsRemaining: maxSteps - step,
+      pendingActions: actions,
+      currentUrl: url,
+      history,
+    });
+    if (copilotDirective !== null) {
+      actions = applyDirective(copilotDirective, actions);
     }
 
     // Execute batch of actions sequentially
@@ -1888,13 +1823,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           }
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
           if (items.count > 0) extractProducedData = true;
-          const urlsFromList: string[] = [];
-          for (const r of items.records) {
-            const u = typeof r.url === 'string' ? r.url : '';
-            if (u !== '' && !urlsFromList.includes(u)) urlsFromList.push(u);
-            if (urlsFromList.length >= 10) break;
-          }
-          if (urlsFromList.length >= 5) stashedBatchUrls = urlsFromList;
+          const urlAfterExtract = await holder.page.url();
+          copilotObserve(copilot, {
+            step,
+            preUrl: urlAfterExtract,
+            postUrl: urlAfterExtract,
+            extractRecords: items.records.map((r) => ({ url: typeof r.url === 'string' ? r.url : undefined })),
+          });
         }
         if (extractProducedData) extractsWithDataCount++;
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
@@ -2012,66 +1947,45 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
         // Track filter tokens (key:value pairs) seen across the session and flag when
         // the current URL is missing previously-observed tokens (silent overwrite).
-        let filterLossMessage = '';
-        if (postActionUrl !== preActionUrl) {
-          const preTokens = new Set(extractFilterTokens(preActionUrl));
-          const postTokens = new Set(extractFilterTokens(postActionUrl));
-          for (const t of preTokens) seenFilterTokens.add(t);
-          for (const t of postTokens) seenFilterTokens.add(t);
-          if (postTokens.size > 0) {
-            const lost: string[] = [];
-            for (const t of seenFilterTokens) {
-              if (!postTokens.has(t)) lost.push(t);
-            }
-            if (lost.length > 0) {
-              const combined = [...seenFilterTokens].sort().join('|');
-              filterLossMessage = ` FILTER OVERWRITE: current URL is missing previously-set token(s) "${lost.join(', ')}" — the site is silently dropping filters between interactions. Stop clicking checkboxes individually. Combine all observed tokens into ONE path segment and navigate directly — e.g. ".../${combined}/".`;
-            }
-          }
-        }
+        copilotObserve(copilot, {
+          step,
+          preUrl: preActionUrl,
+          postUrl: postActionUrl,
+        });
 
-        // Co-pilot: on filter-loss, construct the full-token URL and navigate directly.
-        // Fires at most once per unique URL signature — avoids infinite fire if wrong.
         let copilotNote = '';
-        if (filterLossMessage !== '') {
-          const copilotUrl = buildCombinedTokenUrl(postActionUrl, seenFilterTokens);
-          const copilotKey = copilotUrl === null ? '' : `CONSTRUCT_URL:${copilotUrl}`;
-          if (copilotUrl !== null && !copilotDirectivesFired.has(copilotKey)) {
-            copilotDirectivesFired.add(copilotKey);
-            logger.warn({ step, url: copilotUrl }, 'copilot_directive: CONSTRUCT_URL');
+        if (postActionUrl !== preActionUrl) {
+          const filterDirective = buildFilterLossDirective(copilot, postActionUrl);
+          if (filterDirective !== null && filterDirective.kind === 'construct_url') {
+            logger.warn({ step, url: filterDirective.url }, 'copilot_directive: construct_url');
             try {
               await Promise.race([
-                holder.page.goto(copilotUrl),
+                holder.page.goto(filterDirective.url),
                 new Promise<never>((_, reject) =>
                   setTimeout(() => {
                     reject(new Error(`copilot navigate timeout at ${String(NAVIGATE_TIMEOUT_MS)}ms`));
                   }, NAVIGATE_TIMEOUT_MS),
                 ),
               ]);
-              copilotNote = ` CO-PILOT intervened: consolidated all observed filter tokens and navigated to ${copilotUrl}. Verify the result count in the next snapshot before extracting.`;
+              copilotNote = ` CO-PILOT: ${filterDirective.reason} Navigated to ${filterDirective.url}.`;
             } catch (copilotErr) {
               logger.warn(
                 { step, err: copilotErr instanceof Error ? copilotErr.message : copilotErr },
-                'copilot_directive: CONSTRUCT_URL failed',
+                'copilot construct_url navigate failed',
               );
             }
           }
         }
 
-        // Stale-DOM abort: if URL changed and more actions are queued, their refs
-        // point into a prior snapshot. Abort the batch so the LLM re-snapshots.
         if (hasMoreQueued && postActionUrl !== preActionUrl) {
           const remaining = actions.length - actionIdx - 1;
-          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.${filterLossMessage}${copilotNote}`;
-          logger.info(
-            { step, remaining, preActionUrl, postActionUrl, filterLoss: filterLossMessage !== '' },
-            'Stale-DOM abort',
-          );
+          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.${copilotNote}`;
+          logger.info({ step, remaining, preActionUrl, postActionUrl }, 'Stale-DOM abort');
           step++;
           break;
         }
-        if (filterLossMessage !== '' || copilotNote !== '') {
-          agentStep.outcome = `${agentStep.outcome ?? ''}${filterLossMessage}${copilotNote}`.trim();
+        if (copilotNote !== '') {
+          agentStep.outcome = `${agentStep.outcome ?? ''}${copilotNote}`.trim();
         }
       } catch (err) {
         const feedback = describeActionError(action, err);
@@ -2085,15 +1999,21 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           typeof action.url === 'string' &&
           rawMessage.includes('did not complete within')
         ) {
+          let host = '';
           try {
-            const host = new URL(action.url).hostname.replace(/^www\./, '');
-            if (host !== '') timedOutDomains.add(host);
+            host = new URL(action.url).hostname.replace(/^www\./, '');
           } catch (urlErr) {
             logger.warn(
               { step, url: action.url, err: urlErr instanceof Error ? urlErr.message : String(urlErr) },
               'copilot: could not parse navigate URL for timeout tracking',
             );
           }
+          copilotObserve(copilot, {
+            step,
+            preUrl: action.url,
+            postUrl: action.url,
+            navigateError: { host },
+          });
         }
         if (action.ref !== undefined && action.ref !== '') {
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
