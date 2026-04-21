@@ -71,8 +71,8 @@ const SYSTEM_PROMPT = `You are a browser automation agent. You read accessibilit
 
 Respond with valid JSON:
 {
-  "evaluation_previous_goal": "Did the previous action succeed? What changed? What went wrong? Check the outcome feedback from the last step. (skip on first step)",
-  "memory": "Running scratchpad of ALL accumulated data: names, prices, URLs, findings, comparisons. Carry forward everything from previous memory — never drop data. This is your only persistent storage between steps.",
+  "evaluation_previous_goal": "One short sentence — did the previous action succeed? (skip on first step)",
+  "memory": "Compact scratchpad of facts gathered SO FAR (names, prices, URLs, comparisons). Target under 80 words. Do NOT restate the user's task. Summarize older findings into shorter bullets as the list grows — this field shares the output-token budget with actions, so bloat here cuts off your plan.",
   "progress": {
     "completed": ["short descriptions of completed phases/milestones"],
     "current": "what you're working on right now",
