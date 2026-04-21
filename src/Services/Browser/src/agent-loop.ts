@@ -1897,20 +1897,23 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           // Validation snapshot failed — not critical, skip
         }
 
-        // Track filter tokens (key:value pairs) across URL changes and detect overwrite.
+        // Track filter tokens (key:value pairs) seen across the session and flag when
+        // the current URL is missing previously-observed tokens (silent overwrite).
         let filterLossMessage = '';
         if (postActionUrl !== preActionUrl) {
           const preTokens = new Set(extractFilterTokens(preActionUrl));
           const postTokens = new Set(extractFilterTokens(postActionUrl));
           for (const t of preTokens) seenFilterTokens.add(t);
           for (const t of postTokens) seenFilterTokens.add(t);
-          const lost: string[] = [];
-          for (const t of seenFilterTokens) {
-            if (!postTokens.has(t) && preTokens.has(t)) lost.push(t);
-          }
-          if (lost.length > 0) {
-            const combined = Array.from(seenFilterTokens).sort().join('|');
-            filterLossMessage = ` FILTER OVERWRITE: checkbox click dropped token(s) "${lost.join(', ')}". Further checkbox clicks will keep overwriting. Combine all observed filter tokens into ONE path segment and navigate directly — e.g. ".../${combined}/".`;
+          if (postTokens.size > 0) {
+            const lost: string[] = [];
+            for (const t of seenFilterTokens) {
+              if (!postTokens.has(t)) lost.push(t);
+            }
+            if (lost.length > 0) {
+              const combined = [...seenFilterTokens].sort().join('|');
+              filterLossMessage = ` FILTER OVERWRITE: current URL is missing previously-set token(s) "${lost.join(', ')}" — the site is silently dropping filters between interactions. Stop clicking checkboxes individually. Combine all observed tokens into ONE path segment and navigate directly — e.g. ".../${combined}/".`;
+            }
           }
         }
 
