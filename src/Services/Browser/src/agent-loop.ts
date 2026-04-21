@@ -842,7 +842,11 @@ function extractFilterTokens(pageUrl: string): string[] {
       }
     }
     return out;
-  } catch {
+  } catch (err) {
+    logger.warn(
+      { url: pageUrl, err: err instanceof Error ? err.message : String(err) },
+      'extractFilterTokens: unparseable URL',
+    );
     return [];
   }
 }
