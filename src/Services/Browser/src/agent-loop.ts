@@ -1219,6 +1219,9 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let noOpStreak = 0;
   let baselineModalSigs: Set<string> | null = null;
   const seenFilterTokens = new Set<string>();
+  const visitedListingUrls = new Set<string>();
+  let lastListExtractStep = -1;
+  let lastListExtractUrls: string[] = [];
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1678,6 +1681,24 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       continue;
     }
 
+    // If a recent list extract produced ≥5 candidate URLs and pilot is about to drill
+    // one listing, swap that click for a single batched extract-with-urls fetch.
+    if (lastListExtractUrls.length >= 5 && step - lastListExtractStep <= 3 && actions[0]?.action === 'click') {
+      const urls = lastListExtractUrls.filter((u) => !visitedListingUrls.has(u)).slice(0, 8);
+      if (urls.length >= 3) {
+        logger.warn({ step, count: urls.length }, 'batch-urls preempt');
+        actions = [
+          {
+            action: 'extract',
+            reasoning: `Batch-fetching ${String(urls.length)} unseen candidate detail pages in parallel.`,
+            urls,
+          },
+        ];
+        for (const u of urls) visitedListingUrls.add(u);
+        lastListExtractUrls = [];
+      }
+    }
+
     // Execute batch of actions sequentially
     for (let actionIdx = 0; actionIdx < actions.length; actionIdx++) {
       if (step >= maxSteps) break;
@@ -1824,6 +1845,16 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           }
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
           if (items.count > 0) extractProducedData = true;
+          const urls: string[] = [];
+          for (const r of items.records) {
+            const u = typeof r.url === 'string' ? r.url : '';
+            if (u !== '' && !urls.includes(u)) urls.push(u);
+            if (urls.length >= 10) break;
+          }
+          if (urls.length >= 5) {
+            lastListExtractUrls = urls;
+            lastListExtractStep = step;
+          }
         }
         if (extractProducedData) extractsWithDataCount++;
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
