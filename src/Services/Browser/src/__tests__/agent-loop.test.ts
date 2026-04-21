@@ -153,12 +153,31 @@ describe('runAgentLoop', () => {
     expect(result.steps).toHaveLength(2);
   });
 
-  it('hard-rejects a click on a ref that failed twice with "not visible"', async () => {
+  it('stops clicking a ref that repeatedly fails with "intercepted" (not only "not found")', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Click' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'First try', ref: '77' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Second try', ref: '77' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Third try on same ref', ref: '77' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Give up', answer: 'no' });
+
+    const { page, mock } = mockPage();
+    mock.click.mockRejectedValue(new Error('Click on "77" was intercepted by another element.'));
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    await runAgentLoop('Click intercepted ref', page, emit, controller.signal);
+
+    expect(mock.click.mock.calls.filter((c) => c[0] === '77').length).toBeLessThanOrEqual(2);
+  });
+
+  it('stops clicking a ref after it has failed BAN_THRESHOLD times without triggering parse-failure cascade', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Click' })
       .mockResolvedValueOnce({ action: 'click', reasoning: 'First try', ref: '99' })
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Second try', ref: '99' })
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Third try on same ref', ref: '99' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Fourth try on same ref', ref: '99' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Give up', answer: 'no' });
 
     const { page, mock } = mockPage();
@@ -177,7 +196,7 @@ describe('runAgentLoop', () => {
         c[1] !== null &&
         (c[1] as { type?: string }).type === 'parse_error',
     );
-    expect(parseErrors.length).toBeGreaterThanOrEqual(1);
+    expect(parseErrors.length).toBe(0);
     expect(mock.click.mock.calls.filter((c) => c[0] === '99').length).toBeLessThanOrEqual(2);
   });
 

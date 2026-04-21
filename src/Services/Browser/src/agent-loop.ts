@@ -1518,10 +1518,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
       const banned = actions[0]?.ref !== undefined ? bannedRefs.get(actions[0].ref) : undefined;
       if (banned !== undefined && banned.failures >= BAN_THRESHOLD && banned.action === actions[0].action) {
-        throw new LlmParseError(
-          `Ref "${actions[0].ref ?? ''}" is blocked after ${String(banned.failures)} consecutive "${actions[0].action}" failures on it. Pick a different ref from the current snapshot, or try a different approach (URL parameters, keyboard, different element). Do NOT use "${actions[0].ref ?? ''}" again.`,
-          JSON.stringify(parsed).slice(0, 200),
-        );
+        const bannedRef = actions[0].ref ?? '';
+        const message = `Ref "${bannedRef}" is blocked after ${String(banned.failures)} consecutive "${actions[0].action}" failures on it. Pick a different ref from the current snapshot, or try a different approach (URL parameters, keyboard, different element). Do NOT use "${bannedRef}" again.`;
+        logger.warn({ step, ref: bannedRef, failures: banned.failures }, 'Banned ref attempted — skipping');
+        actions[0] = {
+          action: 'wait',
+          reasoning: actions[0].reasoning,
+          error_feedback: message,
+        };
       }
       consecutiveParseFailures = 0;
       crossSiteParseFailures = 0;
@@ -1955,7 +1959,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('step_error', { step, action: action.action, error: rawMessage });
         agentStep.action.error_feedback = feedback;
         recentFailureCount++;
-        if (action.ref !== undefined && action.ref !== '' && /not found or not visible/i.test(rawMessage)) {
+        if (action.ref !== undefined && action.ref !== '') {
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
           entry.failures += 1;
           entry.action = action.action;

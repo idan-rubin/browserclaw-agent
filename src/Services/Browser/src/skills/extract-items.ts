@@ -26,6 +26,21 @@ const EXTRACTION_FN = `
     return hits >= 2;
   }
 
+  function identityFor(node) {
+    if (node && typeof node === 'object') {
+      if (typeof node.url === 'string' && node.url) return 'u:' + node.url;
+      if (typeof node.href === 'string' && node.href) return 'u:' + node.href;
+      if (typeof node.link === 'string' && node.link) return 'u:' + node.link;
+      if (typeof node.id === 'string' && node.id) return 'i:' + node.id;
+      if ((typeof node['@id'] === 'string') && node['@id']) return 'i:' + node['@id'];
+    }
+    try {
+      return 'j:' + JSON.stringify(node).slice(0, 300);
+    } catch (e) {
+      return null;
+    }
+  }
+
   function harvestFromJson(node, out, depth) {
     if (out.length >= MAX) return;
     if (depth > 10) return;
@@ -35,10 +50,10 @@ const EXTRACTION_FN = `
     }
     if (node === null || typeof node !== 'object') return;
     if (isItemLike(node)) {
-      const key = JSON.stringify(Object.keys(node).sort());
-      if (!seen.has(key) || out.length < MAX) {
+      var id = identityFor(node);
+      if (id !== null && !seen.has(id)) {
         out.push(node);
-        seen.add(key);
+        seen.add(id);
       }
     }
     for (const v of Object.values(node)) harvestFromJson(v, out, depth + 1);
