@@ -173,15 +173,19 @@ Strategy:
 - At each step, know where you are in that flow and what comes next.
 - Every action should move you closer to the goal. If it doesn't, you're wasting steps.
 
-Filters and search:
-- After applying any filter (price, date, location, amenity), ALWAYS submit it: press Enter, click "Apply" or "Search".
-- After submitting, VERIFY the filter took effect in the NEXT snapshot. Check that results actually changed — prices should be within range, locations should match, etc. If results still show items outside your filter (e.g. you set max $4,200 but see $6,000+ listings), the filter did NOT work. Try again: clear the field, re-type, and submit differently (try a different button, or add the filter to the URL).
-- Prefer not to browse results before filters are confirmed active — but this is a preference, not an absolute. When filter UI resists (no-op on scroll/click/keyboard, filter-overwrite nudges, three or more steps in the drawer without progress), STOP trying to lock filters and switch modes: extract the best available results under whatever partial filter is applied, then validate each requested constraint on individual listing/detail pages. Partial-filter extraction + per-listing verification is an accepted path to completion, not a compromise.
-- If the filter controls you need aren't visible after 2 scrolls, they probably don't exist on this page. Use URL parameters instead (e.g. ?max_price=4200) or verify criteria on individual listing pages.
-- Don't waste steps hunting for perfect filter UI. URL parameters + manual verification on detail pages beats endlessly searching for filter controls that may not exist.
-- Inside any filter modal or drawer, you have a hard budget of 3 in-modal interactions to apply what you came for. If three in-modal actions have not produced the filter, close the modal and move on: use the URL with a value observed elsewhere on the site, verify the constraint on individual listing pages, or skip that filter. Modal-hunt loops burn the whole run.
-- Do NOT invent URL slugs based on assumptions about how a site "probably" works — invented URLs frequently return 403 or 404, and navigation to them can hang for minutes. Only construct a URL by swapping values within a pattern you have actually observed on the site (visible link href, or the URL after a filter click updated it). If no observed pattern exists for the filter you need, use the filter UI or skip the filter.
-- If a single filter click changed the URL (e.g. toggling "pets" produced /chelsea/pets:allowed, then toggling "elevator" produced /chelsea/amenities:elevator%7Cpets:allowed), the site is URL-driven. Stop toggling checkboxes — each subsequent click may overwrite the previous filters instead of appending. Combine all needed values into one URL (same segment, pipe- or comma-joined the way you observed) and navigate to it directly. One navigate beats four checkbox rounds.
+Filters and search — strategy in order of preference:
+
+1. **URL-first**. Once a single filter interaction reveals how the site encodes state in the URL (a path segment like /key:value/ or a query param like ?price=X), construct the full URL with ALL needed values and navigate to it in ONE step. Do NOT keep toggling checkboxes afterward — on many sites each toggle overwrites prior values. One navigate beats four checkbox rounds. The filter-overwrite nudge will tell you explicitly when this is happening.
+
+2. **Drawer/modal as a minimal fallback** for filters that are NOT URL-encoded on this site. Hard budget of 3 in-modal interactions. If three in-modal actions have not produced the filter, close the modal: use URL or skip the filter. Do NOT keep scrolling/hunting — after 2 scrolls without new controls, the control isn't there. Modal-hunt loops burn the whole run.
+
+3. **Partial-filter extraction + per-listing verification** is a first-class completion path, not a compromise. If one or more filters simply don't work on this site (UI resists, URL doesn't encode, no-op nudges, filter-overwrite nudges), apply what you can, extract the result list, and verify the remaining constraints on individual detail pages. A run that returns 5 grounded listings whose constraints you verified one-by-one beats a run that never reaches extract.
+
+4. **Always verify** that a filter landed: the result count dropped, or visible values are in range. If the site header still says "Any price" after you set one, the filter didn't stick — don't trust it.
+
+5. **Never invent URL slugs**. Only construct URLs using exact tokens you have observed on the site (visible link href, or the URL right after a filter click). If no observed pattern exists for a filter, use the UI or skip that filter — do not guess.
+
+6. After any filter interaction, submit it explicitly (press Enter, click Apply/Search) if the site requires it.
 
 Anything covering the page — classify before acting:
 - Overlay to dismiss: cookie/GDPR banners, newsletter signup, membership/upsell, age verification, location/notification prompts, "install our app", date pickers, calendars, drawers, Google One Tap / "Sign in with Google" tile, social-login prompts, chat widgets, embedded auth iframes. → Click "Cancel" / "Close" / "X" / "No thanks" / "Maybe later", or press Escape.
