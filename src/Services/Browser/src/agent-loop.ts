@@ -1092,6 +1092,7 @@ export async function runAgentLoop(
   let pendingSiteSwitch: string | null = null;
   let duplicateMemoryCount = 0;
   let consecutiveNotReadyJudgments = 0;
+  let lastJudgmentCopilotFires = 0;
   let lastJudgmentMemoryLength = 0;
   let extractsWithDataCount = 0;
   let lastJudgmentExtractsWithData = 0;
@@ -1390,9 +1391,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         }
         const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
         const extractsGrew = extractsWithDataCount > lastJudgmentExtractsWithData;
+        const copilotFired = copilot.firedDirectives.size > lastJudgmentCopilotFires;
         lastJudgmentMemoryLength = mem.length;
         lastJudgmentExtractsWithData = extractsWithDataCount;
-        if (memoryGrew || extractsGrew) {
+        lastJudgmentCopilotFires = copilot.firedDirectives.size;
+        if (memoryGrew || extractsGrew || copilotFired) {
           consecutiveNotReadyJudgments = 0;
         } else {
           consecutiveNotReadyJudgments++;
