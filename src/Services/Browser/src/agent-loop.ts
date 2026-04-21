@@ -847,6 +847,30 @@ function extractFilterTokens(pageUrl: string): string[] {
   }
 }
 
+function buildCombinedTokenUrl(referenceUrl: string, tokens: Set<string>): string | null {
+  try {
+    const u = new URL(referenceUrl);
+    const parts = decodeURIComponent(u.pathname)
+      .split('/')
+      .filter((p) => p.length > 0);
+    const combined = [...tokens].sort().join('|');
+    if (combined === '') return null;
+    let tokenIdx = -1;
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].includes(':') && /^[A-Za-z][\w-]*:/.test(parts[i])) {
+        tokenIdx = i;
+        break;
+      }
+    }
+    if (tokenIdx >= 0) parts[tokenIdx] = combined;
+    else parts.push(combined);
+    u.pathname = '/' + parts.join('/');
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
 function computeStateSig(url: string, snapshotText: string): string {
   const payload = `${url}\n${snapshotText.slice(0, 4000)}`;
   let h = 5381;
@@ -1215,6 +1239,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let noOpStreak = 0;
   let baselineModalSigs: Set<string> | null = null;
   const seenFilterTokens = new Set<string>();
+  const copilotDirectivesFired = new Set<string>();
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1955,11 +1980,39 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           }
         }
 
+        // Co-pilot: on filter-loss, construct the full-token URL and navigate directly.
+        // Fires at most once per unique URL signature — avoids infinite fire if wrong.
+        let copilotNote = '';
+        if (filterLossMessage !== '') {
+          const copilotUrl = buildCombinedTokenUrl(postActionUrl, seenFilterTokens);
+          const copilotKey = copilotUrl === null ? '' : `CONSTRUCT_URL:${copilotUrl}`;
+          if (copilotUrl !== null && !copilotDirectivesFired.has(copilotKey)) {
+            copilotDirectivesFired.add(copilotKey);
+            logger.warn({ step, url: copilotUrl }, 'copilot_directive: CONSTRUCT_URL');
+            try {
+              await Promise.race([
+                holder.page.goto(copilotUrl),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => {
+                    reject(new Error(`copilot navigate timeout at ${String(NAVIGATE_TIMEOUT_MS)}ms`));
+                  }, NAVIGATE_TIMEOUT_MS),
+                ),
+              ]);
+              copilotNote = ` CO-PILOT intervened: consolidated all observed filter tokens and navigated to ${copilotUrl}. Verify the result count in the next snapshot before extracting.`;
+            } catch (copilotErr) {
+              logger.warn(
+                { step, err: copilotErr instanceof Error ? copilotErr.message : copilotErr },
+                'copilot_directive: CONSTRUCT_URL failed',
+              );
+            }
+          }
+        }
+
         // Stale-DOM abort: if URL changed and more actions are queued, their refs
         // point into a prior snapshot. Abort the batch so the LLM re-snapshots.
         if (hasMoreQueued && postActionUrl !== preActionUrl) {
           const remaining = actions.length - actionIdx - 1;
-          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.${filterLossMessage}`;
+          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.${filterLossMessage}${copilotNote}`;
           logger.info(
             { step, remaining, preActionUrl, postActionUrl, filterLoss: filterLossMessage !== '' },
             'Stale-DOM abort',
@@ -1967,8 +2020,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           step++;
           break;
         }
-        if (filterLossMessage !== '') {
-          agentStep.outcome = `${agentStep.outcome ?? ''}${filterLossMessage}`.trim();
+        if (filterLossMessage !== '' || copilotNote !== '') {
+          agentStep.outcome = `${agentStep.outcome ?? ''}${filterLossMessage}${copilotNote}`.trim();
         }
       } catch (err) {
         const feedback = describeActionError(action, err);
