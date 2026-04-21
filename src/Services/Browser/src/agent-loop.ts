@@ -1802,17 +1802,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           }
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
           if (items.count > 0) extractProducedData = true;
-          const urlsForBatch: string[] = [];
-          for (const r of items.records) {
-            const u = typeof r.url === 'string' ? r.url : undefined;
-            if (u !== undefined && u !== '' && !urlsForBatch.includes(u)) urlsForBatch.push(u);
-            if (urlsForBatch.length >= 10) break;
-          }
-          if (urlsForBatch.length >= 2) {
-            agentStep.outcome = `Extract returned ${String(urlsForBatch.length)} candidate URL(s). To verify details on multiple listings in ONE action, call extract next with {"urls": [${urlsForBatch
-              .map((u) => `"${u}"`)
-              .join(', ')}]} — parallel fetch up to 10, much faster than clicking into each individually.`;
-          }
         }
         if (extractProducedData) extractsWithDataCount++;
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
