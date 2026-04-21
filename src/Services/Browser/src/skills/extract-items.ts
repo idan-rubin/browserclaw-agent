@@ -98,19 +98,30 @@ const EXTRACTION_FN = `
     return out.length > 0 ? out : null;
   }
 
-  const results = tryNextData();
-  if (results) return { source: 'next-data', records: results.slice(0, MAX) };
+  function mergeWithDom(source, records) {
+    var dom = tryDom();
+    if (!dom || dom.length === 0) return { source: source, records: records.slice(0, MAX) };
+    // DOM records first — they carry per-item URLs and visible text. Structured-state
+    // records often hold page-level aggregate metadata (Organization, WebPage) that
+    // masquerades as items under the loose isItemLike heuristic; DOM cards are the
+    // reliable per-item source on list/results pages.
+    var combined = dom.concat(records).slice(0, MAX);
+    return { source: source, records: combined };
+  }
 
-  const apollo = tryGlobalState('__APOLLO_STATE__');
-  if (apollo) return { source: 'apollo', records: apollo.slice(0, MAX) };
+  var results = tryNextData();
+  if (results) return mergeWithDom('next-data', results);
 
-  const initial = tryGlobalState('__INITIAL_STATE__');
-  if (initial) return { source: 'initial-state', records: initial.slice(0, MAX) };
+  var apollo = tryGlobalState('__APOLLO_STATE__');
+  if (apollo) return mergeWithDom('apollo', apollo);
 
-  const ld = tryJsonLd();
-  if (ld) return { source: 'json-ld', records: ld.slice(0, MAX) };
+  var initial = tryGlobalState('__INITIAL_STATE__');
+  if (initial) return mergeWithDom('initial-state', initial);
 
-  const dom = tryDom();
+  var ld = tryJsonLd();
+  if (ld) return mergeWithDom('json-ld', ld);
+
+  var dom = tryDom();
   if (dom) return { source: 'dom', records: dom.slice(0, MAX) };
 
   return { source: 'none', records: [] };

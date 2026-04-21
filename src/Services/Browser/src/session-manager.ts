@@ -188,6 +188,7 @@ export async function createSession(
         '--disable-blink-features=AutomationControlled',
         '--disable-downloads',
         '--disable-file-system',
+        '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.101 Safari/537.36',
         ...(headless === true ? [] : ['--start-maximized']),
       ],
     });
