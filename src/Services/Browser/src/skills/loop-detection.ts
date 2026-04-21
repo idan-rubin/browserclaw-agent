@@ -27,6 +27,19 @@ export function detectLoop(action: { action: string; ref?: string }, history: Ag
     };
   }
 
+  if (
+    action.action === 'back' &&
+    history.length >= 2 &&
+    history[history.length - 1].action.action === 'back' &&
+    history[history.length - 2].action.action === 'back'
+  ) {
+    return {
+      level: 'urgent',
+      message:
+        'You have pressed "back" three times in a row without recovering. Back navigation is not escaping this error/block page. Do NOT press back again. Instead, use "navigate" to a known-good URL (a listings-site home or results page you reached earlier) or use "web_search" to find an alternative site.',
+    };
+  }
+
   if (action.ref !== undefined && action.ref !== '' && history.length >= 2) {
     const lastTwo = history.slice(-2);
     const bothFailed = lastTwo.every(

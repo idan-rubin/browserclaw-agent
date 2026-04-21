@@ -130,4 +130,15 @@ describe('detectLoop', () => {
     const history = [makeStep('navigate', undefined, 0)];
     expect(detectLoop({ action: 'web_search' }, history)).toBeNull();
   });
+
+  it('fires urgently on three consecutive back actions (back-loop)', () => {
+    const history = [makeStep('back', undefined, 0), makeStep('back', undefined, 1)];
+    const nudge = detectLoop({ action: 'back' }, history);
+    expect(nudge).toEqual(expect.objectContaining({ level: 'urgent' }));
+  });
+
+  it('does not fire back-loop rule when only two back actions have happened', () => {
+    const history = [makeStep('navigate', undefined, 0), makeStep('back', undefined, 1)];
+    expect(detectLoop({ action: 'back' }, history)).toBeNull();
+  });
 });
