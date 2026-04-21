@@ -259,6 +259,26 @@ const PAGE_READY_WAIT_MS = 2000;
 const SNAPSHOT_TIMEOUT_MS = 10000;
 const NAVIGATE_TIMEOUT_MS = 30000;
 
+// Scrolls the innermost scrollable container at the viewport center, falling back
+// to window scroll. Needed because window.scrollBy is a no-op inside a fixed-position
+// modal — the modal's own content lives in a scrollable descendant.
+const SCROLL_AT_VIEWPORT_FN = `
+  (function(dy) {
+    var cx = Math.floor(window.innerWidth / 2);
+    var cy = Math.floor(window.innerHeight / 2);
+    var el = document.elementFromPoint(cx, cy);
+    while (el && el !== document.body && el !== document.documentElement) {
+      var s = window.getComputedStyle(el);
+      if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
+        el.scrollBy(0, dy);
+        return;
+      }
+      el = el.parentElement;
+    }
+    window.scrollBy(0, dy);
+  })
+`;
+
 async function safeSnapshot(page: CrawlPage): Promise<string> {
   let snapshot: string;
   const t0 = Date.now();
@@ -764,23 +784,7 @@ async function executeAction(action: AgentAction, page: CrawlPage, config: Agent
 
     case 'scroll': {
       const dy = action.direction === 'up' ? -config.scrollPixels : config.scrollPixels;
-      await page.evaluate(`
-        (function(dy) {
-          var cx = Math.floor(window.innerWidth / 2);
-          var cy = Math.floor(window.innerHeight / 2);
-          var el = document.elementFromPoint(cx, cy);
-          while (el && el !== document.body && el !== document.documentElement) {
-            var s = window.getComputedStyle(el);
-            var oy = s.overflowY;
-            if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
-              el.scrollBy(0, dy);
-              return;
-            }
-            el = el.parentElement;
-          }
-          window.scrollBy(0, dy);
-        })(${String(dy)})
-      `);
+      await page.evaluate(`${SCROLL_AT_VIEWPORT_FN}(${String(dy)})`);
       break;
     }
 
