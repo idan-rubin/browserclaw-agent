@@ -2,13 +2,6 @@ import type { CrawlPage, BrowserClaw } from 'browserclaw';
 import { pressAndHold, detectAntiBot, enrichSnapshot, getPageText } from './skills/press-and-hold.js';
 import { clickCloudflareCheckbox } from './skills/cloudflare-checkbox.js';
 import { capturePopupSignatures, detectPopup, dismissPopup } from './skills/dismiss-popup.js';
-import {
-  applyDirective,
-  buildFilterLossDirective,
-  evaluate as copilotEvaluate,
-  newCopilotState,
-  observe as copilotObserve,
-} from './co-pilot.js';
 import { detectLoop } from './skills/loop-detection.js';
 import { detectPageState, shouldBlockDone } from './skills/page-state.js';
 import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
@@ -839,6 +832,21 @@ function getWaitMs(action: AgentAction['action'], config: AgentConfig): number {
 
 const STATEFUL_ACTIONS = new Set<string>(['scroll', 'click', 'type', 'keyboard', 'select', 'press_and_hold']);
 
+function extractFilterTokens(pageUrl: string): string[] {
+  try {
+    const path = decodeURIComponent(new URL(pageUrl).pathname);
+    const out: string[] = [];
+    for (const part of path.split('/')) {
+      for (const tok of part.split('|')) {
+        if (tok.includes(':') && /^[A-Za-z][\w-]*:.+$/.test(tok)) out.push(tok);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function computeStateSig(url: string, snapshotText: string): string {
   const payload = `${url}\n${snapshotText.slice(0, 4000)}`;
   let h = 5381;
@@ -1092,7 +1100,6 @@ export async function runAgentLoop(
   let pendingSiteSwitch: string | null = null;
   let duplicateMemoryCount = 0;
   let consecutiveNotReadyJudgments = 0;
-  let lastJudgmentCopilotFires = 0;
   let lastJudgmentMemoryLength = 0;
   let extractsWithDataCount = 0;
   let lastJudgmentExtractsWithData = 0;
@@ -1207,7 +1214,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let lastStateSig: string | null = null;
   let noOpStreak = 0;
   let baselineModalSigs: Set<string> | null = null;
-  const copilot = newCopilotState();
+  const seenFilterTokens = new Set<string>();
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1391,11 +1398,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         }
         const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
         const extractsGrew = extractsWithDataCount > lastJudgmentExtractsWithData;
-        const copilotFired = copilot.firedDirectives.size > lastJudgmentCopilotFires;
         lastJudgmentMemoryLength = mem.length;
         lastJudgmentExtractsWithData = extractsWithDataCount;
-        lastJudgmentCopilotFires = copilot.firedDirectives.size;
-        if (memoryGrew || extractsGrew || copilotFired) {
+        if (memoryGrew || extractsGrew) {
           consecutiveNotReadyJudgments = 0;
         } else {
           consecutiveNotReadyJudgments++;
@@ -1669,17 +1674,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       continue;
     }
 
-    const copilotDirective = copilotEvaluate(copilot, {
-      step,
-      stepsRemaining: maxSteps - step,
-      pendingActions: actions,
-      currentUrl: url,
-      history,
-    });
-    if (copilotDirective !== null) {
-      actions = applyDirective(copilotDirective, actions);
-    }
-
     // Execute batch of actions sequentially
     for (let actionIdx = 0; actionIdx < actions.length; actionIdx++) {
       if (step >= maxSteps) break;
@@ -1826,13 +1820,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           }
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
           if (items.count > 0) extractProducedData = true;
-          const urlAfterExtract = await holder.page.url();
-          copilotObserve(copilot, {
-            step,
-            preUrl: urlAfterExtract,
-            postUrl: urlAfterExtract,
-            extractRecords: items.records.map((r) => ({ url: typeof r.url === 'string' ? r.url : undefined })),
-          });
         }
         if (extractProducedData) extractsWithDataCount++;
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
@@ -1948,47 +1935,32 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           // Validation snapshot failed — not critical, skip
         }
 
-        // Track filter tokens (key:value pairs) seen across the session and flag when
-        // the current URL is missing previously-observed tokens (silent overwrite).
-        copilotObserve(copilot, {
-          step,
-          preUrl: preActionUrl,
-          postUrl: postActionUrl,
-        });
-
-        let copilotNote = '';
+        let filterLossMessage = '';
         if (postActionUrl !== preActionUrl) {
-          const filterDirective = buildFilterLossDirective(copilot, postActionUrl);
-          if (filterDirective !== null && filterDirective.kind === 'construct_url') {
-            logger.warn({ step, url: filterDirective.url }, 'copilot_directive: construct_url');
-            try {
-              await Promise.race([
-                holder.page.goto(filterDirective.url),
-                new Promise<never>((_, reject) =>
-                  setTimeout(() => {
-                    reject(new Error(`copilot navigate timeout at ${String(NAVIGATE_TIMEOUT_MS)}ms`));
-                  }, NAVIGATE_TIMEOUT_MS),
-                ),
-              ]);
-              copilotNote = ` CO-PILOT: ${filterDirective.reason} Navigated to ${filterDirective.url}.`;
-            } catch (copilotErr) {
-              logger.warn(
-                { step, err: copilotErr instanceof Error ? copilotErr.message : copilotErr },
-                'copilot construct_url navigate failed',
-              );
+          const preTokens = new Set(extractFilterTokens(preActionUrl));
+          const postTokens = new Set(extractFilterTokens(postActionUrl));
+          for (const t of preTokens) seenFilterTokens.add(t);
+          for (const t of postTokens) seenFilterTokens.add(t);
+          if (postTokens.size > 0) {
+            const lost: string[] = [];
+            for (const t of seenFilterTokens) {
+              if (!postTokens.has(t)) lost.push(t);
+            }
+            if (lost.length > 0) {
+              filterLossMessage = ` FILTER OVERWRITE: current URL is missing previously-set token(s) "${lost.join(', ')}" — the site is silently dropping filters between interactions. Combine all observed tokens into ONE path segment and navigate directly.`;
             }
           }
         }
 
         if (hasMoreQueued && postActionUrl !== preActionUrl) {
           const remaining = actions.length - actionIdx - 1;
-          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.${copilotNote}`;
+          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.${filterLossMessage}`;
           logger.info({ step, remaining, preActionUrl, postActionUrl }, 'Stale-DOM abort');
           step++;
           break;
         }
-        if (copilotNote !== '') {
-          agentStep.outcome = `${agentStep.outcome ?? ''}${copilotNote}`.trim();
+        if (filterLossMessage !== '') {
+          agentStep.outcome = `${agentStep.outcome ?? ''}${filterLossMessage}`.trim();
         }
       } catch (err) {
         const feedback = describeActionError(action, err);
@@ -1997,27 +1969,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('step_error', { step, action: action.action, error: rawMessage });
         agentStep.action.error_feedback = feedback;
         recentFailureCount++;
-        if (
-          action.action === 'navigate' &&
-          typeof action.url === 'string' &&
-          rawMessage.includes('did not complete within')
-        ) {
-          let host = '';
-          try {
-            host = new URL(action.url).hostname.replace(/^www\./, '');
-          } catch (urlErr) {
-            logger.warn(
-              { step, url: action.url, err: urlErr instanceof Error ? urlErr.message : String(urlErr) },
-              'copilot: could not parse navigate URL for timeout tracking',
-            );
-          }
-          copilotObserve(copilot, {
-            step,
-            preUrl: action.url,
-            postUrl: action.url,
-            navigateError: { host },
-          });
-        }
         if (action.ref !== undefined && action.ref !== '') {
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
           entry.failures += 1;
