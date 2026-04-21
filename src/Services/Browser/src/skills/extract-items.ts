@@ -183,6 +183,14 @@ const EXTRACTION_FN = `
       } catch (e) {}
     }
     if (listItems.length > 0) return listItems;
+    // Second pass: homogeneous array anywhere inside any JSON-LD script.
+    for (const s of scripts) {
+      try {
+        const data = JSON.parse(s.textContent || '');
+        const arr = findHomogeneousItemArray(data);
+        if (arr && arr.length > 0) return arr.slice(0, MAX);
+      } catch (e) {}
+    }
     // Fallback: heuristic harvest from any JSON-LD.
     const out = [];
     for (const s of scripts) {
