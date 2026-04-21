@@ -63,8 +63,78 @@ const EXTRACTION_FN = `
     return out.length > 0 ? out : null;
   }
 
+  function flattenItemListItem(node) {
+    if (!node || typeof node !== 'object') return null;
+    var rec = {};
+    if (node.name) rec.name = String(node.name);
+    if (node.url) rec.url = String(node.url);
+    if (node.description) rec.description = String(node.description);
+    if (node.image) rec.image = typeof node.image === 'string' ? node.image : (node.image && node.image.url) ? String(node.image.url) : undefined;
+    // schema.org RealEstateListing / ApartmentComplex nest address under about or directly
+    var addrSrc = node.address || (node.about && node.about.address) || null;
+    if (addrSrc && typeof addrSrc === 'object') {
+      var parts = [];
+      if (addrSrc.streetAddress) parts.push(String(addrSrc.streetAddress));
+      if (addrSrc.addressLocality) parts.push(String(addrSrc.addressLocality));
+      if (addrSrc.addressRegion) parts.push(String(addrSrc.addressRegion));
+      if (addrSrc.postalCode) parts.push(String(addrSrc.postalCode));
+      if (parts.length > 0) rec.address = parts.join(', ');
+    }
+    // Price: offers can be AggregateOffer or array of Offer
+    var offers = node.offers || (node.about && node.about.offers) || null;
+    if (offers) {
+      var offerArr = Array.isArray(offers) ? offers : [offers];
+      var prices = [];
+      for (var i = 0; i < offerArr.length; i++) {
+        var o = offerArr[i];
+        if (!o) continue;
+        if (o.price) prices.push(String(o.price));
+        else if (o.lowPrice) prices.push(String(o.lowPrice));
+        else if (o.priceSpecification && o.priceSpecification.price) prices.push(String(o.priceSpecification.price));
+      }
+      if (prices.length > 0) rec.price = prices.join(' - ');
+    }
+    return Object.keys(rec).length >= 2 ? rec : null;
+  }
+
+  function collectItemListElements(node, out, depth) {
+    if (out.length >= MAX) return;
+    if (depth > 10) return;
+    if (Array.isArray(node)) {
+      for (var i = 0; i < node.length; i++) collectItemListElements(node[i], out, depth + 1);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    var type = node['@type'];
+    var types = Array.isArray(type) ? type : (type ? [type] : []);
+    if (types.indexOf('ItemList') !== -1 && Array.isArray(node.itemListElement)) {
+      for (var j = 0; j < node.itemListElement.length && out.length < MAX; j++) {
+        var el = node.itemListElement[j];
+        var item = el && el.item ? el.item : el;
+        var flat = flattenItemListItem(item);
+        if (flat) out.push(flat);
+      }
+    }
+    for (var k in node) {
+      if (!Object.prototype.hasOwnProperty.call(node, k)) continue;
+      if (k === 'itemListElement') continue;
+      collectItemListElements(node[k], out, depth + 1);
+    }
+  }
+
   function tryJsonLd() {
     const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    // First pass: ItemList.itemListElement — the schema.org standard for list pages.
+    const listItems = [];
+    for (const s of scripts) {
+      try {
+        const data = JSON.parse(s.textContent || '');
+        collectItemListElements(data, listItems, 0);
+        if (listItems.length >= MAX) break;
+      } catch (e) {}
+    }
+    if (listItems.length > 0) return listItems;
+    // Fallback: heuristic harvest from any JSON-LD.
     const out = [];
     for (const s of scripts) {
       try {
