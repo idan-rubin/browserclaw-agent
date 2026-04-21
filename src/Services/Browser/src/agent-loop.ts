@@ -1681,8 +1681,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       continue;
     }
 
-    // If a recent list extract produced ≥5 candidate URLs and pilot is about to drill
-    // one listing, swap that click for a single batched extract-with-urls fetch.
     if (lastListExtractUrls.length >= 5 && step - lastListExtractStep <= 3 && actions[0]?.action === 'click') {
       const urls = lastListExtractUrls.filter((u) => !visitedListingUrls.has(u)).slice(0, 8);
       if (urls.length >= 3) {
