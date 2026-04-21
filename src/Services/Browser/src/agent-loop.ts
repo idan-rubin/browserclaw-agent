@@ -1067,6 +1067,8 @@ export async function runAgentLoop(
   let duplicateMemoryCount = 0;
   let consecutiveNotReadyJudgments = 0;
   let lastJudgmentMemoryLength = 0;
+  let extractsWithDataCount = 0;
+  let lastJudgmentExtractsWithData = 0;
   const bannedRefs = new Map<string, { action: string; failures: number }>();
   const BAN_THRESHOLD = 2;
 
@@ -1361,8 +1363,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           return await forceComplete('Judge ruled answer ready', judgment.answer);
         }
         const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
+        const extractsGrew = extractsWithDataCount > lastJudgmentExtractsWithData;
         lastJudgmentMemoryLength = mem.length;
-        if (memoryGrew) {
+        lastJudgmentExtractsWithData = extractsWithDataCount;
+        if (memoryGrew || extractsGrew) {
           consecutiveNotReadyJudgments = 0;
         } else {
           consecutiveNotReadyJudgments++;
@@ -1734,6 +1738,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'extract') {
+        let extractProducedData = false;
         if (action.expression !== undefined && action.expression !== '') {
           try {
             assertExtractExpressionAllowed(action.expression);
@@ -1742,6 +1747,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             agentStep.action.extract_result = result.slice(0, EXTRACT_RESULT_MAX_CHARS);
             if (result.length > EXTRACT_RESULT_MAX_CHARS) {
               agentStep.action.extract_result += '\n…(truncated)';
+            }
+            if (result.trim().length > 0 && result !== '[]' && result !== '{}' && result !== 'null') {
+              extractProducedData = true;
             }
           } catch (evalErr) {
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
@@ -1759,6 +1767,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             agentStep.action.extract_result += '\n…(truncated)';
           }
           logger.info({ step, count: batch.count, failedCount: batch.failedUrls.length }, 'extract items batch');
+          if (batch.count > 0) extractProducedData = true;
         } else {
           const items = await extractItems(holder.page);
           const payload = JSON.stringify({
@@ -1772,7 +1781,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             agentStep.action.extract_result += '\n…(truncated)';
           }
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
+          if (items.count > 0) extractProducedData = true;
         }
+        if (extractProducedData) extractsWithDataCount++;
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
         step++;
         break;
