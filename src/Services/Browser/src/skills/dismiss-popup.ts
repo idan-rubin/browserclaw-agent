@@ -1,31 +1,54 @@
 import type { CrawlPage } from 'browserclaw';
 import { logger } from '../logger.js';
 
-export async function detectPopup(page: CrawlPage): Promise<boolean> {
-  return (await page.evaluate(`
-    (function() {
-      function isActuallyVisible(el) {
-        if (typeof el.checkVisibility === 'function') {
-          if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
-        }
-        if (el.getAttribute('aria-hidden') === 'true') return false;
-        var style = window.getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden') return false;
-        if (parseFloat(style.opacity) < 0.1) return false;
-        if (style.pointerEvents === 'none' && parseFloat(style.opacity) < 0.5) return false;
-        var rect = el.getBoundingClientRect();
-        if (rect.width <= 100 || rect.height <= 50) return false;
-        if (rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) return false;
-        return true;
+const POPUP_PROBE_FN = `
+  (function() {
+    function isActuallyVisible(el) {
+      if (typeof el.checkVisibility === 'function') {
+        if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
       }
+      if (el.getAttribute('aria-hidden') === 'true') return false;
+      var style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      if (parseFloat(style.opacity) < 0.1) return false;
+      if (style.pointerEvents === 'none' && parseFloat(style.opacity) < 0.5) return false;
+      var rect = el.getBoundingClientRect();
+      if (rect.width <= 100 || rect.height <= 50) return false;
+      if (rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) return false;
+      return true;
+    }
 
-      var all = document.querySelectorAll('[role="dialog"], [role="alertdialog"], [class*="modal"], [class*="popup"], [class*="overlay"], [class*="banner"], [class*="consent"], form[action*="consent"]');
-      for (var i = 0; i < all.length; i++) {
-        if (isActuallyVisible(all[i])) return true;
-      }
-      return false;
-    })()
-  `)) as boolean;
+    function signatureFor(el) {
+      var tag = el.tagName || '';
+      var role = el.getAttribute('role') || '';
+      var id = el.id || '';
+      var cls = (el.className && typeof el.className === 'string') ? el.className.slice(0, 80) : '';
+      var aria = el.getAttribute('aria-label') || '';
+      return tag + '|' + role + '|' + id + '|' + cls + '|' + aria;
+    }
+
+    var els = document.querySelectorAll('[role="dialog"], [role="alertdialog"], [class*="modal"], [class*="popup"], [class*="overlay"], [class*="banner"], [class*="consent"], form[action*="consent"]');
+    var out = [];
+    for (var i = 0; i < els.length; i++) {
+      if (isActuallyVisible(els[i])) out.push(signatureFor(els[i]));
+    }
+    return out;
+  })()
+`;
+
+export async function capturePopupSignatures(page: CrawlPage): Promise<Set<string>> {
+  const sigs = (await page.evaluate(POPUP_PROBE_FN)) as string[];
+  return new Set(sigs);
+}
+
+export async function detectPopup(page: CrawlPage, baseline?: Set<string>): Promise<boolean> {
+  const current = (await page.evaluate(POPUP_PROBE_FN)) as string[];
+  if (current.length === 0) return false;
+  if (baseline === undefined) return true;
+  for (const sig of current) {
+    if (baseline.has(sig)) return true;
+  }
+  return false;
 }
 
 export async function dismissPopup(page: CrawlPage): Promise<boolean> {

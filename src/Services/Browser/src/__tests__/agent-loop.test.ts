@@ -22,6 +22,7 @@ vi.mock('../skills/press-and-hold.js', () => ({
 }));
 
 vi.mock('../skills/dismiss-popup.js', () => ({
+  capturePopupSignatures: vi.fn().mockResolvedValue(new Set<string>()),
   detectPopup: vi.fn().mockResolvedValue(false),
   dismissPopup: vi.fn().mockResolvedValue(false),
 }));
@@ -152,12 +153,31 @@ describe('runAgentLoop', () => {
     expect(result.steps).toHaveLength(2);
   });
 
-  it('hard-rejects a click on a ref that failed twice with "not visible"', async () => {
+  it('stops clicking a ref that repeatedly fails with "intercepted" (not only "not found")', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Click' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'First try', ref: '77' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Second try', ref: '77' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Third try on same ref', ref: '77' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Give up', answer: 'no' });
+
+    const { page, mock } = mockPage();
+    mock.click.mockRejectedValue(new Error('Click on "77" was intercepted by another element.'));
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    await runAgentLoop('Click intercepted ref', page, emit, controller.signal);
+
+    expect(mock.click.mock.calls.filter((c) => c[0] === '77').length).toBeLessThanOrEqual(2);
+  });
+
+  it('stops clicking a ref after it has failed BAN_THRESHOLD times without triggering parse-failure cascade', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Click' })
       .mockResolvedValueOnce({ action: 'click', reasoning: 'First try', ref: '99' })
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Second try', ref: '99' })
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Third try on same ref', ref: '99' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Fourth try on same ref', ref: '99' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Give up', answer: 'no' });
 
     const { page, mock } = mockPage();
@@ -176,7 +196,7 @@ describe('runAgentLoop', () => {
         c[1] !== null &&
         (c[1] as { type?: string }).type === 'parse_error',
     );
-    expect(parseErrors.length).toBeGreaterThanOrEqual(1);
+    expect(parseErrors.length).toBe(0);
     expect(mock.click.mock.calls.filter((c) => c[0] === '99').length).toBeLessThanOrEqual(2);
   });
 
@@ -407,7 +427,7 @@ describe('runAgentLoop', () => {
     const result: AgentLoopResult = await runAgentLoop('Click button', page, emit, controller.signal);
 
     expect(result.success).toBe(true);
-    expect(result.steps[0].action.error_feedback).toContain('not found');
+    expect(result.steps[0].action.error_feedback).toContain('not in the current snapshot');
   });
 
   it('resets parse failure counter on successful parse', async () => {
@@ -663,8 +683,7 @@ describe('shouldCheckTermination', () => {
 });
 
 describe('termination judgment integration', () => {
-  it('force-completes when the judge rules the answer is ready', async () => {
-    // 1 plan + 8 step actions + 1 judgment call at step 8
+  it('nudges the agent to call done when the judge rules the answer is ready', async () => {
     mockedLlmJson.mockResolvedValueOnce({ plan: 'Gather data' });
     for (let i = 0; i < 8; i++) {
       mockedLlmJson.mockResolvedValueOnce({
@@ -675,7 +694,12 @@ describe('termination judgment integration', () => {
     }
     mockedLlmJson.mockResolvedValueOnce({
       status: 'ready',
-      answer: 'Final structured answer from the judge.',
+      answer: 'Judge-constructed answer (ignored — agent crafts its own).',
+    });
+    mockedLlmJson.mockResolvedValueOnce({
+      action: 'done',
+      reasoning: 'Judge said I have enough — finalizing with memory.',
+      answer: 'Agent-crafted final answer grounded in memory.',
     });
 
     const { page } = mockPage();
@@ -685,7 +709,7 @@ describe('termination judgment integration', () => {
     const result: AgentLoopResult = await runAgentLoop('Research question', page, emit, controller.signal);
 
     expect(result.success).toBe(true);
-    expect(result.answer).toBe('Final structured answer from the judge.');
+    expect(result.answer).toBe('Agent-crafted final answer grounded in memory.');
     const doneStep = result.steps[result.steps.length - 1];
     expect(doneStep.action.action).toBe('done');
   });

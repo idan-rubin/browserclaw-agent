@@ -1,7 +1,7 @@
 import type { CrawlPage, BrowserClaw } from 'browserclaw';
 import { pressAndHold, detectAntiBot, enrichSnapshot, getPageText } from './skills/press-and-hold.js';
 import { clickCloudflareCheckbox } from './skills/cloudflare-checkbox.js';
-import { detectPopup, dismissPopup } from './skills/dismiss-popup.js';
+import { capturePopupSignatures, detectPopup, dismissPopup } from './skills/dismiss-popup.js';
 import { detectLoop } from './skills/loop-detection.js';
 import { detectPageState, shouldBlockDone } from './skills/page-state.js';
 import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
@@ -71,8 +71,8 @@ const SYSTEM_PROMPT = `You are a browser automation agent. You read accessibilit
 
 Respond with valid JSON:
 {
-  "evaluation_previous_goal": "Did the previous action succeed? What changed? What went wrong? Check the outcome feedback from the last step. (skip on first step)",
-  "memory": "Running scratchpad of ALL accumulated data: names, prices, URLs, findings, comparisons. Carry forward everything from previous memory — never drop data. This is your only persistent storage between steps.",
+  "evaluation_previous_goal": "One short sentence — did the previous action succeed? (skip on first step)",
+  "memory": "Compact scratchpad of facts gathered SO FAR (names, prices, URLs, comparisons). Target under 80 words. Do NOT restate the user's task. Summarize older findings into shorter bullets as the list grows — this field shares the output-token budget with actions, so bloat here cuts off your plan.",
   "progress": {
     "completed": ["short descriptions of completed phases/milestones"],
     "current": "what you're working on right now",
@@ -125,8 +125,8 @@ Rules:
   - Without an "expression": runs a built-in structured-items extractor that tries __NEXT_DATA__ → Apollo state → __INITIAL_STATE__ → JSON-LD → DOM card heuristics, in that order, and returns an array of records with fields like price, address, bedrooms, url. Prefer this on list/results pages — it is more reliable than hand-written selector code.
   - With "urls" (array of up to 10): opens each URL in a parallel tab, runs the built-in extractor on each, and returns merged records with sourceUrl. Use this to enrich list results that have URLs but missing per-item fields — it replaces N separate navigate → snapshot → extract cycles with ONE action.
 - On modern JS/SPA sites (Next.js, React apps), listing and detail data is usually embedded in structured state — try these first before hand-rolling selectors: JSON.parse(document.getElementById('__NEXT_DATA__').textContent), window.__APOLLO_STATE__, window.__INITIAL_STATE__, or JSON-LD via document.querySelectorAll('script[type="application/ld+json"]'). One well-aimed extract from structured state beats five DOM-selector attempts.
-- On any filtered search-results page where you need structured item data (prices, addresses, names, URLs across multiple cards), your FIRST extract must use the built-in extractor: call "extract" with NO "expression" field at all. It auto-tries __NEXT_DATA__ / Apollo / __INITIAL_STATE__ / JSON-LD / DOM cards and returns an array of records. Do not write your own selector code for list pages — it fails more often than it succeeds. Only if the built-in extractor's "source" comes back "none" should you attempt a custom "expression".
-- If the built-in extract returned items whose URLs are present but some named per-item fields are missing (e.g. JSON-LD often carries only the URL), do not give up and do not visit each URL sequentially. Instead, call "extract" with a "urls" array listing up to 10 detail URLs. The agent will open all of them in parallel tabs, run the built-in extractor on each, and return aggregated records keyed by sourceUrl. This is the fastest way to enrich partial list results.
+- On any filtered search-results page where you need structured item data (prices, addresses, names, URLs across multiple cards), your FIRST extract must use the built-in extractor: call "extract" with NO "expression" field at all. It auto-tries __NEXT_DATA__ / Apollo / __INITIAL_STATE__ / JSON-LD / DOM cards and returns an array of records.
+- One extract per list page. After the built-in extract runs once on a given list page, do not call extract again on the same page with custom "expression". If records came back with URLs, your next extract must pass "urls" to fetch detail in parallel. If records were empty or unusable, click into a listing and extract on its detail page. Repeated custom-selector extracts on the same list page are a known waste pattern — break the loop by drilling or moving on.
 - On cards with nested links (photo, title, container), the outer link often routes to a promo or profile rather than the listing. When similar links stack within a card, extract hrefs first to disambiguate — click the link whose URL path matches the target, not one guessed from the visible label.
 - "web_search" to search the web when you don't know which site to use, need to find a specific service, or want to compare options across sources. Provide "query"; returns top results with titles, URLs, and snippets. Use this instead of guessing URLs.
 - "switch_tab" to switch to a different open tab. Use the tab_id from the tab list shown in the context. Use this when a link opened a new tab and you want to return to a previous one, or when the information you need is in a different tab.
@@ -173,12 +173,20 @@ Strategy:
 - At each step, know where you are in that flow and what comes next.
 - Every action should move you closer to the goal. If it doesn't, you're wasting steps.
 
-Filters and search:
-- After applying any filter (price, date, location, amenity), ALWAYS submit it: press Enter, click "Apply" or "Search".
-- After submitting, VERIFY the filter took effect in the NEXT snapshot. Check that results actually changed — prices should be within range, locations should match, etc. If results still show items outside your filter (e.g. you set max $4,200 but see $6,000+ listings), the filter did NOT work. Try again: clear the field, re-type, and submit differently (try a different button, or add the filter to the URL).
-- Do NOT proceed to browse results until you have confirmed filters are active. Browsing unfiltered results wastes every subsequent step.
-- If the filter controls you need aren't visible after 2 scrolls, they probably don't exist on this page. Use URL parameters instead (e.g. ?max_price=4200) or verify criteria on individual listing pages.
-- Don't waste steps hunting for perfect filter UI. URL parameters + manual verification on detail pages beats endlessly searching for filter controls that may not exist.
+Filters and search — strategy in order of preference:
+
+1. **URL-first**. Once a single filter interaction reveals how the site encodes state in the URL (a path segment like /key:value/ or a query param like ?price=X), construct the full URL with ALL needed values and navigate to it in ONE step. Do NOT keep toggling checkboxes afterward — on many sites each toggle overwrites prior values. One navigate beats four checkbox rounds. The filter-overwrite nudge will tell you explicitly when this is happening.
+
+2. **Drawer/modal for filters that are NOT URL-encoded on this site** — exhaust it before abandoning. Budget of 3 *filter-applying* actions (click a checkbox, type a value, select from a dropdown). Scrolls, keyboard navigation, and section-expand clicks do NOT count against the budget — keep exploring the drawer until you have seen every section, including top and bottom, before concluding a control isn't there. If a scroll is no-op, try the opposite direction before deciding the drawer is exhausted. Only after you have surveyed the whole drawer AND spent the 3-apply budget without landing a filter should you skip that filter or close the drawer.
+
+3. **Every constraint in the user's prompt is required — no silent drops.** For each requested filter (price, amenity, location, etc.) you must either: (a) apply it via URL or UI so results are pre-filtered, OR (b) verify it on each individual detail page before including that listing in the final answer. A listing that fails any stated constraint MUST be rejected from the output regardless of how nice the other matches look. If a filter cannot be applied but also cannot be verified per-listing, the task is blocked on that constraint — say so in the answer rather than reporting wrong results as correct.
+
+4. **Always verify** that a filter landed: the result count dropped, or visible values are in range. If the site header still says "Any price" after you set one, the filter didn't stick — don't trust it.
+
+5. **Build URLs from observed tokens; extend the pattern only when the UI is blocked.** Always start from exact tokens you've seen. When the site uses a /key:value/ or ?key=value pattern for some filters AND the UI cannot apply another filter (dropdown stuck, field hidden, no-op clicks), try the same pattern with a plausible key (e.g. /price:-MAXVALUE/, ?price_max=MAXVALUE) in ONE test navigate. After navigating, VERIFY the filter landed by reading the page header, filter chip, or result count — note the specific text you see (e.g. "Max $4,200" in header) in your memory. If the page shows no such evidence, treat the filter as not applied and either try an alternate pattern or fall back to per-listing verification. Never call "done" after a guessed URL token without naming the visible evidence that confirmed it.
+   - URL-token grammar: each distinct KEY is its own segment (joined by the site's separator — commonly | in path tokens or & in query strings). Multiple VALUES of the same key may be comma-joined inside that key's segment. NEVER pack different keys into a single key's segment (e.g. amenities:elevator,laundry,pets:allowed,price:-4200 is WRONG — pets and price are separate keys; write amenities:elevator,laundry|pets:allowed|price:-4200). After constructing the URL, read it back and confirm every required filter appears as its own key segment before navigating.
+
+6. After any filter interaction, submit it explicitly (press Enter, click Apply/Search) if the site requires it.
 
 Anything covering the page — classify before acting:
 - Overlay to dismiss: cookie/GDPR banners, newsletter signup, membership/upsell, age verification, location/notification prompts, "install our app", date pickers, calendars, drawers, Google One Tap / "Sign in with Google" tile, social-login prompts, chat widgets, embedded auth iframes. → Click "Cancel" / "Close" / "X" / "No thanks" / "Maybe later", or press Escape.
@@ -205,7 +213,8 @@ When results don't appear — suspect the page first:
 Filter workflow — set, submit, verify:
 - Typing a value into a filter field is NOT the same as applying the filter. After typing, you MUST submit — press Enter, click the Apply/Search/Done button, or close the filter popover if the site applies on close. Without submit, the filter has no effect.
 - On most listing/search sites, active filters are encoded as URL query params (e.g. "?price_max=4200&pets=dog"). A navigation that changes the URL and drops those params drops the filters.
-- After submitting, CONFIRM the filter took effect. URL params alone aren't enough — a 404 URL can still contain them. Require a visible filter chip matching the constraint OR a change in the result count/first results. Don't extract listings until confirmed.
+- After submitting, CONFIRM the filter took effect. URL params alone aren't enough — a 404 URL can still contain them. Require a visible filter chip matching the constraint OR a change in the result count/first results.
+- If the filter UI is unresponsive (no-ops, missing controls) after 2-3 tries, STOP fighting the UI. Extract the partially-filtered list anyway — each record typically contains price, address, amenities in its text or fields — and filter in memory against the prompt's constraints. A list page with results IS the answer when the UI is broken.
 
 Before giving up:
 - If one approach fails, try a different path. Don't repeat the same failed action.
@@ -217,6 +226,11 @@ When to call "done":
 - Once all constraints are satisfied and your "memory" contains the answer, "done" is your next action. Missing a sub-detail (one nice-to-have field) is not a reason to keep gathering.
 - When the task asks for a list of items with named per-item fields, every named field is required for every item you report. If an item is missing any named field, do a focused follow-up extract for that field, or drop the item and get another that has all fields. Never call done with items that have "not recovered" or "unknown" in a named field.
 - If an item you considered fails one of the task's explicit constraints (price over cap, wrong location, wrong date, etc.), drop it and keep hunting — open the next candidate from the list, scroll for more, or paginate. Do not call done with fewer qualifying items than the task asked for just because the first few you inspected didn't qualify.
+- HARD CAP on pagination: after you have accumulated records from 2 pages/batches on the same query, STOP paginating. Commit to the best N items that satisfy the explicit constraints from what you already have. If fewer than N qualify after careful filtering, return those you have and state "only X qualifying items were found" — do not silently paginate indefinitely.
+- Only items that came from the filtered list page (or a page paginated from it) count as "filtered". Items pulled from batch detail-page extractions often include "related buildings" / "similar listings" / "nearby" sections that are OUTSIDE your filter — do NOT include those in the final answer unless you verify the item independently satisfies every explicit constraint (location, price, amenities).
+- GROUND each final item with citable page evidence. For each item in the done answer, your reasoning must name the exact source (filtered results page URL, specific record's text snippet, or detail-page text) that confirms each explicit constraint the user asked for. A URL token applying a filter site-wide is NOT sufficient evidence that a given item satisfies that filter — a reviewer must be able to see, from your trace, which extracted text or visible label confirmed it for each item.
+- Interpret boundary words strictly: "under $X" means strictly less than $X (not equal); "at or below $X" or "up to $X" allow equality. Similarly for "before/after" dates, "less than/more than" counts. If a filter tool uses the inclusive bound (e.g. a dropdown at $X) and you want strict "under $X", drop items that land exactly at $X from your final list and pick a lower-priced alternative instead.
+- If the site auto-broadens your location (e.g. "Chelsea +1", "Near X", "including nearby areas"), narrow back to the user's exact location. The URL token, result chip, and each item's address must all match the user-specified location alone — items in adjacent neighborhoods do NOT satisfy a location-specific request, even when the site groups them together.
 - A partial, honest answer delivered now beats a complete answer you never deliver. State uncertainty explicitly — "couldn't verify X" is a valid part of a done answer, but only for optional fields, never for explicit constraints.
 - Do not extract, scroll, or click "just to be sure" once every constraint is satisfied. That is how runs time out.
 - Exception — transactional tasks (book, buy, submit, send): verify the action actually completed. A click on "Submit" is not the same as a successful submission; look for confirmation text, a reference number, or a state change before calling done.
@@ -250,6 +264,61 @@ function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
 const PAGE_READY_RETRIES = 2;
 const PAGE_READY_WAIT_MS = 2000;
 const SNAPSHOT_TIMEOUT_MS = 10000;
+const NAVIGATE_TIMEOUT_MS = 30000;
+
+// Scrolls the innermost scrollable container at the viewport center, falling back
+// to window scroll. Needed because window.scrollBy is a no-op inside a fixed-position
+// modal — the modal's own content lives in a scrollable descendant.
+const SCROLL_AT_VIEWPORT_FN = `
+  (function(dy) {
+    function findScrollableFrom(el) {
+      while (el && el !== document.body && el !== document.documentElement) {
+        var s = window.getComputedStyle(el);
+        if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
+          return el;
+        }
+        el = el.parentElement;
+      }
+      return null;
+    }
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var points = [
+      [vw / 2, vh / 2],
+      [vw / 2, vh / 4],
+      [vw / 2, (3 * vh) / 4],
+      [vw / 4, vh / 2],
+      [(3 * vw) / 4, vh / 2],
+    ];
+    for (var i = 0; i < points.length; i++) {
+      var hit = findScrollableFrom(document.elementFromPoint(Math.floor(points[i][0]), Math.floor(points[i][1])));
+      if (hit) {
+        hit.scrollBy(0, dy);
+        return;
+      }
+    }
+    var all = document.querySelectorAll('*');
+    var biggest = null;
+    var biggestArea = 0;
+    for (var j = 0; j < all.length; j++) {
+      var node = all[j];
+      var ns = window.getComputedStyle(node);
+      if ((ns.overflowY === 'auto' || ns.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1) {
+        var r = node.getBoundingClientRect();
+        var area = r.width * r.height;
+        if (area > biggestArea) {
+          biggestArea = area;
+          biggest = node;
+        }
+      }
+    }
+    if (biggest) {
+      biggest.scrollBy(0, dy);
+      return;
+    }
+    window.scrollBy(0, dy);
+  })
+`;
 
 async function safeSnapshot(page: CrawlPage): Promise<string> {
   let snapshot: string;
@@ -341,19 +410,28 @@ const TERMINATION_CHECK_INTERVAL = 4;
 const JUDGE_FATIGUE_LIMIT = 3;
 const REPLAN_FAILURE_THRESHOLD = 3;
 const CONTEXT_COMPRESS_INTERVAL = 20;
-const EXTRACT_RESULT_MAX_CHARS = 2000;
-const EXTRACT_PREVIEW_MAX_CHARS = 500;
+const EXTRACT_RESULT_MAX_CHARS = 2_000_000;
+const EXTRACT_OLDER_PREVIEW_MAX_CHARS = 500;
+
+function findLatestExtractIdx(history: AgentStep[]): number {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].action.extract_result !== undefined) return i;
+  }
+  return -1;
+}
 
 function truncateHistory(history: AgentStep[], contextSummary?: string): string {
+  const latestExtractIdx = findLatestExtractIdx(history);
   if (history.length <= HISTORY_RECENT_WINDOW) {
     let out = 'Previous actions:\n';
-    for (const step of history) {
-      out += formatStep(step);
+    for (let i = 0; i < history.length; i++) {
+      out += formatStep(history[i], i === latestExtractIdx);
     }
     return out;
   }
 
   const recent = history.slice(history.length - HISTORY_RECENT_WINDOW);
+  const recentStart = history.length - HISTORY_RECENT_WINDOW;
 
   let out = `Previous actions (${String(history.length)} total, showing last ${String(HISTORY_RECENT_WINDOW)} in detail):\n`;
 
@@ -385,18 +463,22 @@ function truncateHistory(history: AgentStep[], contextSummary?: string): string 
     out += `  [Context from step ${String(lastOlderStep.step)}]: ${lastOlderStep.action.reasoning.substring(0, 300)}\n\n`;
   }
 
-  for (const step of recent) {
-    out += formatStep(step);
+  for (let i = 0; i < recent.length; i++) {
+    out += formatStep(recent[i], recentStart + i === latestExtractIdx);
   }
   return out;
 }
 
-function formatStep(step: AgentStep): string {
+function formatStep(step: AgentStep, showFullExtract = false): string {
   let line = `  Step ${String(step.step)}: ${step.action.action} — ${step.action.reasoning}\n`;
   if (step.action.extract_result !== undefined) {
-    const preview = step.action.extract_result.slice(0, EXTRACT_PREVIEW_MAX_CHARS);
-    const truncated = step.action.extract_result.length > EXTRACT_PREVIEW_MAX_CHARS ? '…(truncated)' : '';
-    line += `    📊 Extracted: ${preview}${truncated}\n`;
+    if (showFullExtract) {
+      line += `    📊 Extracted: ${step.action.extract_result}\n`;
+    } else {
+      const preview = step.action.extract_result.slice(0, EXTRACT_OLDER_PREVIEW_MAX_CHARS);
+      const truncated = step.action.extract_result.length > EXTRACT_OLDER_PREVIEW_MAX_CHARS ? '…(truncated)' : '';
+      line += `    📊 Extracted: ${preview}${truncated}\n`;
+    }
   }
   if (step.outcome !== undefined) {
     line += `    → Outcome: ${step.outcome}\n`;
@@ -723,7 +805,18 @@ async function executeAction(action: AgentAction, page: CrawlPage, config: Agent
       if (action.url === undefined || action.url === '') throw new Error('navigate action requires url');
       assertNavigateUrlAllowed(action.url);
       logger.info({ url: action.url }, 'navigate: starting');
-      await page.goto(action.url);
+      await Promise.race([
+        page.goto(action.url),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => {
+            reject(
+              new Error(
+                `Navigation to ${action.url ?? ''} did not complete within ${String(NAVIGATE_TIMEOUT_MS)}ms — page is likely blocked or hanging on anti-bot. Try a different URL or site.`,
+              ),
+            );
+          }, NAVIGATE_TIMEOUT_MS),
+        ),
+      ]);
       logger.info({ url: action.url }, 'navigate: complete');
       break;
 
@@ -743,13 +836,11 @@ async function executeAction(action: AgentAction, page: CrawlPage, config: Agent
       await page.select(action.ref, ...action.options);
       break;
 
-    case 'scroll':
-      await page.evaluate(
-        action.direction === 'up'
-          ? `window.scrollBy(0, -${String(config.scrollPixels)})`
-          : `window.scrollBy(0, ${String(config.scrollPixels)})`,
-      );
+    case 'scroll': {
+      const dy = action.direction === 'up' ? -config.scrollPixels : config.scrollPixels;
+      await page.evaluate(`${SCROLL_AT_VIEWPORT_FN}(${String(dy)})`);
       break;
+    }
 
     case 'wait':
       await page.waitFor({ timeMs: config.waitActionMs });
@@ -793,16 +884,46 @@ function getWaitMs(action: AgentAction['action'], config: AgentConfig): number {
   }
 }
 
+const STATEFUL_ACTIONS = new Set<string>(['scroll', 'click', 'type', 'keyboard', 'select', 'press_and_hold']);
+
+function extractFilterTokens(pageUrl: string): string[] {
+  try {
+    const path = decodeURIComponent(new URL(pageUrl).pathname);
+    const out: string[] = [];
+    for (const part of path.split('/')) {
+      for (const tok of part.split('|')) {
+        if (tok.includes(':') && /^[A-Za-z][\w-]*:.+$/.test(tok)) out.push(tok);
+      }
+    }
+    return out;
+  } catch (err) {
+    logger.warn(
+      { url: pageUrl, err: err instanceof Error ? err.message : String(err) },
+      'extractFilterTokens: unparseable URL',
+    );
+    return [];
+  }
+}
+
+function computeStateSig(url: string, snapshotText: string): string {
+  const payload = `${url}\n${snapshotText.slice(0, 4000)}`;
+  let h = 5381;
+  for (let i = 0; i < payload.length; i++) {
+    h = ((h << 5) + h + payload.charCodeAt(i)) | 0;
+  }
+  return `${String(payload.length)}:${String(h)}`;
+}
+
 function describeActionError(action: AgentAction, err: unknown): string {
   const raw = err instanceof Error ? err.message : 'Action execution failed';
   const lower = raw.toLowerCase();
   if (action.action === 'click' || action.action === 'type' || action.action === 'select') {
     if (lower.includes('not found') || lower.includes('no element'))
-      return `Element ref ${action.ref ?? '?'} not found — it may have been removed by a page update or is outside the visible area. Try scrolling or re-reading the page.`;
+      return `Element ref ${action.ref ?? '?'} was not in the current snapshot. Refs are scoped to the snapshot in which they were issued; after the page changes, ref numbers are regenerated. Do NOT reuse ref ${action.ref ?? '?'} — pick a ref that appears in the snapshot shown below.`;
     if (lower.includes('intercept') || lower.includes('covered') || lower.includes('obscured'))
       return `Click on ref ${action.ref ?? '?'} was intercepted by another element covering it — dismiss any overlays or popups first.`;
     if (lower.includes('detach') || lower.includes('stale'))
-      return `Element ref ${action.ref ?? '?'} became stale — the page content changed. Take a new snapshot and find the updated element.`;
+      return `Element ref ${action.ref ?? '?'} became stale — the page content changed. Refs from a previous snapshot are no longer valid. Use only refs shown in the current snapshot below.`;
     if (lower.includes('disabled') || lower.includes('not interactable'))
       return `Element ref ${action.ref ?? '?'} is disabled or not interactable — check if a prerequisite field needs to be filled first.`;
   }
@@ -1038,6 +1159,8 @@ export async function runAgentLoop(
   let duplicateMemoryCount = 0;
   let consecutiveNotReadyJudgments = 0;
   let lastJudgmentMemoryLength = 0;
+  let extractsWithDataCount = 0;
+  let lastJudgmentExtractsWithData = 0;
   const bannedRefs = new Map<string, { action: string; failures: number }>();
   const BAN_THRESHOLD = 2;
 
@@ -1146,6 +1269,13 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let lastProgress: AgentProgress | null = null;
   let lastDomain = '';
   let lastScreenshotStep = -3; // throttle: skip if fired within last 3 steps
+  let lastStateSig: string | null = null;
+  let noOpStreak = 0;
+  let baselineModalSigs: Set<string> | null = null;
+  const seenFilterTokens = new Set<string>();
+  const visitedListingUrls = new Set<string>();
+  let lastListExtractStep = -1;
+  let lastListExtractUrls: string[] = [];
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1168,7 +1298,8 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       };
     }
 
-    if (await detectPopup(holder.page)) {
+    baselineModalSigs ??= await capturePopupSignatures(holder.page);
+    if (await detectPopup(holder.page, baselineModalSigs)) {
       await dismissPopup(holder.page);
     }
 
@@ -1323,27 +1454,30 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       if (mem.trim().length > 0) {
         const judgment = await judgeTermination(refinedPrompt, mem, history);
         if (judgment.ready) {
-          logger.info({ step }, 'Judge: answer ready — force-completing');
-          return await forceComplete('Judge ruled answer ready', judgment.answer);
-        }
-        const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
-        lastJudgmentMemoryLength = mem.length;
-        if (memoryGrew) {
-          consecutiveNotReadyJudgments = 0;
+          logger.info({ step }, 'Judge: answer ready — nudging agent to call done');
+          terminationNudge = `READY TO FINISH: a progress check determined you have enough data to answer the user's question. Call "done" on your next step with the answer grounded in your memory. Double-check that every item you list satisfies the user's constraints and that building/address/price values are the actual values from the extracts.`;
         } else {
-          consecutiveNotReadyJudgments++;
+          const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
+          const extractsGrew = extractsWithDataCount > lastJudgmentExtractsWithData;
+          lastJudgmentMemoryLength = mem.length;
+          lastJudgmentExtractsWithData = extractsWithDataCount;
+          if (memoryGrew || extractsGrew) {
+            consecutiveNotReadyJudgments = 0;
+          } else {
+            consecutiveNotReadyJudgments++;
+          }
+          if (consecutiveNotReadyJudgments >= JUDGE_FATIGUE_LIMIT) {
+            logger.warn(
+              { step, nudges: consecutiveNotReadyJudgments, stillMissing: judgment.missing },
+              'Judge fatigue — force-completing with partial answer',
+            );
+            return await forceComplete(
+              `Fatigue: ${String(consecutiveNotReadyJudgments)} consecutive not-ready judgments; still missing "${judgment.missing}"`,
+            );
+          }
+          logger.info({ step, missing: judgment.missing }, 'Judge: not ready — nudging agent');
+          terminationNudge = `PROGRESS CHECK: you have been gathering data but the question is still not answerable. Still missing: ${judgment.missing}. Focus your next action on that specifically — do not repeat extractions you have already tried. This is nudge ${String(consecutiveNotReadyJudgments)} of ${String(JUDGE_FATIGUE_LIMIT)}; on the next unsuccessful check the run will force-complete with a partial answer.`;
         }
-        if (consecutiveNotReadyJudgments >= JUDGE_FATIGUE_LIMIT) {
-          logger.warn(
-            { step, nudges: consecutiveNotReadyJudgments, stillMissing: judgment.missing },
-            'Judge fatigue — force-completing with partial answer',
-          );
-          return await forceComplete(
-            `Fatigue: ${String(consecutiveNotReadyJudgments)} consecutive not-ready judgments; still missing "${judgment.missing}"`,
-          );
-        }
-        logger.info({ step, missing: judgment.missing }, 'Judge: not ready — nudging agent');
-        terminationNudge = `PROGRESS CHECK: you have been gathering data but the question is still not answerable. Still missing: ${judgment.missing}. Focus your next action on that specifically — do not repeat extractions you have already tried. This is nudge ${String(consecutiveNotReadyJudgments)} of ${String(JUDGE_FATIGUE_LIMIT)}; on the next unsuccessful check the run will force-complete with a partial answer.`;
       }
     }
 
@@ -1356,6 +1490,24 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     if (terminationNudge !== null) {
       recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + terminationNudge;
     }
+
+    const currentStateSig = computeStateSig(url, snapshot);
+    const previousAction = history.length > 0 ? history[history.length - 1].action.action : null;
+    const previousWasStateful = previousAction !== null && STATEFUL_ACTIONS.has(previousAction);
+    if (lastStateSig !== null && currentStateSig === lastStateSig && previousWasStateful) {
+      noOpStreak++;
+      const noOpNudge =
+        noOpStreak >= 4
+          ? `NO-OP STREAK (${String(noOpStreak)}) — PAGE IS STUCK. Your last ${String(noOpStreak)} actions on this page all had zero effect. This page or modal is broken or unresponsive. STOP clicking/typing on it entirely. Your NEXT action MUST be one of: (1) "navigate" to a target URL you know or can derive, (2) "navigate" to the site root to reload, or (3) "web_search" to find a working alternative. Do NOT try another ref on this page.`
+          : noOpStreak >= 2
+            ? `NO-OP STREAK (${String(noOpStreak)}): Your last ${String(noOpStreak)} "${previousAction}" actions did not change the page (same URL, same DOM structure). Repeating "${previousAction}" will not make progress. You MUST choose a fundamentally different action now — close any open modal, navigate to a different URL, or use a different interaction type.`
+            : `NO-OP: Your last "${previousAction}" did not change the page (same URL, same DOM structure). The action had no effect. Try a different approach: a different element, a different interaction type, or a direct URL.`;
+      recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + noOpNudge;
+      logger.warn({ step, action: previousAction, streak: noOpStreak }, 'No-op detected');
+    } else {
+      noOpStreak = 0;
+    }
+    lastStateSig = currentStateSig;
 
     let tabCount: number | undefined;
     let tabs: TabInfo[] | undefined;
@@ -1448,10 +1600,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
       const banned = actions[0]?.ref !== undefined ? bannedRefs.get(actions[0].ref) : undefined;
       if (banned !== undefined && banned.failures >= BAN_THRESHOLD && banned.action === actions[0].action) {
-        throw new LlmParseError(
-          `Ref "${actions[0].ref ?? ''}" is blocked after ${String(banned.failures)} consecutive "${actions[0].action}" failures on it. Pick a different ref from the current snapshot, or try a different approach (URL parameters, keyboard, different element). Do NOT use "${actions[0].ref ?? ''}" again.`,
-          JSON.stringify(parsed).slice(0, 200),
-        );
+        const bannedRef = actions[0].ref ?? '';
+        const message = `Ref "${bannedRef}" is blocked after ${String(banned.failures)} consecutive "${actions[0].action}" failures on it. Pick a different ref from the current snapshot, or try a different approach (URL parameters, keyboard, different element). Do NOT use "${bannedRef}" again.`;
+        logger.warn({ step, ref: bannedRef, failures: banned.failures }, 'Banned ref attempted — skipping');
+        actions[0] = {
+          action: 'wait',
+          reasoning: actions[0].reasoning,
+          error_feedback: message,
+        };
       }
       consecutiveParseFailures = 0;
       crossSiteParseFailures = 0;
@@ -1582,6 +1738,22 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       continue;
     }
 
+    if (lastListExtractUrls.length >= 5 && step - lastListExtractStep <= 3 && actions[0]?.action === 'click') {
+      const urls = lastListExtractUrls.filter((u) => !visitedListingUrls.has(u)).slice(0, 8);
+      if (urls.length >= 3) {
+        logger.warn({ step, count: urls.length }, 'batch-urls preempt');
+        actions = [
+          {
+            action: 'extract',
+            reasoning: `Batch-fetching ${String(urls.length)} unseen candidate detail pages in parallel.`,
+            urls,
+          },
+        ];
+        for (const u of urls) visitedListingUrls.add(u);
+        lastListExtractUrls = [];
+      }
+    }
+
     // Execute batch of actions sequentially
     for (let actionIdx = 0; actionIdx < actions.length; actionIdx++) {
       if (step >= maxSteps) break;
@@ -1672,7 +1844,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       // --- Special actions (break batch — need new snapshot) ---
 
       if (action.action === 'press_and_hold') {
-        await pressAndHold(holder.page, { holdMs: action.hold_ms });
+        const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
+        if (!solved) {
+          agentStep.action.error_feedback =
+            'press_and_hold did not clear the challenge on this attempt — the blocking page is still present. The hold timing varies per attempt; try press_and_hold ONE more time with a higher hold_ms (e.g. 12000-15000). If it still fails after that retry, use click_cloudflare or ask_user.';
+        }
         step++;
         break;
       }
@@ -1684,6 +1860,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'extract') {
+        let extractProducedData = false;
         if (action.expression !== undefined && action.expression !== '') {
           try {
             assertExtractExpressionAllowed(action.expression);
@@ -1693,36 +1870,64 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             if (result.length > EXTRACT_RESULT_MAX_CHARS) {
               agentStep.action.extract_result += '\n…(truncated)';
             }
+            if (result.trim().length > 0 && result !== '[]' && result !== '{}' && result !== 'null') {
+              extractProducedData = true;
+            }
           } catch (evalErr) {
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
           }
         } else if (action.urls !== undefined && action.urls.length > 0 && browser !== undefined) {
           for (const url of action.urls) assertNavigateUrlAllowed(url);
           const batch = await extractItemsFromUrls(browser, action.urls);
-          const payload = JSON.stringify({
-            count: batch.count,
-            records: batch.records,
-            failedUrls: batch.failedUrls,
-          });
+          const header =
+            batch.count >= 5
+              ? `${String(batch.count)} records fetched across ${String(action.urls.length)} URLs. This is your data — parse the records and respond. Do NOT open individual URLs again; fields the user asked for (price, address, name) are embedded in each record's text or fields.\n`
+              : '';
+          const payload =
+            header +
+            JSON.stringify({
+              count: batch.count,
+              records: batch.records,
+              failedUrls: batch.failedUrls,
+            });
           agentStep.action.extract_result = payload.slice(0, EXTRACT_RESULT_MAX_CHARS);
           if (payload.length > EXTRACT_RESULT_MAX_CHARS) {
             agentStep.action.extract_result += '\n…(truncated)';
           }
           logger.info({ step, count: batch.count, failedCount: batch.failedUrls.length }, 'extract items batch');
+          if (batch.count > 0) extractProducedData = true;
         } else {
           const items = await extractItems(holder.page);
-          const payload = JSON.stringify({
-            source: items.source,
-            count: items.count,
-            truncated: items.truncated,
-            records: items.records,
-          });
+          const header =
+            items.count >= 5
+              ? `${String(items.count)} records extracted from ${items.source}. This is your data — parse the records and respond. Drill into an individual listing ONLY if a record is missing a specific field the user asked for; for counts/summaries, answer directly from these records.\n`
+              : '';
+          const payload =
+            header +
+            JSON.stringify({
+              source: items.source,
+              count: items.count,
+              truncated: items.truncated,
+              records: items.records,
+            });
           agentStep.action.extract_result = payload.slice(0, EXTRACT_RESULT_MAX_CHARS);
           if (payload.length > EXTRACT_RESULT_MAX_CHARS) {
             agentStep.action.extract_result += '\n…(truncated)';
           }
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
+          if (items.count > 0) extractProducedData = true;
+          const urls: string[] = [];
+          for (const r of items.records) {
+            const u = typeof r.url === 'string' ? r.url : '';
+            if (u !== '' && !urls.includes(u)) urls.push(u);
+            if (urls.length >= 10) break;
+          }
+          if (urls.length >= 5) {
+            lastListExtractUrls = urls;
+            lastListExtractStep = step;
+          }
         }
+        if (extractProducedData) extractsWithDataCount++;
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
         step++;
         break;
@@ -1836,14 +2041,32 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           // Validation snapshot failed — not critical, skip
         }
 
-        // Stale-DOM abort: if URL changed and more actions are queued, their refs
-        // point into a prior snapshot. Abort the batch so the LLM re-snapshots.
+        let filterLossMessage = '';
+        if (postActionUrl !== preActionUrl) {
+          const preTokens = new Set(extractFilterTokens(preActionUrl));
+          const postTokens = new Set(extractFilterTokens(postActionUrl));
+          for (const t of preTokens) seenFilterTokens.add(t);
+          for (const t of postTokens) seenFilterTokens.add(t);
+          if (postTokens.size > 0) {
+            const lost: string[] = [];
+            for (const t of seenFilterTokens) {
+              if (!postTokens.has(t)) lost.push(t);
+            }
+            if (lost.length > 0) {
+              filterLossMessage = ` FILTER OVERWRITE: current URL is missing previously-set token(s) "${lost.join(', ')}" — the site is silently dropping filters between interactions. Combine all observed tokens into ONE path segment and navigate directly.`;
+            }
+          }
+        }
+
         if (hasMoreQueued && postActionUrl !== preActionUrl) {
           const remaining = actions.length - actionIdx - 1;
-          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.`;
+          agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.${filterLossMessage}`;
           logger.info({ step, remaining, preActionUrl, postActionUrl }, 'Stale-DOM abort');
           step++;
           break;
+        }
+        if (filterLossMessage !== '') {
+          agentStep.outcome = `${agentStep.outcome ?? ''}${filterLossMessage}`.trim();
         }
       } catch (err) {
         const feedback = describeActionError(action, err);
@@ -1852,7 +2075,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('step_error', { step, action: action.action, error: rawMessage });
         agentStep.action.error_feedback = feedback;
         recentFailureCount++;
-        if (action.ref !== undefined && action.ref !== '' && /not found or not visible/i.test(rawMessage)) {
+        if (action.ref !== undefined && action.ref !== '') {
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
           entry.failures += 1;
           entry.action = action.action;
@@ -1860,7 +2083,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         }
         await holder.page.waitFor({ timeMs: 1000 });
 
-        if (await detectPopup(holder.page)) {
+        if (await detectPopup(holder.page, baselineModalSigs)) {
           await dismissPopup(holder.page);
         }
         step++;
