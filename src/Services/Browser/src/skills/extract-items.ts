@@ -288,7 +288,10 @@ export async function extractItems(page: CrawlPage): Promise<ExtractItemsResult>
     try {
       await page.evaluate(LAZY_LOAD_TRIGGER_FN);
     } catch (scrollErr) {
-      logger.warn({ err: scrollErr instanceof Error ? scrollErr.message : scrollErr }, 'extract-items: lazy-load trigger failed');
+      logger.warn(
+        { err: scrollErr instanceof Error ? scrollErr.message : scrollErr },
+        'extract-items: lazy-load trigger failed',
+      );
     }
     const raw = await page.evaluate(EXTRACTION_FN);
     if (raw === null || typeof raw !== 'object') {

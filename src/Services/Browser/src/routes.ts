@@ -109,8 +109,7 @@ const routes: Route[] = [
 
       const url = body.url !== undefined && body.url !== '' ? validateUrl(body.url) : undefined;
       const envHeadless = process.env.BROWSER_HEADLESS;
-      const headless =
-        envHeadless === 'false' ? false : envHeadless === 'true' ? true : body.headless;
+      const headless = envHeadless === 'false' ? false : envHeadless === 'true' ? true : body.headless;
 
       const hasValidToken = req.headers.authorization !== undefined;
       const skipModeration = hasValidToken && body.skip_moderation === true;
