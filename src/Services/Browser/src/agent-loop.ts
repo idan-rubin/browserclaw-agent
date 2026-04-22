@@ -9,6 +9,7 @@ import { TabManager } from './skills/tab-manager.js';
 import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
 import { extractItems, extractItemsFromUrls } from './skills/extract-items.js';
 import { extractDomain } from './skill-store.js';
+import { extractSchema, validateAnswer, type AnswerSchema } from './answer-validator.js';
 import { webSearch } from './web-search.js';
 import type { UserMessage } from './types.js';
 import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
@@ -402,6 +403,7 @@ async function isBrowserAlive(page: CrawlPage): Promise<boolean> {
 }
 
 const PLAN_INJECT_MAX_STEP = 8;
+const DONE_VALIDATION_RETRIES = 3;
 const HISTORY_RECENT_WINDOW = 8;
 const MAX_ACTIONS_PER_STEP = 4;
 const REPLAN_BASE_INTERVAL = 8;
@@ -1193,6 +1195,9 @@ export async function runAgentLoop(
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
 
+  let answerSchema: AnswerSchema | null = null;
+  let doneRetries = 0;
+
   let taskLesson: TaskLesson | null = null;
   if (options?.getLesson !== undefined) {
     try {
@@ -1809,6 +1814,18 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         if (doneBlockReason !== null) {
           agentStep.action.error_feedback = doneBlockReason;
           recentFailureCount++;
+          step++;
+          break;
+        }
+        const answerText = action.answer ?? '';
+        answerSchema ??= await extractSchema(prompt);
+        const validation = validateAnswer(answerSchema, answerText);
+        if (!validation.valid && doneRetries < DONE_VALIDATION_RETRIES) {
+          doneRetries++;
+          const feedback = `Your "done" answer failed validation. Fix these issues and call done again:\n${validation.errors.map((e) => `  - ${e}`).join('\n')}\nRetry ${String(doneRetries)} of ${String(DONE_VALIDATION_RETRIES)}.`;
+          agentStep.action.error_feedback = feedback;
+          logger.info({ step, doneRetries, errors: validation.errors }, 'Done answer rejected by validator');
+          emit('done_rejected', { step, errors: validation.errors });
           step++;
           break;
         }
