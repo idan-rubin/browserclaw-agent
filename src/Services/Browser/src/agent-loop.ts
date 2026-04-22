@@ -230,6 +230,7 @@ When to call "done":
 - HARD CAP on pagination: after you have accumulated records from 2 pages/batches on the same query, STOP paginating. Commit to the best N items that satisfy the explicit constraints from what you already have. If fewer than N qualify after careful filtering, return those you have and state "only X qualifying items were found" — do not silently paginate indefinitely.
 - Only items that came from the filtered list page (or a page paginated from it) count as "filtered". Items pulled from batch detail-page extractions often include "related buildings" / "similar listings" / "nearby" sections that are OUTSIDE your filter — do NOT include those in the final answer unless you verify the item independently satisfies every explicit constraint (location, price, amenities).
 - GROUND each final item with citable page evidence. For each item in the done answer, your reasoning must name the exact source (filtered results page URL, specific record's text snippet, or detail-page text) that confirms each explicit constraint the user asked for. A URL token applying a filter site-wide is NOT sufficient evidence that a given item satisfies that filter — a reviewer must be able to see, from your trace, which extracted text or visible label confirmed it for each item.
+- For every item in the final answer, INCLUDE its canonical URL (the detail/building page URL from the extracted record). This resolves marketing-vs-legal name mismatches — if a site labels a building "315 Main St" but the URL slug is "/building/313-main-st", cite both so the mapping is transparent rather than looking like a hallucination.
 - Interpret boundary words strictly: "under $X" means strictly less than $X (not equal); "at or below $X" or "up to $X" allow equality. Similarly for "before/after" dates, "less than/more than" counts. If a filter tool uses the inclusive bound (e.g. a dropdown at $X) and you want strict "under $X", drop items that land exactly at $X from your final list and pick a lower-priced alternative instead.
 - If the site auto-broadens your location (e.g. "Chelsea +1", "Near X", "including nearby areas"), narrow back to the user's exact location. The URL token, result chip, and each item's address must all match the user-specified location alone — items in adjacent neighborhoods do NOT satisfy a location-specific request, even when the site groups them together.
 - A partial, honest answer delivered now beats a complete answer you never deliver. State uncertainty explicitly — "couldn't verify X" is a valid part of a done answer, but only for optional fields, never for explicit constraints.
@@ -1112,7 +1113,6 @@ export interface AgentLoopOptions {
   >;
   buildTask?: (prompt: string) => string | Promise<string>;
   getLesson?: (prompt: string) => Promise<TaskLesson | null>;
-  /** Lazy-fetch the domain skill. Called when the agent's current URL domain changes so the playbook stays in sync with navigation. */
   getSkill?: (domain: string) => Promise<CatalogSkill | null>;
   config?: Partial<AgentConfig>;
 }
@@ -1194,7 +1194,6 @@ export async function runAgentLoop(
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
 
-  // ── Load task lessons ──────────────────────────────────────────────────────
   let taskLesson: TaskLesson | null = null;
   if (options?.getLesson !== undefined) {
     try {
@@ -1209,7 +1208,6 @@ export async function runAgentLoop(
     }
   }
 
-  // ── Planning + goal refinement (single LLM call) ──────────────────────────
   // If the prompt is vague (e.g. "find apartments in Chelsea"), the planner
   // also produces a SMART task with clear scope and stopping criteria.
   let refinedPrompt = prompt;
@@ -1358,7 +1356,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 
     emit('thinking', { step, message: `Analyzing page: ${title}` });
 
-    // --- Context compression ---
     if (step > 0 && step % CONTEXT_COMPRESS_INTERVAL === 0) {
       contextSummary = await compressContext(refinedPrompt, history, lastProgress);
       if (contextSummary !== '') {
@@ -1367,7 +1364,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       }
     }
 
-    // --- Domain change detection (proactive replanning trigger) ---
     let domainChanged = false;
     try {
       const currentDomain = new URL(url).hostname;
@@ -1379,7 +1375,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       // URL may not be parseable (about:blank etc.)
     }
 
-    // --- Re-planning checkpoint ---
     // Uses adaptive intervals: extends when healthy, contracts on failures.
     // Also triggers on domain changes (proactive).
     const atReplanCheckpoint = step > 0 && step >= nextReplanStep;
@@ -1434,7 +1429,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
     }
 
-    // --- Recovery diagnosis (only when the agent is struggling) ---
     let recoveryMessage: string | null = null;
     if (step > 0 && step % 4 === 0 && recentFailureCount > 0) {
       const recovery = diagnoseStuckAgent(history, url);
@@ -1811,8 +1805,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       });
       emit('tokens', getTokenUsage());
 
-      // --- Terminal actions ---
-
       if (action.action === 'done') {
         const doneBlockReason = shouldBlockDone(pageState, history.length, action.answer);
         if (doneBlockReason !== null) {
@@ -1869,8 +1861,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         step++;
         break; // Need new snapshot after user response
       }
-
-      // --- Special actions (break batch — need new snapshot) ---
 
       if (action.action === 'press_and_hold') {
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
@@ -2020,8 +2010,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         step++;
         break;
       }
-
-      // --- Normal actions ---
 
       const preActionUrl = await holder.page.url();
 
