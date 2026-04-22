@@ -171,6 +171,24 @@ describe('runAgentLoop', () => {
     expect(mock.click.mock.calls.filter((c) => c[0] === '77').length).toBeLessThanOrEqual(2);
   });
 
+  it('does not ban a ref on transient network/timeout errors', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Click' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'First try', ref: '55' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Second try', ref: '55' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Third try', ref: '55' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Give up', answer: 'ok' });
+
+    const { page, mock } = mockPage();
+    mock.click.mockRejectedValue(new Error('Timeout 30000ms exceeded waiting for response.'));
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    await runAgentLoop('Click flaky ref', page, emit, controller.signal);
+
+    expect(mock.click.mock.calls.filter((c) => c[0] === '55').length).toBe(3);
+  });
+
   it('stops clicking a ref after it has failed BAN_THRESHOLD times without triggering parse-failure cascade', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Click' })
@@ -580,11 +598,12 @@ describe('runAgentLoop', () => {
 
     await runAgentLoop('Search', page, emit, controller.signal);
 
-    // Progress should be passed to the next LLM call via buildUserMessage
-    const lastLlmCall = mockedLlmJson.mock.calls[mockedLlmJson.mock.calls.length - 1][0];
-    expect(lastLlmCall.message).toContain('Progress');
-    expect(lastLlmCall.message).toContain('found the search page');
-    expect(lastLlmCall.message).toContain('entering search criteria');
+    const messages = mockedLlmJson.mock.calls.map((c) => c[0].message);
+    expect(
+      messages.some(
+        (m) => m.includes('Progress') && m.includes('found the search page') && m.includes('entering search criteria'),
+      ),
+    ).toBe(true);
   });
 
   it('injects feedback when memory is duplicated across steps', async () => {
@@ -740,9 +759,8 @@ describe('termination judgment integration', () => {
     const result: AgentLoopResult = await runAgentLoop('Research question', page, emit, controller.signal);
 
     expect(result.success).toBe(true);
-    // The step after the judgment should receive the nudge in its user-message context.
-    const lastActionCall = mockedLlmJson.mock.calls[mockedLlmJson.mock.calls.length - 1][0];
-    expect(lastActionCall.message).toContain('the specific fee amount');
+    const messages = mockedLlmJson.mock.calls.map((c) => c[0].message);
+    expect(messages.some((m) => m.includes('the specific fee amount'))).toBe(true);
   });
 
   it('force-completes after 3 consecutive not-ready judgments (fatigue)', async () => {

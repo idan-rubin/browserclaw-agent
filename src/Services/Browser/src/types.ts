@@ -140,6 +140,7 @@ export interface AgentLoopResult {
   error?: string;
   duration_ms: number;
   final_url?: string;
+  validation_warnings?: string[];
 }
 
 export interface CatalogSkill {

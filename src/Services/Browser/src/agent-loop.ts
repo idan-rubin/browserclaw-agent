@@ -8,6 +8,8 @@ import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
 import { TabManager } from './skills/tab-manager.js';
 import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
 import { extractItems, extractItemsFromUrls } from './skills/extract-items.js';
+import { extractDomain } from './skill-store.js';
+import { extractSchema, validateAnswer, type AnswerSchema } from './answer-validator.js';
 import { webSearch } from './web-search.js';
 import type { UserMessage } from './types.js';
 import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
@@ -400,7 +402,6 @@ async function isBrowserAlive(page: CrawlPage): Promise<boolean> {
   }
 }
 
-const SKILL_INJECT_MAX_STEP = 2;
 const PLAN_INJECT_MAX_STEP = 8;
 const HISTORY_RECENT_WINDOW = 8;
 const MAX_ACTIONS_PER_STEP = 4;
@@ -914,6 +915,25 @@ function computeStateSig(url: string, snapshotText: string): string {
   return `${String(payload.length)}:${String(h)}`;
 }
 
+const REF_FAILURE_KEYWORDS = [
+  'not found',
+  'no element',
+  'intercept',
+  'covered',
+  'obscured',
+  'detach',
+  'stale',
+  'disabled',
+  'not interactable',
+];
+
+function isRefFailure(action: AgentAction, err: unknown): boolean {
+  if (action.action !== 'click' && action.action !== 'type' && action.action !== 'select') return false;
+  const raw = err instanceof Error ? err.message : '';
+  const lower = raw.toLowerCase();
+  return REF_FAILURE_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 function describeActionError(action: AgentAction, err: unknown): string {
   const raw = err instanceof Error ? err.message : 'Action execution failed';
   const lower = raw.toLowerCase();
@@ -1112,6 +1132,7 @@ export interface AgentLoopOptions {
   >;
   buildTask?: (prompt: string) => string | Promise<string>;
   getLesson?: (prompt: string) => Promise<TaskLesson | null>;
+  getSkill?: (domain: string) => Promise<CatalogSkill | null>;
   config?: Partial<AgentConfig>;
 }
 
@@ -1129,7 +1150,7 @@ export async function runAgentLoop(
   signal: AbortSignal,
   waitForUser?: () => Promise<string>,
   browser?: BrowserClaw,
-  domainSkill?: CatalogSkill | null,
+  initialDomainSkill?: CatalogSkill | null,
   maxSteps?: number,
   userChat?: UserChatHooks,
   options?: AgentLoopOptions,
@@ -1190,7 +1211,10 @@ export async function runAgentLoop(
     };
   };
 
-  // ── Load task lessons ──────────────────────────────────────────────────────
+  let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
+
+  let answerSchema: AnswerSchema | null = null;
+
   let taskLesson: TaskLesson | null = null;
   if (options?.getLesson !== undefined) {
     try {
@@ -1205,7 +1229,6 @@ export async function runAgentLoop(
     }
   }
 
-  // ── Planning + goal refinement (single LLM call) ──────────────────────────
   // If the prompt is vague (e.g. "find apartments in Chelsea"), the planner
   // also produces a SMART task with clear scope and stopping criteria.
   let refinedPrompt = prompt;
@@ -1213,7 +1236,7 @@ export async function runAgentLoop(
   try {
     const taskInput = options?.buildTask !== undefined ? await options.buildTask(prompt) : prompt;
     let planMessage = `User prompt: ${taskInput}`;
-    if (domainSkill !== undefined && domainSkill !== null) {
+    if (domainSkill !== null) {
       planMessage += `\n\nWe have a proven skill for this site: "${domainSkill.skill.title}" — ${domainSkill.skill.description}`;
       planMessage += '\nLeverage it — no need to rediscover what already works.';
     }
@@ -1272,10 +1295,8 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let lastStateSig: string | null = null;
   let noOpStreak = 0;
   let baselineModalSigs: Set<string> | null = null;
+  let lastLoadedSkillDomain: string | null = domainSkill?.domain ?? null;
   const seenFilterTokens = new Set<string>();
-  const visitedListingUrls = new Set<string>();
-  let lastListExtractStep = -1;
-  let lastListExtractUrls: string[] = [];
   while (step < maxSteps) {
     if (signal.aborted) {
       return {
@@ -1307,6 +1328,30 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     const url = await holder.page.url();
     const title = await holder.page.title();
 
+    if (options?.getSkill !== undefined) {
+      const currentDomain = extractDomain(url);
+      if (currentDomain !== '' && currentDomain !== lastLoadedSkillDomain) {
+        try {
+          const loaded = await options.getSkill(currentDomain);
+          if (loaded !== null) {
+            domainSkill = loaded;
+            emit('skills_loaded', {
+              count: 1,
+              domain: currentDomain,
+              title: loaded.skill.title,
+              run_count: loaded.run_count,
+            });
+          }
+        } catch (err) {
+          logger.warn(
+            { domain: currentDomain, err: err instanceof Error ? err.message : err },
+            'Lazy skill fetch failed',
+          );
+        }
+        lastLoadedSkillDomain = currentDomain;
+      }
+    }
+
     const domText = await getPageText(holder.page);
     const antiBotType = detectAntiBot(domText);
     if (antiBotType !== null) {
@@ -1329,7 +1374,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 
     emit('thinking', { step, message: `Analyzing page: ${title}` });
 
-    // --- Context compression ---
     if (step > 0 && step % CONTEXT_COMPRESS_INTERVAL === 0) {
       contextSummary = await compressContext(refinedPrompt, history, lastProgress);
       if (contextSummary !== '') {
@@ -1338,7 +1382,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       }
     }
 
-    // --- Domain change detection (proactive replanning trigger) ---
     let domainChanged = false;
     try {
       const currentDomain = new URL(url).hostname;
@@ -1350,7 +1393,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       // URL may not be parseable (about:blank etc.)
     }
 
-    // --- Re-planning checkpoint ---
     // Uses adaptive intervals: extends when healthy, contracts on failures.
     // Also triggers on domain changes (proactive).
     const atReplanCheckpoint = step > 0 && step >= nextReplanStep;
@@ -1405,7 +1447,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
     }
 
-    // --- Recovery diagnosis (only when the agent is struggling) ---
     let recoveryMessage: string | null = null;
     if (step > 0 && step % 4 === 0 && recentFailureCount > 0) {
       const recovery = diagnoseStuckAgent(history, url);
@@ -1523,7 +1564,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         );
       }
     }
-    const skillForStep = step <= SKILL_INJECT_MAX_STEP ? domainSkill : undefined;
+    const skillForStep = extractDomain(url) === domainSkill?.domain ? domainSkill : undefined;
     const lessonForStep = step <= PLAN_INJECT_MAX_STEP ? taskLesson : null;
     // Keep plan available for longer — it's cheap context and prevents drift
     const planForStep = step <= PLAN_INJECT_MAX_STEP ? planText : null;
@@ -1738,22 +1779,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       continue;
     }
 
-    if (lastListExtractUrls.length >= 5 && step - lastListExtractStep <= 3 && actions[0]?.action === 'click') {
-      const urls = lastListExtractUrls.filter((u) => !visitedListingUrls.has(u)).slice(0, 8);
-      if (urls.length >= 3) {
-        logger.warn({ step, count: urls.length }, 'batch-urls preempt');
-        actions = [
-          {
-            action: 'extract',
-            reasoning: `Batch-fetching ${String(urls.length)} unseen candidate detail pages in parallel.`,
-            urls,
-          },
-        ];
-        for (const u of urls) visitedListingUrls.add(u);
-        lastListExtractUrls = [];
-      }
-    }
-
     // Execute batch of actions sequentially
     for (let actionIdx = 0; actionIdx < actions.length; actionIdx++) {
       if (step >= maxSteps) break;
@@ -1782,8 +1807,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       });
       emit('tokens', getTokenUsage());
 
-      // --- Terminal actions ---
-
       if (action.action === 'done') {
         const doneBlockReason = shouldBlockDone(pageState, history.length, action.answer);
         if (doneBlockReason !== null) {
@@ -1792,12 +1815,21 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           step++;
           break;
         }
+        const answerText = action.answer ?? '';
+        answerSchema ??= await extractSchema(prompt);
+        const validation = validateAnswer(answerSchema, answerText);
+        const validationWarnings = validation.valid ? undefined : validation.errors;
+        if (validationWarnings !== undefined) {
+          logger.info({ step, warnings: validationWarnings }, 'Done has validation warnings');
+          emit('done_validation_warnings', { step, warnings: validationWarnings });
+        }
         return {
           success: true,
           steps: history,
           answer: action.answer,
           duration_ms: Date.now() - startTime,
           final_url: agentStep.url,
+          validation_warnings: validationWarnings,
         };
       }
 
@@ -1840,8 +1872,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         step++;
         break; // Need new snapshot after user response
       }
-
-      // --- Special actions (break batch — need new snapshot) ---
 
       if (action.action === 'press_and_hold') {
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
@@ -1916,16 +1946,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           }
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
           if (items.count > 0) extractProducedData = true;
-          const urls: string[] = [];
-          for (const r of items.records) {
-            const u = typeof r.url === 'string' ? r.url : '';
-            if (u !== '' && !urls.includes(u)) urls.push(u);
-            if (urls.length >= 10) break;
-          }
-          if (urls.length >= 5) {
-            lastListExtractUrls = urls;
-            lastListExtractStep = step;
-          }
         }
         if (extractProducedData) extractsWithDataCount++;
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
@@ -1991,8 +2011,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         step++;
         break;
       }
-
-      // --- Normal actions ---
 
       const preActionUrl = await holder.page.url();
 
@@ -2075,7 +2093,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('step_error', { step, action: action.action, error: rawMessage });
         agentStep.action.error_feedback = feedback;
         recentFailureCount++;
-        if (action.ref !== undefined && action.ref !== '') {
+        if (action.ref !== undefined && action.ref !== '' && isRefFailure(action, err)) {
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
           entry.failures += 1;
           entry.action = action.action;

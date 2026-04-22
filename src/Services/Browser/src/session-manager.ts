@@ -14,7 +14,7 @@ import type {
 } from './types.js';
 import { runAgentLoop } from './agent-loop.js';
 import { generateSkill, generateSkillTags, mergeSkills } from './skill-generator.js';
-import { judgeRun } from './judge.js';
+import { advisorReview } from './advisor.js';
 import { moderatePrompt } from './content-policy.js';
 import { logPrompt } from './prompt-log.js';
 import {
@@ -320,7 +320,23 @@ async function startAgentLoop(sessionId: string): Promise<void> {
         domainSkill,
         undefined,
         userChatHooks,
-        { getLesson },
+        {
+          getLesson,
+          getSkill: async (domain: string) => {
+            try {
+              const skill = await getSkillForDomain(domain);
+              if (skill !== null && domainSkill === null) {
+                domainSkill = skill;
+                skillsLoadedCount = 1;
+                logger.info({ domain, title: skill.skill.title }, 'Lazy-loaded domain skill');
+              }
+              return skill;
+            } catch (err) {
+              logger.warn({ domain, err: err instanceof Error ? err.message : err }, 'Failed to lazy-load skill');
+              return null;
+            }
+          },
+        },
       );
       const llmCalls = getLLMCallCount();
 
@@ -523,31 +539,20 @@ async function tryGenerateSkill(
   const actionSteps = result.steps.filter((s) => !NON_ACTION_TYPES.has(s.action.action));
   if (actionSteps.length < MIN_STEPS_FOR_SKILL) return 'none';
 
-  // Judge the run before generating a skill — prevent bad runs from becoming skills
-  const verdict = await judgeRun(managed.prompt, result);
-  if (!verdict.success) {
-    logger.info({ reasoning: verdict.reasoning }, 'Judge rejected run — skipping skill generation');
-    emitter('judge_rejected', { reasoning: verdict.reasoning });
-
-    // Save failure notes on existing skill so future runs know about this failure mode
-    if (existing && managed.domain !== null) {
-      try {
-        const failureNotes = [...(existing.skill.failure_notes ?? [])];
-        failureNotes.push(`[${new Date().toISOString().slice(0, 10)}] ${verdict.reasoning.slice(0, 200)}`);
-        // Keep only the last 5 failure notes
-        const trimmedNotes = failureNotes.slice(-5);
-        const updatedSkill = { ...existing.skill, failure_notes: trimmedNotes };
-        await saveSkill(managed.domain, updatedSkill, existing.tags, existing.run_count);
-        logger.info({ domain: managed.domain, notes_count: trimmedNotes.length }, 'Saved failure notes on skill');
-      } catch (err) {
-        logger.warn({ err: err instanceof Error ? err.message : err }, 'Failed to save failure notes');
-      }
-    }
-    return 'none';
+  const review = await advisorReview(managed.prompt, result);
+  if (!review.success) {
+    logger.info({ reasoning: review.reasoning }, 'Advisor flagged quality issues');
+    emitter('advisor_note', { reasoning: review.reasoning });
   }
+  const advisorNote = review.success
+    ? null
+    : `[${new Date().toISOString().slice(0, 10)}] ${review.reasoning.slice(0, 200)}`;
 
   try {
     const skill = await generateSkill(managed.prompt, result);
+    if (advisorNote !== null) {
+      skill.failure_notes = [...(skill.failure_notes ?? []), advisorNote].slice(-5);
+    }
     managed.skill = skill;
     emitter('skill_generated', { skill });
 
@@ -574,6 +579,9 @@ async function tryGenerateSkill(
           } else if (newSteps > oldSteps * 1.5) {
             // Significantly more steps — merge skills to incorporate new learnings
             const merged = await mergeSkills(existing.skill, managed.prompt, result);
+            if (advisorNote !== null) {
+              merged.failure_notes = [...(merged.failure_notes ?? []), advisorNote].slice(-5);
+            }
             managed.skill = merged;
             await saveSkill(managed.domain, merged, tags);
             logger.info(
@@ -592,7 +600,14 @@ async function tryGenerateSkill(
           } else {
             // Similar step count — validated
             const runCount = existing.run_count + 1;
-            await saveSkill(managed.domain, existing.skill, existing.tags, runCount);
+            const toPersist =
+              advisorNote !== null
+                ? {
+                    ...existing.skill,
+                    failure_notes: [...(existing.skill.failure_notes ?? []), advisorNote].slice(-5),
+                  }
+                : existing.skill;
+            await saveSkill(managed.domain, toPersist, existing.tags, runCount);
             logger.info({ domain: managed.domain, title: existing.skill.title, runCount }, 'Skill validated');
             emitter('skill_validated', {
               domain: managed.domain,
