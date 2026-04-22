@@ -75,11 +75,14 @@ function countItems(answer: string): number {
   return matches?.length ?? 0;
 }
 
+const CONTEXT_PRICE_RE = /(?:under|below|less than|up to|at most|max(?:imum)?|cap(?:ped at)?)\s+\$?\s?[\d,]+/gi;
+
 function collectPrices(answer: string): number[] {
+  const stripped = answer.replace(CONTEXT_PRICE_RE, '');
   const re = /\$\s?([\d,]+(?:\.\d+)?)/g;
   const out: number[] = [];
   let m: RegExpExecArray | null;
-  while ((m = re.exec(answer)) !== null) {
+  while ((m = re.exec(stripped)) !== null) {
     const p = parsePrice(m[0]);
     if (p !== null) out.push(p);
   }
@@ -96,7 +99,7 @@ export function validateAnswer(schema: AnswerSchema, answer: string): Validation
   }
 
   for (const field of schema.requiredFields) {
-    if (!new RegExp(field, 'i').test(answer)) {
+    if (!answer.toLowerCase().includes(field.toLowerCase())) {
       errors.push(`Required field "${field}" not mentioned in the answer`);
     }
   }
