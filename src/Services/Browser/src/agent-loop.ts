@@ -8,6 +8,7 @@ import { diagnoseStuckAgent, formatRecovery } from './skills/recovery.js';
 import { TabManager } from './skills/tab-manager.js';
 import { getCdpBaseUrl, activateCdpTarget } from './skills/cdp-utils.js';
 import { extractItems, extractItemsFromUrls } from './skills/extract-items.js';
+import { extractDomain } from './skill-store.js';
 import { webSearch } from './web-search.js';
 import type { UserMessage } from './types.js';
 import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
@@ -400,7 +401,6 @@ async function isBrowserAlive(page: CrawlPage): Promise<boolean> {
   }
 }
 
-const SKILL_INJECT_MAX_STEP = 2;
 const PLAN_INJECT_MAX_STEP = 8;
 const HISTORY_RECENT_WINDOW = 8;
 const MAX_ACTIONS_PER_STEP = 4;
@@ -1523,7 +1523,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         );
       }
     }
-    const skillForStep = step <= SKILL_INJECT_MAX_STEP ? domainSkill : undefined;
+    const skillForStep = extractDomain(url) === domainSkill?.domain ? domainSkill : undefined;
     const lessonForStep = step <= PLAN_INJECT_MAX_STEP ? taskLesson : null;
     // Keep plan available for longer — it's cheap context and prevents drift
     const planForStep = step <= PLAN_INJECT_MAX_STEP ? planText : null;
