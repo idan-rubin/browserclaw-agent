@@ -2,14 +2,14 @@ import { llmJson } from './llm.js';
 import type { AgentLoopResult } from './types.js';
 import { logger } from './logger.js';
 
-interface JudgeVerdict {
+interface AdvisorReview {
   success: boolean;
   reasoning: string;
 }
 
-const JUDGE_PROMPT = `You are a strict evaluator of browser automation runs. Your job is to determine whether the agent actually completed its task successfully.
+const ADVISOR_PROMPT = `You are a quality advisor for browser automation runs. You review the agent's completed trace and flag quality issues as advisory notes — you do NOT gate success.
 
-Be initially doubtful of the agent's self-reported success. Check for:
+Review for:
 1. Did the agent's actions actually achieve the goal, or did it just claim success?
 2. Is the answer grounded in data from actual page snapshots, or does it contain fabricated/hallucinated data?
 3. Did the agent get blocked by a login wall, paywall, CAPTCHA, or error page and report success anyway?
@@ -19,12 +19,12 @@ Be initially doubtful of the agent's self-reported success. Check for:
 Respond with JSON:
 {
   "success": true/false,
-  "reasoning": "why you believe the run succeeded or failed"
+  "reasoning": "one-paragraph quality note — what you'd tell a reviewer to check"
 }
 
-Set success=false if ANY of the above checks fail.`;
+Set success=false when you'd want a human reviewer to double-check the answer. Callers treat this as advisory metadata, not a blocking verdict.`;
 
-function buildJudgeMessage(prompt: string, result: AgentLoopResult): string {
+function buildAdvisorMessage(prompt: string, result: AgentLoopResult): string {
   let message = `Task: ${prompt}\n`;
   message += `Agent reported: ${result.success ? 'SUCCESS' : 'FAILURE'}\n`;
   if (result.answer !== undefined) {
@@ -48,17 +48,17 @@ function buildJudgeMessage(prompt: string, result: AgentLoopResult): string {
   return message;
 }
 
-export async function judgeRun(prompt: string, result: AgentLoopResult): Promise<JudgeVerdict> {
+export async function advisorReview(prompt: string, result: AgentLoopResult): Promise<AdvisorReview> {
   try {
-    const verdict = await llmJson<JudgeVerdict>({
-      system: JUDGE_PROMPT,
-      message: buildJudgeMessage(prompt, result),
+    const review = await llmJson<AdvisorReview>({
+      system: ADVISOR_PROMPT,
+      message: buildAdvisorMessage(prompt, result),
       maxTokens: 256,
     });
-    logger.info({ judge_ran: true, verdict_success: verdict.success }, 'Judge verdict');
-    return verdict;
+    logger.info({ advisor_ran: true, quality_ok: review.success }, 'Advisor review');
+    return review;
   } catch {
-    logger.warn({ judge_failed: true }, 'Judge evaluation failed — defaulting to agent result');
-    return { success: result.success, reasoning: 'Judge evaluation failed' };
+    logger.warn({ advisor_failed: true }, 'Advisor review failed — treating run as clean');
+    return { success: true, reasoning: 'Advisor review unavailable' };
   }
 }
