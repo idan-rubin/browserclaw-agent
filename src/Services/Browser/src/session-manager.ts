@@ -320,7 +320,23 @@ async function startAgentLoop(sessionId: string): Promise<void> {
         domainSkill,
         undefined,
         userChatHooks,
-        { getLesson },
+        {
+          getLesson,
+          getSkill: async (domain: string) => {
+            try {
+              const skill = await getSkillForDomain(domain);
+              if (skill !== null && domainSkill === null) {
+                domainSkill = skill;
+                skillsLoadedCount = 1;
+                logger.info({ domain, title: skill.skill.title }, 'Lazy-loaded domain skill');
+              }
+              return skill;
+            } catch (err) {
+              logger.warn({ domain, err: err instanceof Error ? err.message : err }, 'Failed to lazy-load skill');
+              return null;
+            }
+          },
+        },
       );
       const llmCalls = getLLMCallCount();
 

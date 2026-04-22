@@ -1112,6 +1112,8 @@ export interface AgentLoopOptions {
   >;
   buildTask?: (prompt: string) => string | Promise<string>;
   getLesson?: (prompt: string) => Promise<TaskLesson | null>;
+  /** Lazy-fetch the domain skill. Called when the agent's current URL domain changes so the playbook stays in sync with navigation. */
+  getSkill?: (domain: string) => Promise<CatalogSkill | null>;
   config?: Partial<AgentConfig>;
 }
 
@@ -1129,7 +1131,7 @@ export async function runAgentLoop(
   signal: AbortSignal,
   waitForUser?: () => Promise<string>,
   browser?: BrowserClaw,
-  domainSkill?: CatalogSkill | null,
+  initialDomainSkill?: CatalogSkill | null,
   maxSteps?: number,
   userChat?: UserChatHooks,
   options?: AgentLoopOptions,
@@ -1190,6 +1192,8 @@ export async function runAgentLoop(
     };
   };
 
+  let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
+
   // ── Load task lessons ──────────────────────────────────────────────────────
   let taskLesson: TaskLesson | null = null;
   if (options?.getLesson !== undefined) {
@@ -1213,7 +1217,7 @@ export async function runAgentLoop(
   try {
     const taskInput = options?.buildTask !== undefined ? await options.buildTask(prompt) : prompt;
     let planMessage = `User prompt: ${taskInput}`;
-    if (domainSkill !== undefined && domainSkill !== null) {
+    if (domainSkill !== null) {
       planMessage += `\n\nWe have a proven skill for this site: "${domainSkill.skill.title}" — ${domainSkill.skill.description}`;
       planMessage += '\nLeverage it — no need to rediscover what already works.';
     }
@@ -1272,6 +1276,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
   let lastStateSig: string | null = null;
   let noOpStreak = 0;
   let baselineModalSigs: Set<string> | null = null;
+  let lastLoadedSkillDomain: string | null = domainSkill?.domain ?? null;
   const seenFilterTokens = new Set<string>();
   const visitedListingUrls = new Set<string>();
   let lastListExtractStep = -1;
@@ -1306,6 +1311,30 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     let snapshot = await safeSnapshot(holder.page);
     const url = await holder.page.url();
     const title = await holder.page.title();
+
+    if (options?.getSkill !== undefined) {
+      const currentDomain = extractDomain(url);
+      if (currentDomain !== '' && currentDomain !== lastLoadedSkillDomain) {
+        try {
+          const loaded = await options.getSkill(currentDomain);
+          if (loaded !== null) {
+            domainSkill = loaded;
+            emit('skills_loaded', {
+              count: 1,
+              domain: currentDomain,
+              title: loaded.skill.title,
+              run_count: loaded.run_count,
+            });
+          }
+        } catch (err) {
+          logger.warn(
+            { domain: currentDomain, err: err instanceof Error ? err.message : err },
+            'Lazy skill fetch failed',
+          );
+        }
+        lastLoadedSkillDomain = currentDomain;
+      }
+    }
 
     const domText = await getPageText(holder.page);
     const antiBotType = detectAntiBot(domText);
