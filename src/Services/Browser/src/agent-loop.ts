@@ -1829,12 +1829,18 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           step++;
           break;
         }
+        const validationWarnings = validation.valid ? undefined : validation.errors;
+        if (validationWarnings !== undefined) {
+          logger.warn({ step, errors: validationWarnings }, 'Done accepted after retry cap despite validation errors');
+          emit('done_accepted_with_warnings', { step, errors: validationWarnings });
+        }
         return {
           success: true,
           steps: history,
           answer: action.answer,
           duration_ms: Date.now() - startTime,
           final_url: agentStep.url,
+          validation_warnings: validationWarnings,
         };
       }
 
@@ -1882,7 +1888,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
           agentStep.action.error_feedback =
-            'press_and_hold did not clear the challenge on this attempt — the blocking page is still present. The hold timing varies per attempt; try press_and_hold ONE more time with a higher hold_ms (e.g. 12000-15000). If it still fails after that retry, use click_cloudflare or ask_user.';
+            'press_and_hold did not clear the challenge on this attempt — the blocking page is still present. The hold timing varies per attempt; try press_and_hold ONE more time with a higher hold_ms (e.g. 12000-15000). If it still fails after that retry, and the task is NOT specific to this site, navigate to a DIFFERENT well-known site that serves the same need and continue there. Only call fail when every reasonable alternative site has been tried.';
         }
         step++;
         break;
