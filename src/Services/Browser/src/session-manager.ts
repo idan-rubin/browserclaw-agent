@@ -579,6 +579,9 @@ async function tryGenerateSkill(
           } else if (newSteps > oldSteps * 1.5) {
             // Significantly more steps — merge skills to incorporate new learnings
             const merged = await mergeSkills(existing.skill, managed.prompt, result);
+            if (advisorNote !== null) {
+              merged.failure_notes = [...(merged.failure_notes ?? []), advisorNote].slice(-5);
+            }
             managed.skill = merged;
             await saveSkill(managed.domain, merged, tags);
             logger.info(
@@ -597,7 +600,14 @@ async function tryGenerateSkill(
           } else {
             // Similar step count — validated
             const runCount = existing.run_count + 1;
-            await saveSkill(managed.domain, existing.skill, existing.tags, runCount);
+            const toPersist =
+              advisorNote !== null
+                ? {
+                    ...existing.skill,
+                    failure_notes: [...(existing.skill.failure_notes ?? []), advisorNote].slice(-5),
+                  }
+                : existing.skill;
+            await saveSkill(managed.domain, toPersist, existing.tags, runCount);
             logger.info({ domain: managed.domain, title: existing.skill.title, runCount }, 'Skill validated');
             emitter('skill_validated', {
               domain: managed.domain,

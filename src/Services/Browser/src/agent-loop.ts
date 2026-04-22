@@ -403,7 +403,6 @@ async function isBrowserAlive(page: CrawlPage): Promise<boolean> {
 }
 
 const PLAN_INJECT_MAX_STEP = 8;
-const DONE_VALIDATION_RETRIES = 3;
 const HISTORY_RECENT_WINDOW = 8;
 const MAX_ACTIONS_PER_STEP = 4;
 const REPLAN_BASE_INTERVAL = 8;
@@ -1196,7 +1195,6 @@ export async function runAgentLoop(
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
 
   let answerSchema: AnswerSchema | null = null;
-  let doneRetries = 0;
 
   let taskLesson: TaskLesson | null = null;
   if (options?.getLesson !== undefined) {
@@ -1820,19 +1818,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const answerText = action.answer ?? '';
         answerSchema ??= await extractSchema(prompt);
         const validation = validateAnswer(answerSchema, answerText);
-        if (!validation.valid && doneRetries < DONE_VALIDATION_RETRIES) {
-          doneRetries++;
-          const feedback = `Your "done" answer failed validation. Fix these issues and call done again:\n${validation.errors.map((e) => `  - ${e}`).join('\n')}\nRetry ${String(doneRetries)} of ${String(DONE_VALIDATION_RETRIES)}.`;
-          agentStep.action.error_feedback = feedback;
-          logger.info({ step, doneRetries, errors: validation.errors }, 'Done answer rejected by validator');
-          emit('done_rejected', { step, errors: validation.errors });
-          step++;
-          break;
-        }
         const validationWarnings = validation.valid ? undefined : validation.errors;
         if (validationWarnings !== undefined) {
-          logger.warn({ step, errors: validationWarnings }, 'Done accepted after retry cap despite validation errors');
-          emit('done_accepted_with_warnings', { step, errors: validationWarnings });
+          logger.info({ step, warnings: validationWarnings }, 'Done has validation warnings');
+          emit('done_validation_warnings', { step, warnings: validationWarnings });
         }
         return {
           success: true,
@@ -1888,7 +1877,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
           agentStep.action.error_feedback =
-            'press_and_hold did not clear the challenge on this attempt — the blocking page is still present. The hold timing varies per attempt; try press_and_hold ONE more time with a higher hold_ms (e.g. 12000-15000). If it still fails after that retry, and the task is NOT specific to this site, navigate to a DIFFERENT well-known site that serves the same need and continue there. Only call fail when every reasonable alternative site has been tried.';
+            'press_and_hold did not clear the challenge on this attempt — the blocking page is still present. The hold timing varies per attempt; try press_and_hold ONE more time with a higher hold_ms (e.g. 12000-15000). If it still fails after that retry, use click_cloudflare or ask_user.';
         }
         step++;
         break;
