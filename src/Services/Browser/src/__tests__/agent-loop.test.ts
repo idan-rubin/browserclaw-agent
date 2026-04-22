@@ -683,8 +683,7 @@ describe('shouldCheckTermination', () => {
 });
 
 describe('termination judgment integration', () => {
-  it('force-completes when the judge rules the answer is ready', async () => {
-    // 1 plan + 8 step actions + 1 judgment call at step 8
+  it('nudges the agent to call done when the judge rules the answer is ready', async () => {
     mockedLlmJson.mockResolvedValueOnce({ plan: 'Gather data' });
     for (let i = 0; i < 8; i++) {
       mockedLlmJson.mockResolvedValueOnce({
@@ -695,7 +694,12 @@ describe('termination judgment integration', () => {
     }
     mockedLlmJson.mockResolvedValueOnce({
       status: 'ready',
-      answer: 'Final structured answer from the judge.',
+      answer: 'Judge-constructed answer (ignored — agent crafts its own).',
+    });
+    mockedLlmJson.mockResolvedValueOnce({
+      action: 'done',
+      reasoning: 'Judge said I have enough — finalizing with memory.',
+      answer: 'Agent-crafted final answer grounded in memory.',
     });
 
     const { page } = mockPage();
@@ -705,7 +709,7 @@ describe('termination judgment integration', () => {
     const result: AgentLoopResult = await runAgentLoop('Research question', page, emit, controller.signal);
 
     expect(result.success).toBe(true);
-    expect(result.answer).toBe('Final structured answer from the judge.');
+    expect(result.answer).toBe('Agent-crafted final answer grounded in memory.');
     const doneStep = result.steps[result.steps.length - 1];
     expect(doneStep.action.action).toBe('done');
   });

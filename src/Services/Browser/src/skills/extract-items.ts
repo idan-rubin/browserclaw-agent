@@ -8,11 +8,11 @@ export interface ExtractItemsResult {
   truncated: boolean;
 }
 
-const MAX_RECORDS = 20;
+const MAX_RECORDS = 50;
 
 const EXTRACTION_FN = `
 (function() {
-  const MAX = 20;
+  const MAX = 50;
   const seen = new Set();
 
   function isItemLike(obj) {
@@ -204,12 +204,12 @@ const EXTRACTION_FN = `
   }
 
   function tryDom() {
-    const candidates = document.querySelectorAll('article, li, [class*="card" i], [class*="listing" i], [class*="item" i], [data-testid*="card" i], [data-testid*="listing" i]');
+    const candidates = document.querySelectorAll('article, li, section, [role="listitem"], [role="article"], [class*="card" i], [class*="listing" i], [class*="item" i], [class*="result" i], [class*="search" i][class*="card" i], [data-testid*="card" i], [data-testid*="listing" i], [data-qa*="card" i], [data-qa*="listing" i], [data-qa*="result" i]');
     const out = [];
     for (const el of candidates) {
       if (out.length >= MAX) break;
       const text = (el.innerText || '').trim();
-      if (text.length < 20 || text.length > 800) continue;
+      if (text.length < 15 || text.length > 1500) continue;
       const link = el.querySelector('a[href]');
       const href = link ? link.href : null;
       if (!href) continue;
@@ -238,11 +238,11 @@ const EXTRACTION_FN = `
 
   var domOnly = tryDom();
   if (domOnly && domOnly.length >= 3) {
-    var withSignals = 0;
+    var strong = [];
     for (var k = 0; k < domOnly.length; k++) {
-      if (Object.keys(domOnly[k]).length >= 3) withSignals++;
+      if (Object.keys(domOnly[k]).length >= 3) strong.push(domOnly[k]);
     }
-    if (withSignals * 2 >= domOnly.length) return { source: 'dom', records: domOnly.slice(0, MAX) };
+    if (strong.length >= 3) return { source: 'dom', records: strong.slice(0, MAX) };
   }
 
   var results = tryNextData();
@@ -264,8 +264,32 @@ const EXTRACTION_FN = `
 })()
 `;
 
+const LAZY_LOAD_TRIGGER_FN = `
+(async function() {
+  const start = Date.now();
+  const step = Math.max(400, window.innerHeight);
+  let pos = 0;
+  let lastHeight = 0;
+  while (Date.now() - start < 5000) {
+    pos += step;
+    window.scrollTo(0, pos);
+    await new Promise(function(r) { setTimeout(r, 400); });
+    const h = document.body.scrollHeight;
+    if (pos >= h && h === lastHeight) break;
+    lastHeight = h;
+  }
+  window.scrollTo(0, 0);
+  await new Promise(function(r) { setTimeout(r, 300); });
+})()
+`;
+
 export async function extractItems(page: CrawlPage): Promise<ExtractItemsResult> {
   try {
+    try {
+      await page.evaluate(LAZY_LOAD_TRIGGER_FN);
+    } catch (scrollErr) {
+      logger.warn({ err: scrollErr instanceof Error ? scrollErr.message : scrollErr }, 'extract-items: lazy-load trigger failed');
+    }
     const raw = await page.evaluate(EXTRACTION_FN);
     if (raw === null || typeof raw !== 'object') {
       return { source: 'none', count: 0, records: [], truncated: false };

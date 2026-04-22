@@ -183,7 +183,7 @@ Filters and search — strategy in order of preference:
 
 4. **Always verify** that a filter landed: the result count dropped, or visible values are in range. If the site header still says "Any price" after you set one, the filter didn't stick — don't trust it.
 
-5. **Never invent URL slugs**. Only construct URLs using exact tokens you have observed on the site (visible link href, or the URL right after a filter click). If no observed pattern exists for a filter, use the UI or skip that filter — do not guess.
+5. **Build URLs from observed tokens; extend the pattern only when the UI is blocked.** Always start from exact tokens you've seen. When the site uses a /key:value/ or ?key=value pattern for some filters AND the UI cannot apply another filter (dropdown stuck, field hidden, no-op clicks), try the same pattern with a plausible key (e.g. /price:-MAXVALUE/, ?price_max=MAXVALUE) in ONE test navigate. After navigating, VERIFY the filter landed by reading the page header, filter chip, or result count — note the specific text you see (e.g. "Max $4,200" in header) in your memory. If the page shows no such evidence, treat the filter as not applied and either try an alternate pattern or fall back to per-listing verification. Never call "done" after a guessed URL token without naming the visible evidence that confirmed it.
 
 6. After any filter interaction, submit it explicitly (press Enter, click Apply/Search) if the site requires it.
 
@@ -212,7 +212,8 @@ When results don't appear — suspect the page first:
 Filter workflow — set, submit, verify:
 - Typing a value into a filter field is NOT the same as applying the filter. After typing, you MUST submit — press Enter, click the Apply/Search/Done button, or close the filter popover if the site applies on close. Without submit, the filter has no effect.
 - On most listing/search sites, active filters are encoded as URL query params (e.g. "?price_max=4200&pets=dog"). A navigation that changes the URL and drops those params drops the filters.
-- After submitting, CONFIRM the filter took effect. URL params alone aren't enough — a 404 URL can still contain them. Require a visible filter chip matching the constraint OR a change in the result count/first results. Don't extract listings until confirmed.
+- After submitting, CONFIRM the filter took effect. URL params alone aren't enough — a 404 URL can still contain them. Require a visible filter chip matching the constraint OR a change in the result count/first results.
+- If the filter UI is unresponsive (no-ops, missing controls) after 2-3 tries, STOP fighting the UI. Extract the partially-filtered list anyway — each record typically contains price, address, amenities in its text or fields — and filter in memory against the prompt's constraints. A list page with results IS the answer when the UI is broken.
 
 Before giving up:
 - If one approach fails, try a different path. Don't repeat the same failed action.
@@ -224,6 +225,11 @@ When to call "done":
 - Once all constraints are satisfied and your "memory" contains the answer, "done" is your next action. Missing a sub-detail (one nice-to-have field) is not a reason to keep gathering.
 - When the task asks for a list of items with named per-item fields, every named field is required for every item you report. If an item is missing any named field, do a focused follow-up extract for that field, or drop the item and get another that has all fields. Never call done with items that have "not recovered" or "unknown" in a named field.
 - If an item you considered fails one of the task's explicit constraints (price over cap, wrong location, wrong date, etc.), drop it and keep hunting — open the next candidate from the list, scroll for more, or paginate. Do not call done with fewer qualifying items than the task asked for just because the first few you inspected didn't qualify.
+- HARD CAP on pagination: after you have accumulated records from 2 pages/batches on the same query, STOP paginating. Commit to the best N items that satisfy the explicit constraints from what you already have. If fewer than N qualify after careful filtering, return those you have and state "only X qualifying items were found" — do not silently paginate indefinitely.
+- Only items that came from the filtered list page (or a page paginated from it) count as "filtered". Items pulled from batch detail-page extractions often include "related buildings" / "similar listings" / "nearby" sections that are OUTSIDE your filter — do NOT include those in the final answer unless you verify the item independently satisfies every explicit constraint (location, price, amenities).
+- GROUND each final item with citable page evidence. For each item in the done answer, your reasoning must name the exact source (filtered results page URL, specific record's text snippet, or detail-page text) that confirms each explicit constraint the user asked for. A URL token applying a filter site-wide is NOT sufficient evidence that a given item satisfies that filter — a reviewer must be able to see, from your trace, which extracted text or visible label confirmed it for each item.
+- Interpret boundary words strictly: "under $X" means strictly less than $X (not equal); "at or below $X" or "up to $X" allow equality. Similarly for "before/after" dates, "less than/more than" counts. If a filter tool uses the inclusive bound (e.g. a dropdown at $X) and you want strict "under $X", drop items that land exactly at $X from your final list and pick a lower-priced alternative instead.
+- If the site auto-broadens your location (e.g. "Chelsea +1", "Near X", "including nearby areas"), narrow back to the user's exact location. The URL token, result chip, and each item's address must all match the user-specified location alone — items in adjacent neighborhoods do NOT satisfy a location-specific request, even when the site groups them together.
 - A partial, honest answer delivered now beats a complete answer you never deliver. State uncertainty explicitly — "couldn't verify X" is a valid part of a done answer, but only for optional fields, never for explicit constraints.
 - Do not extract, scroll, or click "just to be sure" once every constraint is satisfied. That is how runs time out.
 - Exception — transactional tasks (book, buy, submit, send): verify the action actually completed. A click on "Submit" is not the same as a successful submission; look for confirmation text, a reference number, or a state change before calling done.
@@ -264,16 +270,50 @@ const NAVIGATE_TIMEOUT_MS = 30000;
 // modal — the modal's own content lives in a scrollable descendant.
 const SCROLL_AT_VIEWPORT_FN = `
   (function(dy) {
-    var cx = Math.floor(window.innerWidth / 2);
-    var cy = Math.floor(window.innerHeight / 2);
-    var el = document.elementFromPoint(cx, cy);
-    while (el && el !== document.body && el !== document.documentElement) {
-      var s = window.getComputedStyle(el);
-      if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
-        el.scrollBy(0, dy);
+    function findScrollableFrom(el) {
+      while (el && el !== document.body && el !== document.documentElement) {
+        var s = window.getComputedStyle(el);
+        if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
+          return el;
+        }
+        el = el.parentElement;
+      }
+      return null;
+    }
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var points = [
+      [vw / 2, vh / 2],
+      [vw / 2, vh / 4],
+      [vw / 2, (3 * vh) / 4],
+      [vw / 4, vh / 2],
+      [(3 * vw) / 4, vh / 2],
+    ];
+    for (var i = 0; i < points.length; i++) {
+      var hit = findScrollableFrom(document.elementFromPoint(Math.floor(points[i][0]), Math.floor(points[i][1])));
+      if (hit) {
+        hit.scrollBy(0, dy);
         return;
       }
-      el = el.parentElement;
+    }
+    var all = document.querySelectorAll('*');
+    var biggest = null;
+    var biggestArea = 0;
+    for (var j = 0; j < all.length; j++) {
+      var node = all[j];
+      var ns = window.getComputedStyle(node);
+      if ((ns.overflowY === 'auto' || ns.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1) {
+        var r = node.getBoundingClientRect();
+        var area = r.width * r.height;
+        if (area > biggestArea) {
+          biggestArea = area;
+          biggest = node;
+        }
+      }
+    }
+    if (biggest) {
+      biggest.scrollBy(0, dy);
+      return;
     }
     window.scrollBy(0, dy);
   })
@@ -1413,29 +1453,30 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       if (mem.trim().length > 0) {
         const judgment = await judgeTermination(refinedPrompt, mem, history);
         if (judgment.ready) {
-          logger.info({ step }, 'Judge: answer ready — force-completing');
-          return await forceComplete('Judge ruled answer ready', judgment.answer);
-        }
-        const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
-        const extractsGrew = extractsWithDataCount > lastJudgmentExtractsWithData;
-        lastJudgmentMemoryLength = mem.length;
-        lastJudgmentExtractsWithData = extractsWithDataCount;
-        if (memoryGrew || extractsGrew) {
-          consecutiveNotReadyJudgments = 0;
+          logger.info({ step }, 'Judge: answer ready — nudging agent to call done');
+          terminationNudge = `READY TO FINISH: a progress check determined you have enough data to answer the user's question. Call "done" on your next step with the answer grounded in your memory. Double-check that every item you list satisfies the user's constraints and that building/address/price values are the actual values from the extracts.`;
         } else {
-          consecutiveNotReadyJudgments++;
+          const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
+          const extractsGrew = extractsWithDataCount > lastJudgmentExtractsWithData;
+          lastJudgmentMemoryLength = mem.length;
+          lastJudgmentExtractsWithData = extractsWithDataCount;
+          if (memoryGrew || extractsGrew) {
+            consecutiveNotReadyJudgments = 0;
+          } else {
+            consecutiveNotReadyJudgments++;
+          }
+          if (consecutiveNotReadyJudgments >= JUDGE_FATIGUE_LIMIT) {
+            logger.warn(
+              { step, nudges: consecutiveNotReadyJudgments, stillMissing: judgment.missing },
+              'Judge fatigue — force-completing with partial answer',
+            );
+            return await forceComplete(
+              `Fatigue: ${String(consecutiveNotReadyJudgments)} consecutive not-ready judgments; still missing "${judgment.missing}"`,
+            );
+          }
+          logger.info({ step, missing: judgment.missing }, 'Judge: not ready — nudging agent');
+          terminationNudge = `PROGRESS CHECK: you have been gathering data but the question is still not answerable. Still missing: ${judgment.missing}. Focus your next action on that specifically — do not repeat extractions you have already tried. This is nudge ${String(consecutiveNotReadyJudgments)} of ${String(JUDGE_FATIGUE_LIMIT)}; on the next unsuccessful check the run will force-complete with a partial answer.`;
         }
-        if (consecutiveNotReadyJudgments >= JUDGE_FATIGUE_LIMIT) {
-          logger.warn(
-            { step, nudges: consecutiveNotReadyJudgments, stillMissing: judgment.missing },
-            'Judge fatigue — force-completing with partial answer',
-          );
-          return await forceComplete(
-            `Fatigue: ${String(consecutiveNotReadyJudgments)} consecutive not-ready judgments; still missing "${judgment.missing}"`,
-          );
-        }
-        logger.info({ step, missing: judgment.missing }, 'Judge: not ready — nudging agent');
-        terminationNudge = `PROGRESS CHECK: you have been gathering data but the question is still not answerable. Still missing: ${judgment.missing}. Focus your next action on that specifically — do not repeat extractions you have already tried. This is nudge ${String(consecutiveNotReadyJudgments)} of ${String(JUDGE_FATIGUE_LIMIT)}; on the next unsuccessful check the run will force-complete with a partial answer.`;
       }
     }
 
@@ -1805,7 +1846,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
           agentStep.action.error_feedback =
-            'press_and_hold did NOT solve the challenge — the blocking page is still present. Do not retry press_and_hold. Try click_cloudflare, or ask_user for help.';
+            'press_and_hold did not clear the challenge on this attempt — the blocking page is still present. The hold timing varies per attempt; try press_and_hold ONE more time with a higher hold_ms (e.g. 12000-15000). If it still fails after that retry, use click_cloudflare or ask_user.';
         }
         step++;
         break;
@@ -1837,11 +1878,17 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         } else if (action.urls !== undefined && action.urls.length > 0 && browser !== undefined) {
           for (const url of action.urls) assertNavigateUrlAllowed(url);
           const batch = await extractItemsFromUrls(browser, action.urls);
-          const payload = JSON.stringify({
-            count: batch.count,
-            records: batch.records,
-            failedUrls: batch.failedUrls,
-          });
+          const header =
+            batch.count >= 5
+              ? `${String(batch.count)} records fetched across ${String(action.urls.length)} URLs. This is your data — parse the records and respond. Do NOT open individual URLs again; fields the user asked for (price, address, name) are embedded in each record's text or fields.\n`
+              : '';
+          const payload =
+            header +
+            JSON.stringify({
+              count: batch.count,
+              records: batch.records,
+              failedUrls: batch.failedUrls,
+            });
           agentStep.action.extract_result = payload.slice(0, EXTRACT_RESULT_MAX_CHARS);
           if (payload.length > EXTRACT_RESULT_MAX_CHARS) {
             agentStep.action.extract_result += '\n…(truncated)';
@@ -1850,12 +1897,18 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           if (batch.count > 0) extractProducedData = true;
         } else {
           const items = await extractItems(holder.page);
-          const payload = JSON.stringify({
-            source: items.source,
-            count: items.count,
-            truncated: items.truncated,
-            records: items.records,
-          });
+          const header =
+            items.count >= 5
+              ? `${String(items.count)} records extracted from ${items.source}. This is your data — parse the records and respond. Drill into an individual listing ONLY if a record is missing a specific field the user asked for; for counts/summaries, answer directly from these records.\n`
+              : '';
+          const payload =
+            header +
+            JSON.stringify({
+              source: items.source,
+              count: items.count,
+              truncated: items.truncated,
+              records: items.records,
+            });
           agentStep.action.extract_result = payload.slice(0, EXTRACT_RESULT_MAX_CHARS);
           if (payload.length > EXTRACT_RESULT_MAX_CHARS) {
             agentStep.action.extract_result += '\n…(truncated)';

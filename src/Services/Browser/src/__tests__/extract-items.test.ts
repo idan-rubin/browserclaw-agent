@@ -31,11 +31,11 @@ describe('extractItems', () => {
   });
 
   it('marks truncated when records exceed cap', async () => {
-    const records = Array.from({ length: 25 }, (_, i) => ({ id: i, url: `https://x/${String(i)}` }));
+    const records = Array.from({ length: 60 }, (_, i) => ({ id: i, url: `https://x/${String(i)}` }));
     const page = mockPage(() => ({ source: 'dom', records }));
     const result = await extractItems(page);
     expect(result.truncated).toBe(true);
-    expect(result.records).toHaveLength(20);
+    expect(result.records).toHaveLength(50);
   });
 
   it('swallows evaluator errors and returns none', async () => {
