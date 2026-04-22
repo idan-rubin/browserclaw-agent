@@ -1,4 +1,4 @@
-import { llmJson, sanitizeErrorText } from './llm.js';
+import { llmJson } from './llm.js';
 import { logger } from './logger.js';
 
 export interface AnswerSchema {
@@ -52,8 +52,8 @@ export async function extractSchema(prompt: string): Promise<AnswerSchema> {
       priceCapInclusive: schema.priceCapInclusive,
       location: schema.location ?? undefined,
     };
-  } catch (err) {
-    logger.warn({ err: err instanceof Error ? sanitizeErrorText(err.message) : 'unknown' }, 'Schema extraction failed');
+  } catch {
+    logger.warn('Schema extraction failed');
     return { isListTask: false, count: 1, requiredFields: [], priceCapInclusive: false };
   }
 }
