@@ -247,6 +247,29 @@ describe('runAgentLoop', () => {
     expect(aborted).toBeDefined();
   });
 
+  it('when no waitForUser is passed, ask_user feeds back a pivot nudge instead of terminating', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Try to gather' })
+      .mockResolvedValueOnce({ action: 'ask_user', reasoning: 'I am stuck', text: 'Which site?' })
+      .mockResolvedValueOnce({ action: 'navigate', reasoning: 'Pivot to another site', url: 'https://example.com' })
+      .mockResolvedValueOnce({
+        action: 'done',
+        reasoning: 'Finished after pivot',
+        answer: 'Pivoted and finished the task with a substantive answer.',
+      });
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Stuck task', page, emit, controller.signal);
+
+    expect(result.success).toBe(true);
+    const askStep = result.steps.find((s) => s.action.action === 'ask_user');
+    expect(askStep?.action.error_feedback).toContain('No interactive user');
+    expect(result.steps[result.steps.length - 1].action.action).toBe('done');
+  });
+
   it('executes type action correctly', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Type something' })
