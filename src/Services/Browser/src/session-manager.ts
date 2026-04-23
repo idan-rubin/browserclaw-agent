@@ -24,7 +24,7 @@ import {
   MAX_INTERJECTIONS_PER_RUN,
   INTERJECTION_MIN_INTERVAL_MS,
 } from './config.js';
-import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig } from './llm.js';
+import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig, sanitizeErrorText } from './llm.js';
 import { extractDomain, getSkillForDomain, getSkillsForDomains, saveSkill } from './skill-store.js';
 import { saveLesson, extractDomainLessons, getLesson } from './lesson-store.js';
 import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
@@ -431,8 +431,10 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     }
   } catch (err) {
     managed.status = 'failed';
-    const message = err instanceof Error ? err.message : 'Agent loop crashed';
-    logger.error({ sessionId, crashed: true }, 'Agent loop crashed');
+    const rawMessage = err instanceof Error ? err.message : 'Agent loop crashed';
+    const message = sanitizeErrorText(rawMessage);
+    const stack = err instanceof Error && err.stack !== undefined ? sanitizeErrorText(err.stack) : undefined;
+    logger.error({ sessionId, crashed: true, message, stack }, 'Agent loop crashed');
     emitter('failed', { step: 0, error: message });
   }
 
@@ -546,7 +548,7 @@ async function tryGenerateSkill(
   }
   const advisorNote = review.success
     ? null
-    : `[${new Date().toISOString().slice(0, 10)}] ${review.reasoning.slice(0, 200)}`;
+    : `[${new Date().toISOString().slice(0, 10)}] ${review.reasoning.slice(0, 500)}`;
 
   try {
     const skill = await generateSkill(managed.prompt, result);
@@ -566,9 +568,10 @@ async function tryGenerateSkill(
           const newSteps = skill.steps.length;
 
           if (newSteps < oldSteps) {
-            // Fewer steps — improved (more efficient)
-            await saveSkill(managed.domain, skill, tags);
-            logger.info({ domain: managed.domain, oldSteps, newSteps }, 'Skill improved');
+            // Fewer steps — improved (more efficient). Carry run history forward.
+            const runCount = existing.run_count + 1;
+            await saveSkill(managed.domain, skill, tags, runCount);
+            logger.info({ domain: managed.domain, oldSteps, newSteps, runCount }, 'Skill improved');
             emitter('skill_improved', {
               domain: managed.domain,
               title: skill.title,
@@ -583,9 +586,10 @@ async function tryGenerateSkill(
               merged.failure_notes = [...(merged.failure_notes ?? []), advisorNote].slice(-5);
             }
             managed.skill = merged;
-            await saveSkill(managed.domain, merged, tags);
+            const runCount = existing.run_count + 1;
+            await saveSkill(managed.domain, merged, tags, runCount);
             logger.info(
-              { domain: managed.domain, oldSteps, newSteps, mergedSteps: merged.steps.length },
+              { domain: managed.domain, oldSteps, newSteps, mergedSteps: merged.steps.length, runCount },
               'Skill refined',
             );
             emitter('skill_refined', {
