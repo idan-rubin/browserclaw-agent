@@ -733,7 +733,7 @@ describe('termination judgment integration', () => {
     expect(doneStep.action.action).toBe('done');
   });
 
-  it('nudges the agent with the missing data when the judge says not ready', async () => {
+  it('does not inject "missing X" into the agent context when the judge says not ready', async () => {
     mockedLlmJson.mockResolvedValueOnce({ plan: 'Gather data' });
     for (let i = 0; i < 8; i++) {
       mockedLlmJson.mockResolvedValueOnce({
@@ -756,31 +756,10 @@ describe('termination judgment integration', () => {
     const emit = vi.fn();
     const controller = new AbortController();
 
-    const result: AgentLoopResult = await runAgentLoop('Research question', page, emit, controller.signal);
+    await runAgentLoop('Research question', page, emit, controller.signal);
 
-    expect(result.success).toBe(true);
     const messages = mockedLlmJson.mock.calls.map((c) => c[0].message);
-    expect(messages.some((m) => m.includes('the specific fee amount'))).toBe(true);
-  });
-
-  it('force-completes after 3 consecutive not-ready judgments (fatigue)', async () => {
-    mockedLlmJson.mockResolvedValueOnce({ plan: 'Gather data' });
-    for (let i = 0; i < 17; i++) {
-      mockedLlmJson.mockResolvedValueOnce({
-        action: 'extract_full_page',
-        reasoning: `Extract step ${String(i)}`,
-        memory: `Step ${String(i)} memory`,
-      });
-    }
-    mockedLlmJson.mockResolvedValue({ status: 'needs_more', missing: 'exact fees' });
-
-    const { page } = mockPage();
-    const emit = vi.fn();
-    const controller = new AbortController();
-
-    const result: AgentLoopResult = await runAgentLoop('Research', page, emit, controller.signal);
-
-    expect(result.success).toBe(true);
-    expect(result.steps[result.steps.length - 1].action.action).toBe('done');
+    expect(messages.some((m) => m.includes('the specific fee amount'))).toBe(false);
+    expect(messages.some((m) => m.includes('PROGRESS CHECK'))).toBe(false);
   });
 });

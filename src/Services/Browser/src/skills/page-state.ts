@@ -68,7 +68,7 @@ export function shouldBlockDone(state: PageState, historyLength: number, answer?
     return 'You are trying to finish too early. Verify the page and gather at least one concrete result before using done.';
   }
 
-  if (state === 'login' || state === 'loading' || state === 'anti_bot') {
+  if (state === 'login' || state === 'anti_bot') {
     return `The current page state is ${state}. Do not use done yet — resolve the page state or gather verified results first.`;
   }
 

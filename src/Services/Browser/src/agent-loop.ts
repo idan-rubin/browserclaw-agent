@@ -408,7 +408,6 @@ const MAX_ACTIONS_PER_STEP = 4;
 const REPLAN_BASE_INTERVAL = 8;
 const TERMINATION_CHECK_MIN_STEP = 6;
 const TERMINATION_CHECK_INTERVAL = 4;
-const JUDGE_FATIGUE_LIMIT = 3;
 const REPLAN_FAILURE_THRESHOLD = 3;
 const CONTEXT_COMPRESS_INTERVAL = 20;
 const EXTRACT_RESULT_MAX_CHARS = 2_000_000;
@@ -1178,10 +1177,6 @@ export async function runAgentLoop(
   let lastRecoveryDomain: string | null = null;
   let pendingSiteSwitch: string | null = null;
   let duplicateMemoryCount = 0;
-  let consecutiveNotReadyJudgments = 0;
-  let lastJudgmentMemoryLength = 0;
-  let extractsWithDataCount = 0;
-  let lastJudgmentExtractsWithData = 0;
   const bannedRefs = new Map<string, { action: string; failures: number }>();
   const BAN_THRESHOLD = 2;
 
@@ -1497,27 +1492,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         if (judgment.ready) {
           logger.info({ step }, 'Judge: answer ready — nudging agent to call done');
           terminationNudge = `READY TO FINISH: a progress check determined you have enough data to answer the user's question. Call "done" on your next step with the answer grounded in your memory. Double-check that every item you list satisfies the user's constraints and that building/address/price values are the actual values from the extracts.`;
-        } else {
-          const memoryGrew = mem.length > lastJudgmentMemoryLength + 50;
-          const extractsGrew = extractsWithDataCount > lastJudgmentExtractsWithData;
-          lastJudgmentMemoryLength = mem.length;
-          lastJudgmentExtractsWithData = extractsWithDataCount;
-          if (memoryGrew || extractsGrew) {
-            consecutiveNotReadyJudgments = 0;
-          } else {
-            consecutiveNotReadyJudgments++;
-          }
-          if (consecutiveNotReadyJudgments >= JUDGE_FATIGUE_LIMIT) {
-            logger.warn(
-              { step, nudges: consecutiveNotReadyJudgments, stillMissing: judgment.missing },
-              'Judge fatigue — force-completing with partial answer',
-            );
-            return await forceComplete(
-              `Fatigue: ${String(consecutiveNotReadyJudgments)} consecutive not-ready judgments; still missing "${judgment.missing}"`,
-            );
-          }
-          logger.info({ step, missing: judgment.missing }, 'Judge: not ready — nudging agent');
-          terminationNudge = `PROGRESS CHECK: you have been gathering data but the question is still not answerable. Still missing: ${judgment.missing}. Focus your next action on that specifically — do not repeat extractions you have already tried. This is nudge ${String(consecutiveNotReadyJudgments)} of ${String(JUDGE_FATIGUE_LIMIT)}; on the next unsuccessful check the run will force-complete with a partial answer.`;
         }
       }
     }
@@ -1890,7 +1864,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'extract') {
-        let extractProducedData = false;
         if (action.expression !== undefined && action.expression !== '') {
           try {
             assertExtractExpressionAllowed(action.expression);
@@ -1899,9 +1872,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             agentStep.action.extract_result = result.slice(0, EXTRACT_RESULT_MAX_CHARS);
             if (result.length > EXTRACT_RESULT_MAX_CHARS) {
               agentStep.action.extract_result += '\n…(truncated)';
-            }
-            if (result.trim().length > 0 && result !== '[]' && result !== '{}' && result !== 'null') {
-              extractProducedData = true;
             }
           } catch (evalErr) {
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
@@ -1925,7 +1895,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             agentStep.action.extract_result += '\n…(truncated)';
           }
           logger.info({ step, count: batch.count, failedCount: batch.failedUrls.length }, 'extract items batch');
-          if (batch.count > 0) extractProducedData = true;
         } else {
           const items = await extractItems(holder.page);
           const header =
@@ -1945,9 +1914,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             agentStep.action.extract_result += '\n…(truncated)';
           }
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
-          if (items.count > 0) extractProducedData = true;
         }
-        if (extractProducedData) extractsWithDataCount++;
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
         step++;
         break;
