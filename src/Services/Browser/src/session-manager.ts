@@ -175,26 +175,42 @@ export async function createSession(
 
   const cdpPort = await nextAvailableCdpPort();
 
+  const launchOpts = {
+    headless,
+    noSandbox: process.platform === 'linux',
+    cdpPort,
+    ssrfPolicy: {
+      dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
+    },
+    chromeArgs: [
+      '--disable-blink-features=AutomationControlled',
+      '--disable-downloads',
+      '--disable-file-system',
+      '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.101 Safari/537.36',
+      ...(headless === true ? [] : ['--start-maximized']),
+    ],
+  };
+  // CDP-ready probe race: Chrome sometimes binds the port but its HTTP endpoint
+  // is slow to respond within the 15s probe window. Observed recovery in ~2s
+  // without intervention. Retry up to twice on that specific error.
   let browser: BrowserClaw;
   try {
-    browser = await BrowserClaw.launch({
-      headless,
-      noSandbox: process.platform === 'linux',
-      cdpPort,
-      ssrfPolicy: {
-        dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
-      },
-      chromeArgs: [
-        '--disable-blink-features=AutomationControlled',
-        '--disable-downloads',
-        '--disable-file-system',
-        '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.101 Safari/537.36',
-        ...(headless === true ? [] : ['--start-maximized']),
-      ],
-    });
+    browser = await BrowserClaw.launch(launchOpts);
   } catch (err) {
-    logger.error({ cdpPort, err }, 'BrowserClaw.launch failed — a Chrome process may be orphaned on this CDP port');
-    throw err;
+    const message = err instanceof Error ? err.message : '';
+    const isCdpReadyRace = message.includes('Failed to start Chrome CDP');
+    if (!isCdpReadyRace) {
+      logger.error({ cdpPort, err }, 'BrowserClaw.launch failed');
+      throw err;
+    }
+    logger.warn({ cdpPort }, 'BrowserClaw.launch hit CDP-ready race — retrying after 2s');
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      browser = await BrowserClaw.launch(launchOpts);
+    } catch (retryErr) {
+      logger.error({ cdpPort, retryErr }, 'BrowserClaw.launch failed after retry');
+      throw retryErr;
+    }
   }
 
   let page: CrawlPage;
