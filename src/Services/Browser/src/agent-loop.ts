@@ -585,7 +585,8 @@ function buildUserMessage(
   }
 
   if (contextLevel === 'full' && domainSkill !== undefined && domainSkill !== null) {
-    message += '\n--- PLAYBOOK (proven workflow for this site) ---\n';
+    message +=
+      '\n--- DOMAIN NOTES (advisory — apply when on this site; the task is not locked to this domain, pivot to any equivalent source if blocked) ---\n';
     message += `\n"${domainSkill.skill.title}" — ${domainSkill.skill.description}\n`;
     for (const step of domainSkill.skill.steps) {
       let line = `  ${String(step.number)}. [${step.action}] ${step.description}`;
@@ -610,7 +611,7 @@ function buildUserMessage(
         message += `  - ${note}\n`;
       }
     }
-    message += '--- END PLAYBOOK ---\n';
+    message += '--- END DOMAIN NOTES ---\n';
   }
 
   // Progress tracking — structured view of where the agent is
@@ -1232,8 +1233,7 @@ export async function runAgentLoop(
     const taskInput = options?.buildTask !== undefined ? await options.buildTask(prompt) : prompt;
     let planMessage = `User prompt: ${taskInput}`;
     if (domainSkill !== null) {
-      planMessage += `\n\nWe have a proven skill for this site: "${domainSkill.skill.title}" — ${domainSkill.skill.description}`;
-      planMessage += '\nLeverage it — no need to rediscover what already works.';
+      planMessage += `\n\nDomain notes available for ${domainSkill.domain}: "${domainSkill.skill.title}" — ${domainSkill.skill.description}. Use only if you end up on this site; the task isn't locked to any specific source.`;
     }
     if (taskLesson !== null) {
       const lessonText = formatLessonForPrompt(taskLesson);
