@@ -24,7 +24,7 @@ import {
   MAX_INTERJECTIONS_PER_RUN,
   INTERJECTION_MIN_INTERVAL_MS,
 } from './config.js';
-import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig } from './llm.js';
+import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig, sanitizeErrorText } from './llm.js';
 import { extractDomain, getSkillForDomain, getSkillsForDomains, saveSkill } from './skill-store.js';
 import { saveLesson, extractDomainLessons, getLesson } from './lesson-store.js';
 import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
@@ -431,8 +431,9 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     }
   } catch (err) {
     managed.status = 'failed';
-    const message = err instanceof Error ? err.message : 'Agent loop crashed';
-    const stack = err instanceof Error ? err.stack : undefined;
+    const rawMessage = err instanceof Error ? err.message : 'Agent loop crashed';
+    const message = sanitizeErrorText(rawMessage);
+    const stack = err instanceof Error && err.stack !== undefined ? sanitizeErrorText(err.stack) : undefined;
     logger.error({ sessionId, crashed: true, message, stack }, 'Agent loop crashed');
     emitter('failed', { step: 0, error: message });
   }
