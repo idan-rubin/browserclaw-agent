@@ -12,6 +12,10 @@ const BLOCKED_PATTERNS: Record<'press_and_hold' | 'cloudflare_checkbox', RegExp>
   cloudflare_checkbox: /performing security verification|verify you are human|just a moment/i,
 };
 
+function humanHoldMs(): number {
+  return 4000 + Math.floor(Math.random() * 11000); // 4-15 seconds
+}
+
 async function findButtonCoordinates(page: CrawlPage): Promise<{ x: number; y: number } | null> {
   const result = await page.evaluate(`
     (function() {
@@ -175,41 +179,41 @@ export function enrichSnapshot(snapshot: string, domText: string, type: AntiBotT
   return snapshot;
 }
 
-const HOLD_ATTEMPT_MS = [7000, 10500, 14000];
-
 export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }): Promise<boolean> {
-  for (let attempt = 0; attempt < HOLD_ATTEMPT_MS.length; attempt++) {
-    try {
-      logger.info({ attempt: attempt + 1, of: HOLD_ATTEMPT_MS.length }, 'press-and-hold: starting');
+  try {
+    logger.info('press-and-hold: starting');
 
-      const coords = await findButtonCoordinates(page);
-      if (!coords) {
-        logger.info({ attempt: attempt + 1 }, 'press-and-hold: no suitable button found');
-        return false;
-      }
-      const { x, y } = coords;
-      const jitterX = x + Math.floor(Math.random() * 20) - 10;
-      const jitterY = y + Math.floor(Math.random() * 10) - 5;
-      const holdMs = opts?.holdMs ?? HOLD_ATTEMPT_MS[attempt];
-      const delay = 100 + Math.floor(Math.random() * 200);
-      logger.info({ attempt: attempt + 1, x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
-      await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
-      logger.info({ attempt: attempt + 1, holdMs }, 'press-and-hold: released');
-      await page.waitFor({ timeMs: 2000 });
-
-      const stillBlocked = await isStillBlocked(page, 'press_and_hold');
-      if (!stillBlocked) {
-        logger.info({ attempt: attempt + 1 }, 'press-and-hold: resolved');
-        return true;
-      }
-      logger.info({ attempt: attempt + 1 }, 'press-and-hold: still blocked');
-      await page.waitFor({ timeMs: 1500 });
-    } catch (err) {
-      logger.error(
-        { attempt: attempt + 1, err: err instanceof Error ? err.message : err },
-        'press-and-hold: attempt failed',
-      );
+    const coords = await findButtonCoordinates(page);
+    if (!coords) {
+      logger.info('press-and-hold: no suitable button found');
+      return false;
     }
+    const { x, y } = coords;
+    logger.info({ x, y }, 'press-and-hold: found button');
+
+    const urlBefore = await page.url();
+    const jitterX = x + Math.floor(Math.random() * 20) - 10;
+    const jitterY = y + Math.floor(Math.random() * 10) - 5;
+    const holdMs = opts?.holdMs ?? humanHoldMs();
+    const delay = 100 + Math.floor(Math.random() * 200);
+    logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
+    await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
+    logger.info({ holdMs }, 'press-and-hold: released');
+    await page.waitFor({ timeMs: 2000 });
+
+    const stillBlocked = await isStillBlocked(page, 'press_and_hold');
+    if (stillBlocked) {
+      logger.info('press-and-hold: still blocked, refreshing page');
+      await page.goto(urlBefore);
+      await page.waitFor({ timeMs: 3000 });
+      const blockedAfterRefresh = await isStillBlocked(page, 'press_and_hold');
+      logger.info({ blockedAfterRefresh }, 'press-and-hold: result after refresh');
+      return !blockedAfterRefresh;
+    }
+    logger.info('press-and-hold: resolved');
+    return true;
+  } catch (err) {
+    logger.error({ err: err instanceof Error ? err.message : err }, 'press-and-hold: failed');
+    return false;
   }
-  return false;
 }
