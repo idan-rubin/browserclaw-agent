@@ -1821,12 +1821,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('ask_user', { step, question: action.text ?? action.reasoning });
 
         if (waitForUser === undefined) {
-          return {
-            success: false,
-            steps: history,
-            error: 'Agent requested user input but interactive mode is not available',
-            duration_ms: Date.now() - startTime,
-          };
+          agentStep.action.error_feedback =
+            'No interactive user is attached to this session — ask_user cannot receive a response. Do NOT use ask_user again. Pivot: try a different site, a different URL for the same site, web_search for an alternative source, or use the data you already have to finish with a partial answer.';
+          step++;
+          break;
         }
 
         try {
