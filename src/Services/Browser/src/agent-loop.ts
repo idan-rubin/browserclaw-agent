@@ -1849,7 +1849,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
           agentStep.action.error_feedback =
-            'press_and_hold did not clear the challenge on this attempt — the blocking page is still present. The hold timing varies per attempt; try press_and_hold ONE more time with a higher hold_ms (e.g. 12000-15000). If it still fails after that retry, use click_cloudflare or ask_user.';
+            'press_and_hold did not clear the challenge — the blocking page is still present.';
         }
         step++;
         break;
