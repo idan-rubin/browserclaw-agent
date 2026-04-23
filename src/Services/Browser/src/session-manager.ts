@@ -546,7 +546,7 @@ async function tryGenerateSkill(
   }
   const advisorNote = review.success
     ? null
-    : `[${new Date().toISOString().slice(0, 10)}] ${review.reasoning.slice(0, 200)}`;
+    : `[${new Date().toISOString().slice(0, 10)}] ${review.reasoning.slice(0, 500)}`;
 
   try {
     const skill = await generateSkill(managed.prompt, result);
@@ -566,9 +566,10 @@ async function tryGenerateSkill(
           const newSteps = skill.steps.length;
 
           if (newSteps < oldSteps) {
-            // Fewer steps — improved (more efficient)
-            await saveSkill(managed.domain, skill, tags);
-            logger.info({ domain: managed.domain, oldSteps, newSteps }, 'Skill improved');
+            // Fewer steps — improved (more efficient). Carry run history forward.
+            const runCount = existing.run_count + 1;
+            await saveSkill(managed.domain, skill, tags, runCount);
+            logger.info({ domain: managed.domain, oldSteps, newSteps, runCount }, 'Skill improved');
             emitter('skill_improved', {
               domain: managed.domain,
               title: skill.title,
@@ -583,9 +584,10 @@ async function tryGenerateSkill(
               merged.failure_notes = [...(merged.failure_notes ?? []), advisorNote].slice(-5);
             }
             managed.skill = merged;
-            await saveSkill(managed.domain, merged, tags);
+            const runCount = existing.run_count + 1;
+            await saveSkill(managed.domain, merged, tags, runCount);
             logger.info(
-              { domain: managed.domain, oldSteps, newSteps, mergedSteps: merged.steps.length },
+              { domain: managed.domain, oldSteps, newSteps, mergedSteps: merged.steps.length, runCount },
               'Skill refined',
             );
             emitter('skill_refined', {

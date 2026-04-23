@@ -38,7 +38,7 @@ You MUST respond with valid JSON matching this schema:
     {
       "number": 1,
       "description": "what this step does in plain language",
-      "action": "click | type | navigate | select | scroll | wait",
+      "action": "click | type | navigate | select | scroll | wait | extract | press_and_hold | click_cloudflare | web_search | switch_tab | close_tab | back",
       "details": "specific details like what was clicked or typed (optional)"
     }
   ],
@@ -61,8 +61,10 @@ Rules:
 - Collapse redundant or failed steps — only include the successful logical steps.
 - Description should be one sentence explaining the end-to-end task.
 - Steps should be human-readable — use natural language, not technical refs.
+- The "action" field must exactly match the action type the step performed in the history. If a step extracted data, use "extract"; if it reviewed/processed data outside the browser, omit the step rather than picking an unrelated action name.
 - Omit intermediate waits and scrolls unless they're meaningful to the workflow.
 - Tips should capture site-specific knowledge: cookie banners, autocomplete behavior, loading delays, popup dismissals, anti-bot challenges, hidden buttons, required wait times, URL patterns.
+- URL normalization: when citing the final URL or recommending a URL pattern, include only filter tokens (path segments, query params) that map to constraints explicitly in the user's original prompt. Strip amenity/price/location/sort filters the agent added but the user did not request — they contaminate future runs with different constraints.
 - what_worked: analyze the successful patterns — what approach worked? What shortcuts did the agent find?
 - what_to_avoid: analyze the failures — what approaches failed? What dead ends should future runs skip?
 - site_quirks: what unusual behaviors did this site exhibit? Overlays, slow loads, redirects, anti-bot?`;
