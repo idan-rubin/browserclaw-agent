@@ -1233,9 +1233,6 @@ export async function runAgentLoop(
   try {
     const taskInput = options?.buildTask !== undefined ? await options.buildTask(prompt) : prompt;
     let planMessage = `User prompt: ${taskInput}`;
-    if (domainSkill !== null) {
-      planMessage += `\n\nDomain notes available for ${domainSkill.domain}: "${domainSkill.skill.title}" — ${domainSkill.skill.description}. Use only if you end up on this site; the task isn't locked to any specific source.`;
-    }
     if (taskLesson !== null) {
       const lessonText = formatLessonForPrompt(taskLesson);
       if (lessonText !== '') {
