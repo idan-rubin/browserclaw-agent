@@ -1208,6 +1208,7 @@ export async function runAgentLoop(
   };
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
+  const antiBotHitsByDomain = new Map<string, number>();
 
   let answerSchema: AnswerSchema | null = null;
 
@@ -1351,6 +1352,13 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     const antiBotType = detectAntiBot(domText);
     if (antiBotType !== null) {
       snapshot = enrichSnapshot(snapshot, domText, antiBotType);
+      const currentDomain = extractDomain(url);
+      const hits = (antiBotHitsByDomain.get(currentDomain) ?? 0) + 1;
+      antiBotHitsByDomain.set(currentDomain, hits);
+      if (hits >= 2 && domainSkill?.domain === currentDomain) {
+        logger.info({ domain: currentDomain, hits }, 'Clearing domain skill — repeated anti-bot on this domain');
+        domainSkill = null;
+      }
     }
     const pageState = detectPageState({ snapshot, domText, title, url, antiBotType });
 
