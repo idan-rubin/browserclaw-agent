@@ -190,9 +190,6 @@ export async function createSession(
       ...(headless === true ? [] : ['--start-maximized']),
     ],
   };
-  // CDP-ready probe race: Chrome sometimes binds the port but its HTTP endpoint
-  // is slow to respond within the 15s probe window. Observed recovery in ~2s
-  // without intervention. Retry up to twice on that specific error.
   let browser: BrowserClaw;
   try {
     browser = await BrowserClaw.launch(launchOpts);
