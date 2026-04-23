@@ -432,7 +432,8 @@ async function startAgentLoop(sessionId: string): Promise<void> {
   } catch (err) {
     managed.status = 'failed';
     const message = err instanceof Error ? err.message : 'Agent loop crashed';
-    logger.error({ sessionId, crashed: true }, 'Agent loop crashed');
+    const stack = err instanceof Error ? err.stack : undefined;
+    logger.error({ sessionId, crashed: true, message, stack }, 'Agent loop crashed');
     emitter('failed', { step: 0, error: message });
   }
 
