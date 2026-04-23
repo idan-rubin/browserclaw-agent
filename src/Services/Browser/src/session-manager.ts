@@ -434,7 +434,6 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     const rawMessage = err instanceof Error ? err.message : 'Agent loop crashed';
     const message = sanitizeErrorText(rawMessage);
     const stack = err instanceof Error && err.stack !== undefined ? sanitizeErrorText(err.stack) : undefined;
-    // lgtm[js/clear-text-logging]
     logger.error({ sessionId, crashed: true, message, stack }, 'Agent loop crashed');
     emitter('failed', { step: 0, error: message });
   }

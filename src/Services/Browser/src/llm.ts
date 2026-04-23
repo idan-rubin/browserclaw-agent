@@ -6,7 +6,7 @@ import { LlmParseError } from './types.js';
 import type { LlmConfig } from './types.js';
 
 const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS ?? '30000', 10);
-const LLM_OAUTH_TIMEOUT_MS = parseInt(process.env.LLM_OAUTH_TIMEOUT_MS ?? '90000', 10);
+const LLM_CODEX_TIMEOUT_MS = parseInt(process.env.LLM_OAUTH_TIMEOUT_MS ?? '90000', 10);
 
 // ── Sanitization ─────────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ export interface ProviderConfig {
   provider: string;
   label: string;
   baseURL: string;
-  apiKeyEnv: string;
+  envVar: string;
   useMaxCompletionTokens: boolean;
 }
 
@@ -75,35 +75,35 @@ const PROVIDERS: ProviderConfig[] = [
     provider: 'groq',
     label: 'Groq',
     baseURL: 'https://api.groq.com/openai/v1',
-    apiKeyEnv: 'GROQ_API_KEY',
+    envVar: 'GROQ_API_KEY',
     useMaxCompletionTokens: false,
   },
   {
     provider: 'gemini',
     label: 'Gemini',
     baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-    apiKeyEnv: 'GEMINI_API_KEY',
+    envVar: 'GEMINI_API_KEY',
     useMaxCompletionTokens: false,
   },
   {
     provider: 'openai',
     label: 'OpenAI',
     baseURL: 'https://api.openai.com/v1',
-    apiKeyEnv: 'OPENAI_API_KEY',
+    envVar: 'OPENAI_API_KEY',
     useMaxCompletionTokens: true,
   },
   {
     provider: 'openai-oauth',
     label: 'OpenAI (Subscription)',
     baseURL: 'https://chatgpt.com/backend-api',
-    apiKeyEnv: 'OPENAI_OAUTH_TOKEN',
+    envVar: 'OPENAI_OAUTH_TOKEN',
     useMaxCompletionTokens: true,
   },
   {
     provider: 'anthropic',
     label: 'Anthropic',
     baseURL: 'https://api.anthropic.com/v1/',
-    apiKeyEnv: 'ANTHROPIC_API_KEY',
+    envVar: 'ANTHROPIC_API_KEY',
     useMaxCompletionTokens: false,
   },
 ];
@@ -166,8 +166,8 @@ function shouldRefreshOAuthToken(): boolean {
 function resolveProvider(name: string): ProviderConfig {
   const found = PROVIDERS.find((p) => p.provider === name);
   if (!found) throw new Error(`Unknown provider: ${name}. Valid: ${PROVIDERS.map((p) => p.provider).join(', ')}`);
-  const apiKey = process.env[found.apiKeyEnv];
-  if (apiKey === undefined || apiKey === '') throw new Error(`${found.apiKeyEnv} is required for provider "${name}"`);
+  const apiKey = process.env[found.envVar];
+  if (apiKey === undefined || apiKey === '') throw new Error(`${found.envVar} is required for provider "${name}"`);
   return found;
 }
 
@@ -176,7 +176,7 @@ function getClient(config: ProviderConfig): OpenAI {
   if (cached) return cached;
 
   const client = new OpenAI({
-    apiKey: process.env[config.apiKeyEnv],
+    apiKey: process.env[config.envVar],
     baseURL: config.baseURL,
   });
   clientCache.set(config.provider, client);
@@ -184,7 +184,7 @@ function getClient(config: ProviderConfig): OpenAI {
 }
 
 export function getAvailableProviders(): ProviderConfig[] {
-  return PROVIDERS.filter((p) => Boolean(process.env[p.apiKeyEnv]));
+  return PROVIDERS.filter((p) => Boolean(process.env[p.envVar]));
 }
 
 export function getActiveProvider(): ProviderConfig {
@@ -219,7 +219,7 @@ async function callCodexResponsesAPI(
   req: LLMRequest,
   apiKeyOverride?: string,
 ): Promise<LLMResponse> {
-  const apiKey = apiKeyOverride ?? process.env[provider.apiKeyEnv] ?? '';
+  const apiKey = apiKeyOverride ?? process.env[provider.envVar] ?? '';
   const url = `${provider.baseURL}/codex/responses`;
 
   const res = await fetch(url, {
@@ -417,7 +417,7 @@ function resolveByokProvider(config: LlmConfig): ProviderConfig {
     provider: config.provider,
     label: config.provider,
     baseURL: byok.baseURL,
-    apiKeyEnv: '', // not used for BYOK
+    envVar: '', // not used for BYOK
     useMaxCompletionTokens: byok.useMaxCompletionTokens,
   };
 }
@@ -446,7 +446,7 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
           () => callCodexResponsesAPI(providerConfig, byokConfig.model, req, byokConfig.api_key),
           'BYOK Codex API',
         ),
-        LLM_OAUTH_TIMEOUT_MS,
+        LLM_CODEX_TIMEOUT_MS,
         'LLM call (BYOK OAuth)',
       );
     }
