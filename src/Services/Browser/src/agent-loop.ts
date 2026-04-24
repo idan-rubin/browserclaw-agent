@@ -413,6 +413,10 @@ const CONTEXT_COMPRESS_INTERVAL = 20;
 const EXTRACT_RESULT_MAX_CHARS = 2_000_000;
 const EXTRACT_OLDER_PREVIEW_MAX_CHARS = 500;
 
+const PAH_INTERMITTENT_FEEDBACK =
+  'press_and_hold did not clear — page shows "Please try again" (intermittent error, happens to humans too). Safer to pivot to another source than keep retrying on this IP.';
+const PAH_BLOCKED_FEEDBACK = 'press_and_hold did not clear the challenge — the blocking page is still present.';
+
 function findLatestExtractIdx(history: AgentStep[]): number {
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].action.extract_result !== undefined) return i;
@@ -1870,9 +1874,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
           const intermittent = await isIntermittentError(holder.page);
-          agentStep.action.error_feedback = intermittent
-            ? 'press_and_hold did not clear — page shows "Please try again" (intermittent error, happens to humans too). Safer to pivot to another source than keep retrying on this IP.'
-            : 'press_and_hold did not clear the challenge — the blocking page is still present.';
+          agentStep.action.error_feedback = intermittent ? PAH_INTERMITTENT_FEEDBACK : PAH_BLOCKED_FEEDBACK;
         }
         step++;
         break;
