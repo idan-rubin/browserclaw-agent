@@ -143,6 +143,18 @@ export async function isStillBlocked(page: CrawlPage, type: AntiBotType): Promis
   return result === true;
 }
 
+const CHALLENGE_CLEAR_MAX_MS = 10_000;
+const CHALLENGE_CLEAR_POLL_MS = 500;
+
+async function waitForChallengeCleared(page: CrawlPage, type: AntiBotType): Promise<boolean> {
+  const deadline = Date.now() + CHALLENGE_CLEAR_MAX_MS;
+  while (Date.now() < deadline) {
+    if (!(await isStillBlocked(page, type))) return true;
+    await page.waitFor({ timeMs: CHALLENGE_CLEAR_POLL_MS });
+  }
+  return false;
+}
+
 export function detectAntiBot(domText: string): AntiBotType {
   // Check press-and-hold first — if DOM mentions press/hold, it's a press-and-hold challenge
   // regardless of what the snapshot says
@@ -198,11 +210,10 @@ export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }):
     logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
     await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
     logger.info({ holdMs }, 'press-and-hold: released');
-    await page.waitFor({ timeMs: 2000 });
 
-    const stillBlocked = await isStillBlocked(page, 'press_and_hold');
-    logger.info({ stillBlocked }, 'press-and-hold: resolved');
-    return !stillBlocked;
+    const cleared = await waitForChallengeCleared(page, 'press_and_hold');
+    logger.info({ cleared }, 'press-and-hold: resolved');
+    return cleared;
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : err }, 'press-and-hold: failed');
     return false;
