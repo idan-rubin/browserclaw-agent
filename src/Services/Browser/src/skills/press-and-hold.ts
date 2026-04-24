@@ -160,21 +160,33 @@ async function waitForChallengeCleared(page: CrawlPage, type: AntiBotType): Prom
 
 const SCREENSHOT_DIR = '/tmp/bca-screenshots';
 
-async function visualInspectFailure(page: CrawlPage): Promise<void> {
+type PaHVisualState = 'ready' | 'loading' | 'error' | 'unknown';
+
+async function classifyPaHVisualState(page: CrawlPage): Promise<PaHVisualState> {
   try {
     if (!fs.existsSync(SCREENSHOT_DIR)) fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
     const buf = await page.screenshot();
-    const filename = `paH-fail-${String(Date.now())}.png`;
+    const filename = `paH-state-${String(Date.now())}.png`;
     const filepath = path.join(SCREENSHOT_DIR, filename);
     fs.writeFileSync(filepath, buf);
-    const description = await llmVision(
-      'Describe the page shown in this screenshot in one sentence. Call out any error message, retry prompt, or visual hint about why a press-and-hold verification did not pass.',
-      'What does the page show right now?',
+    const answer = await llmVision(
+      'You see a page showing a press-and-hold bot-verification challenge. Reply with exactly one word: "ready" (the press button is blue/fully visible/clickable), "loading" (the button is gray/empty/still initializing), "error" (the page shows an error, denial, or retry message), or "unknown".',
+      'What state is the press-and-hold button in?',
       buf.toString('base64'),
     );
-    logger.info({ screenshot: filepath, description }, 'press-and-hold: failure inspection');
+    const label = answer.trim().toLowerCase();
+    const state: PaHVisualState = label.startsWith('ready')
+      ? 'ready'
+      : label.startsWith('loading')
+        ? 'loading'
+        : label.startsWith('error')
+          ? 'error'
+          : 'unknown';
+    logger.info({ screenshot: filepath, state, raw: label.slice(0, 40) }, 'press-and-hold: visual state');
+    return state;
   } catch (err) {
-    logger.warn({ err: err instanceof Error ? err.message : err }, 'press-and-hold: failure inspection failed');
+    logger.warn({ err: err instanceof Error ? err.message : err }, 'press-and-hold: visual state failed');
+    return 'unknown';
   }
 }
 
@@ -223,6 +235,15 @@ async function buttonIsInteractive(page: CrawlPage, x: number, y: number): Promi
       var style = window.getComputedStyle(el);
       if (style.pointerEvents === 'none') return false;
       if (el.disabled === true) return false;
+      var text = (el.innerText || '').trim().toLowerCase();
+      if (/press|hold/.test(text)) return true;
+      var bg = style.backgroundColor || '';
+      var m = bg.match(/rgba?\\\((\\\d+),\\\s*(\\\d+),\\\s*(\\\d+)/);
+      if (m) {
+        var r = parseInt(m[1], 10), g = parseInt(m[2], 10), b = parseInt(m[3], 10);
+        var isNeutralGray = Math.abs(r - g) < 15 && Math.abs(g - b) < 15 && r > 180 && r < 245;
+        if (isNeutralGray) return false;
+      }
       return true;
     })()`,
   );
@@ -241,32 +262,55 @@ async function waitForButtonReady(page: CrawlPage, x: number, y: number): Promis
   return false;
 }
 
+async function reloadUntilNetworkIdle(page: CrawlPage, maxAttempts = 2): Promise<void> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await page.reload();
+    try {
+      await page.waitFor({ loadState: 'networkidle' });
+      return;
+    } catch (err) {
+      logger.info(
+        { attempt: attempt + 1, err: err instanceof Error ? err.message : err },
+        'press-and-hold: network did not idle — reloading again',
+      );
+    }
+  }
+}
+
+async function attemptPressAndHold(page: CrawlPage, holdMsOverride?: number): Promise<boolean> {
+  await reloadUntilNetworkIdle(page);
+
+  const coords = await findButtonCoordinates(page);
+  if (!coords) {
+    logger.info('press-and-hold: no suitable button found');
+    return false;
+  }
+  await waitForButtonReady(page, coords.x, coords.y);
+  const { x, y } = coords;
+  logger.info({ x, y }, 'press-and-hold: found button');
+
+  const jitterX = x + Math.floor(Math.random() * 20) - 10;
+  const jitterY = y + Math.floor(Math.random() * 10) - 5;
+  const holdMs = holdMsOverride ?? humanHoldMs();
+  const delay = 100 + Math.floor(Math.random() * 200);
+  logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
+  await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
+  logger.info({ holdMs }, 'press-and-hold: released');
+
+  const cleared = await waitForChallengeCleared(page, 'press_and_hold');
+  logger.info({ cleared }, 'press-and-hold: resolved');
+  return cleared;
+}
+
 export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }): Promise<boolean> {
   try {
-    logger.info('press-and-hold: starting — reloading for fresh button state');
-    await page.reload();
+    logger.info('press-and-hold: starting');
+    if (await attemptPressAndHold(page, opts?.holdMs)) return true;
 
-    const coords = await findButtonCoordinates(page);
-    if (!coords) {
-      logger.info('press-and-hold: no suitable button found after reload');
-      return false;
-    }
-    await waitForButtonReady(page, coords.x, coords.y);
-    const { x, y } = coords;
-    logger.info({ x, y }, 'press-and-hold: found button');
-
-    const jitterX = x + Math.floor(Math.random() * 20) - 10;
-    const jitterY = y + Math.floor(Math.random() * 10) - 5;
-    const holdMs = opts?.holdMs ?? humanHoldMs();
-    const delay = 100 + Math.floor(Math.random() * 200);
-    logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
-    await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
-    logger.info({ holdMs }, 'press-and-hold: released');
-
-    const cleared = await waitForChallengeCleared(page, 'press_and_hold');
-    logger.info({ cleared }, 'press-and-hold: resolved');
-    if (!cleared) await visualInspectFailure(page);
-    return cleared;
+    const state = await classifyPaHVisualState(page);
+    if (state === 'error') return false;
+    logger.info({ state }, 'press-and-hold: retrying once after visual check');
+    return await attemptPressAndHold(page, opts?.holdMs);
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : err }, 'press-and-hold: failed');
     return false;
