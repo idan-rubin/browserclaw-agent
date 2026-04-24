@@ -1,5 +1,8 @@
 import type { CrawlPage } from 'browserclaw';
+import fs from 'node:fs';
+import path from 'node:path';
 import { logger } from '../logger.js';
+import { llmVision } from '../llm.js';
 
 export type AntiBotType = 'press_and_hold' | 'cloudflare_checkbox' | null;
 
@@ -155,6 +158,26 @@ async function waitForChallengeCleared(page: CrawlPage, type: AntiBotType): Prom
   return false;
 }
 
+const SCREENSHOT_DIR = '/tmp/bca-screenshots';
+
+async function visualInspectFailure(page: CrawlPage): Promise<void> {
+  try {
+    if (!fs.existsSync(SCREENSHOT_DIR)) fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+    const buf = await page.screenshot();
+    const filename = `paH-fail-${String(Date.now())}.png`;
+    const filepath = path.join(SCREENSHOT_DIR, filename);
+    fs.writeFileSync(filepath, buf);
+    const description = await llmVision(
+      'Describe the page shown in this screenshot in one sentence. Call out any error message, retry prompt, or visual hint about why a press-and-hold verification did not pass.',
+      'What does the page show right now?',
+      buf.toString('base64'),
+    );
+    logger.info({ screenshot: filepath, description }, 'press-and-hold: failure inspection');
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : err }, 'press-and-hold: failure inspection failed');
+  }
+}
+
 export function detectAntiBot(domText: string): AntiBotType {
   // Check press-and-hold first — if DOM mentions press/hold, it's a press-and-hold challenge
   // regardless of what the snapshot says
@@ -213,6 +236,7 @@ export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }):
 
     const cleared = await waitForChallengeCleared(page, 'press_and_hold');
     logger.info({ cleared }, 'press-and-hold: resolved');
+    if (!cleared) await visualInspectFailure(page);
     return cleared;
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : err }, 'press-and-hold: failed');
