@@ -1357,11 +1357,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
         logger.info({ domain: currentDomain, hits }, 'Clearing domain skill — repeated anti-bot on this domain');
         domainSkill = null;
       }
-      const totalHits = [...antiBotHitsByDomain.values()].reduce((a, b) => a + b, 0);
-      if (totalHits >= 6) {
-        logger.warn({ totalHits, domains: [...antiBotHitsByDomain.keys()] }, 'Fail-fast — IP walled across sources');
-        return await forceComplete(`Walled on ${String(antiBotHitsByDomain.size)} sites with ${String(totalHits)} anti-bot detections`);
-      }
     }
     const pageState = detectPageState({ snapshot, domText, title, url, antiBotType });
 
