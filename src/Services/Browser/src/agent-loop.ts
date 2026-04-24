@@ -416,6 +416,8 @@ const EXTRACT_OLDER_PREVIEW_MAX_CHARS = 500;
 const PAH_INTERMITTENT_FEEDBACK =
   'press_and_hold did not clear — page shows "Please try again" (intermittent error, happens to humans too). Safer to pivot to another source than keep retrying on this IP.';
 const PAH_BLOCKED_FEEDBACK = 'press_and_hold did not clear the challenge — the blocking page is still present.';
+const PAH_MAX_FAILURES = 3;
+const PAH_BAIL_FEEDBACK = `press_and_hold has failed ${String(PAH_MAX_FAILURES)} times on this session — this IP is walled by the site. Pivot to a different source; do NOT call press_and_hold again.`;
 
 function findLatestExtractIdx(history: AgentStep[]): number {
   for (let i = history.length - 1; i >= 0; i--) {
@@ -1283,6 +1285,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 
   let step = 0;
   let recentFailureCount = 0;
+  let pahFailureCount = 0;
   let urgentLoopNudges = 0;
   let replanInterval = REPLAN_BASE_INTERVAL;
   let nextReplanStep = replanInterval;
@@ -1871,10 +1874,17 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'press_and_hold') {
+        if (pahFailureCount >= PAH_MAX_FAILURES) {
+          logger.warn({ step, pahFailureCount }, 'press_and_hold short-circuited — bail limit reached');
+          agentStep.action.error_feedback = PAH_BAIL_FEEDBACK;
+          step++;
+          break;
+        }
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
+          pahFailureCount++;
           const intermittent = await isIntermittentError(holder.page);
-          logger.info({ step, intermittent }, 'press_and_hold failed — post-check');
+          logger.info({ step, intermittent, pahFailureCount }, 'press_and_hold failed — post-check');
           agentStep.action.error_feedback = intermittent ? PAH_INTERMITTENT_FEEDBACK : PAH_BLOCKED_FEEDBACK;
         }
         step++;
