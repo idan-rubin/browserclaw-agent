@@ -196,6 +196,42 @@ export function enrichSnapshot(snapshot: string, domText: string, type: AntiBotT
   return snapshot;
 }
 
+async function buttonIsInteractive(page: CrawlPage, x: number, y: number): Promise<boolean> {
+  const result = await page.evaluate(
+    `(function() {
+      var el = document.elementFromPoint(${String(x)}, ${String(y)});
+      if (!el) return false;
+      if (el.tagName === 'HTML' || el.tagName === 'BODY') return false;
+      var style = window.getComputedStyle(el);
+      if (style.pointerEvents === 'none') return false;
+      if (el.disabled === true) return false;
+      var text = (el.innerText || '').trim().toLowerCase();
+      if (/press|hold/.test(text)) return true;
+      var bg = style.backgroundColor || '';
+      var m = bg.match(/rgba?\\\((\\\d+),\\\s*(\\\d+),\\\s*(\\\d+)/);
+      if (m) {
+        var r = parseInt(m[1], 10), g = parseInt(m[2], 10), b = parseInt(m[3], 10);
+        var isNeutralGray = Math.abs(r - g) < 15 && Math.abs(g - b) < 15 && r > 180 && r < 245;
+        if (isNeutralGray) return false;
+      }
+      return true;
+    })()`,
+  );
+  return result === true;
+}
+
+const BUTTON_READY_MAX_MS = 5_000;
+const BUTTON_READY_POLL_MS = 500;
+
+async function waitForButtonReady(page: CrawlPage, x: number, y: number): Promise<boolean> {
+  const deadline = Date.now() + BUTTON_READY_MAX_MS;
+  while (Date.now() < deadline) {
+    if (await buttonIsInteractive(page, x, y)) return true;
+    await page.waitFor({ timeMs: BUTTON_READY_POLL_MS });
+  }
+  return false;
+}
+
 async function issuePress(page: CrawlPage, x: number, y: number, holdMs: number): Promise<void> {
   const jitterX = x + Math.floor(Math.random() * 20) - 10;
   const jitterY = y + Math.floor(Math.random() * 10) - 5;
@@ -209,6 +245,10 @@ export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }):
   try {
     const coords = await findButtonCoordinates(page);
     if (!coords) return false;
+    if (!(await waitForButtonReady(page, coords.x, coords.y))) {
+      logger.info('press-and-hold: button did not become interactive');
+      return false;
+    }
     await issuePress(page, coords.x, coords.y, opts?.holdMs ?? humanHoldMs());
     return await waitForChallengeCleared(page, 'press_and_hold');
   } catch (err) {
