@@ -13,7 +13,7 @@ const BLOCKED_PATTERNS: Record<'press_and_hold' | 'cloudflare_checkbox', RegExp>
 };
 
 function humanHoldMs(): number {
-  return 4000 + Math.floor(Math.random() * 11000); // 4-15 seconds
+  return 4000 + Math.floor(Math.random() * 6000); // 4-10 seconds
 }
 
 async function findButtonCoordinates(page: CrawlPage): Promise<{ x: number; y: number } | null> {
