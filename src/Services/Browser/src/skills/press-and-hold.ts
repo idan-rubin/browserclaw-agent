@@ -214,11 +214,44 @@ export function enrichSnapshot(snapshot: string, domText: string, type: AntiBotT
   return snapshot;
 }
 
+async function buttonIsInteractive(page: CrawlPage, x: number, y: number): Promise<boolean> {
+  const result = await page.evaluate(
+    `(function() {
+      var el = document.elementFromPoint(${String(x)}, ${String(y)});
+      if (!el) return false;
+      if (el.tagName === 'HTML' || el.tagName === 'BODY') return false;
+      var style = window.getComputedStyle(el);
+      if (style.pointerEvents === 'none') return false;
+      if (el.disabled === true) return false;
+      return true;
+    })()`,
+  );
+  return result === true;
+}
+
+const BUTTON_READY_MAX_MS = 5_000;
+const BUTTON_READY_POLL_MS = 500;
+
+async function waitForButtonReady(page: CrawlPage, x: number, y: number): Promise<boolean> {
+  const deadline = Date.now() + BUTTON_READY_MAX_MS;
+  while (Date.now() < deadline) {
+    if (await buttonIsInteractive(page, x, y)) return true;
+    await page.waitFor({ timeMs: BUTTON_READY_POLL_MS });
+  }
+  return false;
+}
+
 export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }): Promise<boolean> {
   try {
     logger.info('press-and-hold: starting');
 
-    const coords = await findButtonCoordinates(page);
+    let coords = await findButtonCoordinates(page);
+    if (coords && !(await waitForButtonReady(page, coords.x, coords.y))) {
+      logger.info('press-and-hold: button not interactive after 5s — reloading');
+      await page.reload();
+      coords = await findButtonCoordinates(page);
+      if (coords) await waitForButtonReady(page, coords.x, coords.y);
+    }
     if (!coords) {
       logger.info('press-and-hold: no suitable button found');
       return false;
