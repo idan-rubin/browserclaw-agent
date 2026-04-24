@@ -262,17 +262,21 @@ async function waitForButtonReady(page: CrawlPage, x: number, y: number): Promis
   return false;
 }
 
+const NETWORK_IDLE_TIMEOUT_MS = 6_000;
+
 export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }): Promise<boolean> {
   try {
     logger.info('press-and-hold: starting');
-    await page.reload();
     try {
-      await page.waitFor({ loadState: 'networkidle' });
-    } catch (err) {
-      logger.info(
-        { err: err instanceof Error ? err.message : err },
-        'press-and-hold: network did not idle — proceeding anyway',
-      );
+      await page.waitFor({ loadState: 'networkidle', timeoutMs: NETWORK_IDLE_TIMEOUT_MS });
+    } catch {
+      logger.info('press-and-hold: network did not idle — reloading');
+      await page.reload();
+      try {
+        await page.waitFor({ loadState: 'networkidle', timeoutMs: NETWORK_IDLE_TIMEOUT_MS });
+      } catch {
+        logger.info('press-and-hold: still not idle after reload — proceeding');
+      }
     }
 
     const coords = await findButtonCoordinates(page);
