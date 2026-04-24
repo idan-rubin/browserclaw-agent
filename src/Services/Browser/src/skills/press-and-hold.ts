@@ -1,8 +1,5 @@
 import type { CrawlPage } from 'browserclaw';
-import fs from 'node:fs';
-import path from 'node:path';
 import { logger } from '../logger.js';
-import { llmVision } from '../llm.js';
 
 export type AntiBotType = 'press_and_hold' | 'cloudflare_checkbox' | null;
 
@@ -163,38 +160,6 @@ async function waitForChallengeCleared(page: CrawlPage, type: AntiBotType): Prom
   return false;
 }
 
-const SCREENSHOT_DIR = '/tmp/bca-screenshots';
-
-type PaHVisualState = 'ready' | 'loading' | 'error' | 'unknown';
-
-async function classifyPaHVisualState(page: CrawlPage): Promise<PaHVisualState> {
-  try {
-    if (!fs.existsSync(SCREENSHOT_DIR)) fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-    const buf = await page.screenshot();
-    const filename = `paH-state-${String(Date.now())}.png`;
-    const filepath = path.join(SCREENSHOT_DIR, filename);
-    fs.writeFileSync(filepath, buf);
-    const answer = await llmVision(
-      'You see a page showing a press-and-hold bot-verification challenge. Reply with exactly one word: "ready" (the press button is blue/fully visible/clickable), "loading" (the button is gray/empty/still initializing), "error" (the page shows an error, denial, or retry message), or "unknown".',
-      'What state is the press-and-hold button in?',
-      buf.toString('base64'),
-    );
-    const label = answer.trim().toLowerCase();
-    const state: PaHVisualState = label.startsWith('ready')
-      ? 'ready'
-      : label.startsWith('loading')
-        ? 'loading'
-        : label.startsWith('error')
-          ? 'error'
-          : 'unknown';
-    logger.info({ screenshot: filepath, state, raw: label.slice(0, 40) }, 'press-and-hold: visual state');
-    return state;
-  } catch (err) {
-    logger.warn({ err: err instanceof Error ? err.message : err }, 'press-and-hold: visual state failed');
-    return 'unknown';
-  }
-}
-
 export function detectAntiBot(domText: string): AntiBotType {
   // Check press-and-hold first — if DOM mentions press/hold, it's a press-and-hold challenge
   // regardless of what the snapshot says
@@ -269,21 +234,11 @@ async function waitForButtonReady(page: CrawlPage, x: number, y: number): Promis
 
 const NETWORK_IDLE_TIMEOUT_MS = 6_000;
 
-async function waitForNetworkIdle(page: CrawlPage): Promise<boolean> {
+async function waitForNetworkIdle(page: CrawlPage): Promise<void> {
   try {
     await page.waitFor({ loadState: 'networkidle', timeoutMs: NETWORK_IDLE_TIMEOUT_MS });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function ensureNetworkIdle(page: CrawlPage): Promise<void> {
-  if (await waitForNetworkIdle(page)) return;
-  logger.info('press-and-hold: network did not idle — reloading');
-  await page.reload();
-  if (!(await waitForNetworkIdle(page))) {
-    logger.info('press-and-hold: still not idle after reload — proceeding');
+  } catch (err) {
+    logger.info({ err: err instanceof Error ? err.message : err }, 'press-and-hold: network did not idle');
   }
 }
 
@@ -298,17 +253,12 @@ async function issuePress(page: CrawlPage, x: number, y: number, holdMs: number)
 
 export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }): Promise<boolean> {
   try {
-    await ensureNetworkIdle(page);
-
+    await waitForNetworkIdle(page);
     const coords = await findButtonCoordinates(page);
     if (!coords) return false;
-
     await waitForButtonReady(page, coords.x, coords.y);
     await issuePress(page, coords.x, coords.y, opts?.holdMs ?? humanHoldMs());
-
-    const cleared = await waitForChallengeCleared(page, 'press_and_hold');
-    if (!cleared) await classifyPaHVisualState(page);
-    return cleared;
+    return await waitForChallengeCleared(page, 'press_and_hold');
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : err }, 'press-and-hold: failed');
     return false;
