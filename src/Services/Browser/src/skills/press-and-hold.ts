@@ -232,6 +232,16 @@ async function waitForButtonReady(page: CrawlPage, x: number, y: number): Promis
   return false;
 }
 
+const NETWORK_IDLE_TIMEOUT_MS = 6_000;
+
+async function waitForNetworkIdle(page: CrawlPage): Promise<void> {
+  try {
+    await page.waitFor({ loadState: 'networkidle', timeoutMs: NETWORK_IDLE_TIMEOUT_MS });
+  } catch (err) {
+    logger.info({ err: err instanceof Error ? err.message : err }, 'press-and-hold: network did not idle');
+  }
+}
+
 async function issuePress(page: CrawlPage, x: number, y: number, holdMs: number): Promise<void> {
   const jitterX = x + Math.floor(Math.random() * 20) - 10;
   const jitterY = y + Math.floor(Math.random() * 10) - 5;
@@ -243,6 +253,7 @@ async function issuePress(page: CrawlPage, x: number, y: number, holdMs: number)
 
 export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }): Promise<boolean> {
   try {
+    await waitForNetworkIdle(page);
     const coords = await findButtonCoordinates(page);
     if (!coords) return false;
     await waitForButtonReady(page, coords.x, coords.y);
