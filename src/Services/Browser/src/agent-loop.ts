@@ -1806,6 +1806,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         answerSchema ??= await extractSchema(prompt);
         const validation = validateAnswer(answerSchema, answerText);
         const validationWarnings = validation.valid ? undefined : validation.errors;
+        const itemCountError = validationWarnings?.find((e) => e.startsWith('Expected '));
+        if (answerSchema.isListTask && itemCountError !== undefined) {
+          logger.warn({ step, itemCountError }, 'Blocking done — list task with wrong item count');
+          agentStep.action.error_feedback = `${itemCountError}. Gather the remaining items before calling done, or pivot to a different source. Do not call done with an incomplete list.`;
+          recentFailureCount++;
+          step++;
+          break;
+        }
         if (validationWarnings !== undefined) {
           logger.info({ step, warnings: validationWarnings }, 'Done has validation warnings');
           emit('done_validation_warnings', { step, warnings: validationWarnings });
