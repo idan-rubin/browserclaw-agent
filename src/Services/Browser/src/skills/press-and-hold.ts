@@ -146,6 +146,11 @@ export async function isStillBlocked(page: CrawlPage, type: AntiBotType): Promis
   return result === true;
 }
 
+export async function isIntermittentError(page: CrawlPage): Promise<boolean> {
+  const text = await getPageText(page);
+  return /please try again/i.test(text);
+}
+
 const CHALLENGE_CLEAR_MAX_MS = 10_000;
 const CHALLENGE_CLEAR_POLL_MS = 500;
 

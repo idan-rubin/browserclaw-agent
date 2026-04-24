@@ -1,5 +1,5 @@
 import type { CrawlPage, BrowserClaw } from 'browserclaw';
-import { pressAndHold, detectAntiBot, enrichSnapshot, getPageText } from './skills/press-and-hold.js';
+import { pressAndHold, detectAntiBot, enrichSnapshot, getPageText, isIntermittentError } from './skills/press-and-hold.js';
 import { clickCloudflareCheckbox } from './skills/cloudflare-checkbox.js';
 import { capturePopupSignatures, detectPopup, dismissPopup } from './skills/dismiss-popup.js';
 import { detectLoop } from './skills/loop-detection.js';
@@ -1869,8 +1869,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       if (action.action === 'press_and_hold') {
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
-          agentStep.action.error_feedback =
-            'press_and_hold did not clear the challenge — the blocking page is still present.';
+          const intermittent = await isIntermittentError(holder.page);
+          agentStep.action.error_feedback = intermittent
+            ? 'press_and_hold did not clear — page shows "Please try again" (intermittent error, happens to humans too). Safer to pivot to another source than keep retrying on this IP.'
+            : 'press_and_hold did not clear the challenge — the blocking page is still present.';
         }
         step++;
         break;
