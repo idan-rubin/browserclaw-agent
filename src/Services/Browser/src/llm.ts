@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import fs from 'node:fs';
+import path from 'node:path';
 import { parseJsonResponse } from './parse-json-response.js';
 import { logger } from './logger.js';
 import { LlmParseError } from './types.js';
@@ -110,11 +112,8 @@ const PROVIDERS: ProviderConfig[] = [
 
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const TOKEN_URL = 'https://auth.openai.com/oauth/token';
-const TOKEN_LIFETIME_HOURS = parseInt(process.env.OPENAI_TOKEN_EXPIRATION_IN_HOURS ?? '0', 10);
-const TOKEN_LIFETIME_MS = TOKEN_LIFETIME_HOURS * 60 * 60 * 1000;
-const REFRESH_BUFFER_MS = 60 * 60 * 1000; // refresh 1 hour before expiry
+const REFRESH_LIFETIME_FRACTION = 0.8;
 
-let oauthTokenIssuedAt: number | null = null;
 const clientCache = new Map<string, OpenAI>();
 // Concurrent callers share a single in-flight refresh so we don't race on process.env.
 let oauthRefreshInFlight: Promise<void> | null = null;
@@ -147,7 +146,7 @@ async function refreshOAuthToken(): Promise<void> {
     if (token.refresh_token !== undefined) {
       process.env.OPENAI_REFRESH_TOKEN = token.refresh_token;
     }
-    oauthTokenIssuedAt = Date.now();
+    persistOAuthTokens(token.access_token, token.refresh_token);
     clientCache.delete('openai-oauth');
     logger.info('OpenAI OAuth token refreshed successfully');
   })();
@@ -158,9 +157,49 @@ async function refreshOAuthToken(): Promise<void> {
   }
 }
 
+function parseJwtTimes(jwt: string): { iat: number; exp: number } | null {
+  try {
+    const parts = jwt.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString()) as {
+      iat?: number;
+      exp?: number;
+    };
+    if (typeof payload.iat === 'number' && typeof payload.exp === 'number') {
+      return { iat: payload.iat * 1000, exp: payload.exp * 1000 };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function shouldRefreshOAuthToken(): boolean {
-  if (oauthTokenIssuedAt === null || TOKEN_LIFETIME_MS === 0) return false;
-  return Date.now() - oauthTokenIssuedAt > TOKEN_LIFETIME_MS - REFRESH_BUFFER_MS;
+  const token = process.env.OPENAI_OAUTH_TOKEN;
+  if (token === undefined || token === '') return false;
+  const times = parseJwtTimes(token);
+  if (times === null) return false;
+  const lifetime = times.exp - times.iat;
+  const elapsed = Date.now() - times.iat;
+  return elapsed > lifetime * REFRESH_LIFETIME_FRACTION;
+}
+
+function persistOAuthTokens(accessToken: string, refreshToken?: string): void {
+  const envPath = path.join(process.cwd(), '.env.local');
+  if (!fs.existsSync(envPath)) return;
+  try {
+    let content = fs.readFileSync(envPath, 'utf-8');
+    if (/^OPENAI_OAUTH_TOKEN=.*$/m.test(content)) {
+      content = content.replace(/^OPENAI_OAUTH_TOKEN=.*$/m, `OPENAI_OAUTH_TOKEN=${accessToken}`);
+    }
+    if (refreshToken !== undefined && /^OPENAI_REFRESH_TOKEN=.*$/m.test(content)) {
+      content = content.replace(/^OPENAI_REFRESH_TOKEN=.*$/m, `OPENAI_REFRESH_TOKEN=${refreshToken}`);
+    }
+    fs.writeFileSync(envPath, content);
+    logger.info('Persisted rotated OAuth tokens to .env.local');
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : err }, 'Failed to persist OAuth tokens');
+  }
 }
 
 function resolveProvider(name: string): ProviderConfig {
