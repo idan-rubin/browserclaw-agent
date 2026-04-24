@@ -245,10 +245,7 @@ export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }):
   try {
     const coords = await findButtonCoordinates(page);
     if (!coords) return false;
-    if (!(await waitForButtonReady(page, coords.x, coords.y))) {
-      logger.info('press-and-hold: button did not become interactive');
-      return false;
-    }
+    await waitForButtonReady(page, coords.x, coords.y);
     await issuePress(page, coords.x, coords.y, opts?.holdMs ?? humanHoldMs());
     return await waitForChallengeCleared(page, 'press_and_hold');
   } catch (err) {
