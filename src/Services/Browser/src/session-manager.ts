@@ -318,9 +318,6 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     // config scope when the user provides their own key.
     const runAllLlmWork = async () => {
       resetLLMCallCount();
-      // Only wire waitForUser when the user-interjection feature is on. Without it,
-      // nothing delivers a user response, so blocking on ask_user would just burn
-      // the 5-min timeout. Undefined triggers agent-loop's fast-fail pivot path.
       const waitForUser = USER_INTERJECTION_ENABLED ? () => waitForUserResponse(sessionId) : undefined;
       const pageHolder = { page: managed.page };
       const userChatHooks = USER_INTERJECTION_ENABLED

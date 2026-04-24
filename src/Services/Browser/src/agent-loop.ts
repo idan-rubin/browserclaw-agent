@@ -1279,6 +1279,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 
   let step = 0;
   let recentFailureCount = 0;
+  let urgentLoopNudges = 0;
   let replanInterval = REPLAN_BASE_INTERVAL;
   let nextReplanStep = replanInterval;
   let contextSummary = '';
@@ -1648,6 +1649,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const loopNudge = detectLoop(actions[0], history);
         if (loopNudge !== null) {
           logger.warn({ step, level: loopNudge.level }, 'Loop nudge');
+          if (loopNudge.level === 'urgent') {
+            urgentLoopNudges++;
+            if (urgentLoopNudges >= 3) {
+              logger.warn({ step, urgentLoopNudges }, 'Stuck loop — force-completing');
+              return await forceComplete(`Stuck loop after ${String(urgentLoopNudges)} urgent nudges`);
+            }
+          }
           let nudgeMessage = loopNudge.message;
 
           // On urgent/warning loops, inject DOM text extract so the agent has raw page
