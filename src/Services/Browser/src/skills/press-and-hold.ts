@@ -183,9 +183,14 @@ export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }):
   try {
     logger.info('press-and-hold: starting');
 
-    const coords = await findButtonCoordinates(page);
+    let coords = await findButtonCoordinates(page);
     if (!coords) {
-      logger.info('press-and-hold: no suitable button found');
+      logger.info('press-and-hold: button not ready — refreshing');
+      await page.goto(await page.url());
+      coords = await findButtonCoordinates(page);
+    }
+    if (!coords) {
+      logger.info('press-and-hold: no suitable button after refresh');
       return false;
     }
     const { x, y } = coords;
