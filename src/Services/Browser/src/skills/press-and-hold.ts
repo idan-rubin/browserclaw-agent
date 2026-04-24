@@ -159,17 +159,17 @@ export function detectAntiBot(domText: string): AntiBotType {
   // Check press-and-hold first — if DOM mentions press/hold, it's a press-and-hold challenge
   // regardless of what the snapshot says
   if (PRESS_HOLD_PATTERN.test(domText)) {
-    logger.info({ domTextPreview: domText.substring(0, 150) }, 'Anti-bot detected: press-and-hold');
+    logger.info({ domTextPreview: domText.substring(0, 600) }, 'Anti-bot detected: press-and-hold');
     return 'press_and_hold';
   }
   // Cloudflare-specific patterns (no press-and-hold in DOM text, already checked above)
   if (CLOUDFLARE_PATTERN.test(domText)) {
-    logger.info({ domTextPreview: domText.substring(0, 150) }, 'Anti-bot detected: cloudflare checkbox');
+    logger.info({ domTextPreview: domText.substring(0, 600) }, 'Anti-bot detected: cloudflare checkbox');
     return 'cloudflare_checkbox';
   }
   // Generic anti-bot (verify human, captcha, not a bot) — treat as cloudflare-style checkbox
   if (ANTI_BOT_PATTERN.test(domText)) {
-    logger.info({ domTextPreview: domText.substring(0, 150) }, 'Anti-bot detected: generic');
+    logger.info({ domTextPreview: domText.substring(0, 600) }, 'Anti-bot detected: generic');
     return 'cloudflare_checkbox';
   }
   return null;
