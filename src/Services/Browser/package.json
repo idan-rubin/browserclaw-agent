@@ -1,6 +1,6 @@
 {
   "name": "browserclaw-agent",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Browser automation agent loop powered by browserclaw",
   "type": "module",
   "main": "./dist/index.js",
@@ -28,7 +28,7 @@
     "prepublishOnly": "npm run build && npm run test:pack"
   },
   "dependencies": {
-    "browserclaw": "^0.14.2",
+    "browserclaw": "^0.15.3",
     "openai": "^4.80.0",
     "pino": "^10.3.1"
   },

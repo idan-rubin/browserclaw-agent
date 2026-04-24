@@ -1,5 +1,11 @@
 import type { CrawlPage, BrowserClaw } from 'browserclaw';
-import { pressAndHold, detectAntiBot, enrichSnapshot, getPageText } from './skills/press-and-hold.js';
+import {
+  pressAndHold,
+  detectAntiBot,
+  enrichSnapshot,
+  getPageText,
+  isIntermittentError,
+} from './skills/press-and-hold.js';
 import { clickCloudflareCheckbox } from './skills/cloudflare-checkbox.js';
 import { capturePopupSignatures, detectPopup, dismissPopup } from './skills/dismiss-popup.js';
 import { detectLoop } from './skills/loop-detection.js';
@@ -413,6 +419,12 @@ const CONTEXT_COMPRESS_INTERVAL = 20;
 const EXTRACT_RESULT_MAX_CHARS = 2_000_000;
 const EXTRACT_OLDER_PREVIEW_MAX_CHARS = 500;
 
+const PAH_INTERMITTENT_FEEDBACK =
+  'press_and_hold did not clear — page shows "Please try again" (intermittent error, happens to humans too). Safer to pivot to another source than keep retrying on this IP.';
+const PAH_BLOCKED_FEEDBACK = 'press_and_hold did not clear the challenge — the blocking page is still present.';
+const PAH_MAX_FAILURES = 3;
+const PAH_BAIL_FEEDBACK = `press_and_hold has failed ${String(PAH_MAX_FAILURES)} times on this session — this IP is walled by the site. Pivot to a different source; do NOT call press_and_hold again.`;
+
 function findLatestExtractIdx(history: AgentStep[]): number {
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].action.extract_result !== undefined) return i;
@@ -585,7 +597,8 @@ function buildUserMessage(
   }
 
   if (contextLevel === 'full' && domainSkill !== undefined && domainSkill !== null) {
-    message += '\n--- PLAYBOOK (proven workflow for this site) ---\n';
+    message +=
+      '\n--- DOMAIN NOTES (advisory — apply when on this site; the task is not locked to this domain, pivot to any equivalent source if blocked) ---\n';
     message += `\n"${domainSkill.skill.title}" — ${domainSkill.skill.description}\n`;
     for (const step of domainSkill.skill.steps) {
       let line = `  ${String(step.number)}. [${step.action}] ${step.description}`;
@@ -610,7 +623,7 @@ function buildUserMessage(
         message += `  - ${note}\n`;
       }
     }
-    message += '--- END PLAYBOOK ---\n';
+    message += '--- END DOMAIN NOTES ---\n';
   }
 
   // Progress tracking — structured view of where the agent is
@@ -1207,6 +1220,7 @@ export async function runAgentLoop(
   };
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
+  const antiBotHitsByDomain = new Map<string, number>();
 
   let answerSchema: AnswerSchema | null = null;
 
@@ -1231,10 +1245,6 @@ export async function runAgentLoop(
   try {
     const taskInput = options?.buildTask !== undefined ? await options.buildTask(prompt) : prompt;
     let planMessage = `User prompt: ${taskInput}`;
-    if (domainSkill !== null) {
-      planMessage += `\n\nWe have a proven skill for this site: "${domainSkill.skill.title}" — ${domainSkill.skill.description}`;
-      planMessage += '\nLeverage it — no need to rediscover what already works.';
-    }
     if (taskLesson !== null) {
       const lessonText = formatLessonForPrompt(taskLesson);
       if (lessonText !== '') {
@@ -1281,6 +1291,8 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 
   let step = 0;
   let recentFailureCount = 0;
+  let pahFailureCount = 0;
+  let urgentLoopNudges = 0;
   let replanInterval = REPLAN_BASE_INTERVAL;
   let nextReplanStep = replanInterval;
   let contextSummary = '';
@@ -1351,6 +1363,13 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     const antiBotType = detectAntiBot(domText);
     if (antiBotType !== null) {
       snapshot = enrichSnapshot(snapshot, domText, antiBotType);
+      const currentDomain = extractDomain(url);
+      const hits = (antiBotHitsByDomain.get(currentDomain) ?? 0) + 1;
+      antiBotHitsByDomain.set(currentDomain, hits);
+      if (hits >= 2 && domainSkill?.domain === currentDomain) {
+        logger.info({ domain: currentDomain, hits }, 'Clearing domain skill — repeated anti-bot on this domain');
+        domainSkill = null;
+      }
     }
     const pageState = detectPageState({ snapshot, domText, title, url, antiBotType });
 
@@ -1643,6 +1662,13 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const loopNudge = detectLoop(actions[0], history);
         if (loopNudge !== null) {
           logger.warn({ step, level: loopNudge.level }, 'Loop nudge');
+          if (loopNudge.level === 'urgent') {
+            urgentLoopNudges++;
+            if (urgentLoopNudges >= 3) {
+              logger.warn({ step, urgentLoopNudges }, 'Stuck loop — force-completing');
+              return await forceComplete(`Stuck loop after ${String(urgentLoopNudges)} urgent nudges`);
+            }
+          }
           let nudgeMessage = loopNudge.message;
 
           // On urgent/warning loops, inject DOM text extract so the agent has raw page
@@ -1793,6 +1819,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         answerSchema ??= await extractSchema(prompt);
         const validation = validateAnswer(answerSchema, answerText);
         const validationWarnings = validation.valid ? undefined : validation.errors;
+        const itemCountError = validationWarnings?.find((e) => e.startsWith('Expected '));
+        if (answerSchema.isListTask && itemCountError !== undefined) {
+          logger.warn({ step, itemCountError }, 'Blocking done — list task with wrong item count');
+          agentStep.action.error_feedback = `${itemCountError}. Gather the remaining items before calling done, or pivot to a different source. Do not call done with an incomplete list.`;
+          recentFailureCount++;
+          step++;
+          break;
+        }
         if (validationWarnings !== undefined) {
           logger.info({ step, warnings: validationWarnings }, 'Done has validation warnings');
           emit('done_validation_warnings', { step, warnings: validationWarnings });
@@ -1846,10 +1880,18 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'press_and_hold') {
+        if (pahFailureCount >= PAH_MAX_FAILURES) {
+          logger.warn({ step, pahFailureCount }, 'press_and_hold short-circuited — bail limit reached');
+          agentStep.action.error_feedback = PAH_BAIL_FEEDBACK;
+          step++;
+          break;
+        }
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
-          agentStep.action.error_feedback =
-            'press_and_hold did not clear the challenge on this attempt — the blocking page is still present. The hold timing varies per attempt; try press_and_hold ONE more time with a higher hold_ms (e.g. 12000-15000). If it still fails after that retry, use click_cloudflare or ask_user.';
+          pahFailureCount++;
+          const intermittent = await isIntermittentError(holder.page);
+          logger.info({ step, intermittent, pahFailureCount }, 'press_and_hold failed — post-check');
+          agentStep.action.error_feedback = intermittent ? PAH_INTERMITTENT_FEEDBACK : PAH_BLOCKED_FEEDBACK;
         }
         step++;
         break;

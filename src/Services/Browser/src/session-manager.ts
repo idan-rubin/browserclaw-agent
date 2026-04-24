@@ -175,26 +175,38 @@ export async function createSession(
 
   const cdpPort = await nextAvailableCdpPort();
 
+  const launchOpts = {
+    headless,
+    noSandbox: process.platform === 'linux',
+    cdpPort,
+    ssrfPolicy: {
+      dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
+    },
+    chromeArgs: [
+      '--disable-blink-features=AutomationControlled',
+      '--disable-downloads',
+      '--disable-file-system',
+      ...(headless === true ? [] : ['--start-maximized']),
+    ],
+  };
   let browser: BrowserClaw;
   try {
-    browser = await BrowserClaw.launch({
-      headless,
-      noSandbox: process.platform === 'linux',
-      cdpPort,
-      ssrfPolicy: {
-        dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
-      },
-      chromeArgs: [
-        '--disable-blink-features=AutomationControlled',
-        '--disable-downloads',
-        '--disable-file-system',
-        '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.101 Safari/537.36',
-        ...(headless === true ? [] : ['--start-maximized']),
-      ],
-    });
+    browser = await BrowserClaw.launch(launchOpts);
   } catch (err) {
-    logger.error({ cdpPort, err }, 'BrowserClaw.launch failed — a Chrome process may be orphaned on this CDP port');
-    throw err;
+    const message = err instanceof Error ? err.message : '';
+    const isCdpReadyRace = message.includes('Failed to start Chrome CDP');
+    if (!isCdpReadyRace) {
+      logger.error({ cdpPort, err }, 'BrowserClaw.launch failed');
+      throw err;
+    }
+    logger.warn({ cdpPort }, 'BrowserClaw.launch hit CDP-ready race — retrying after 2s');
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      browser = await BrowserClaw.launch(launchOpts);
+    } catch (retryErr) {
+      logger.error({ cdpPort, retryErr }, 'BrowserClaw.launch failed after retry');
+      throw retryErr;
+    }
   }
 
   let page: CrawlPage;
@@ -305,7 +317,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     // config scope when the user provides their own key.
     const runAllLlmWork = async () => {
       resetLLMCallCount();
-      const waitForUser = () => waitForUserResponse(sessionId);
+      const waitForUser = USER_INTERJECTION_ENABLED ? () => waitForUserResponse(sessionId) : undefined;
       const pageHolder = { page: managed.page };
       const userChatHooks = USER_INTERJECTION_ENABLED
         ? { drainMessages: () => drainUserMessages(sessionId), nonce: managed.interjectionNonce }
@@ -401,6 +413,11 @@ async function startAgentLoop(sessionId: string): Promise<void> {
           skill_outcome: skillOutcome,
         });
       } else {
+        if (!managed.skipPostprocessing && managed.domain !== null && domainSkill !== null) {
+          await appendFailureNote(managed.domain, domainSkill, result).catch((err: unknown) => {
+            logger.warn({ err, domain: managed.domain }, 'Failed to append failure note');
+          });
+        }
         emitter('failed', {
           step: result.steps.length,
           error: result.error,
@@ -528,6 +545,22 @@ async function aggregateDomainSkills(
   if (entries.length > 0) {
     emitter('domain_skills', { skills: entries, count: entries.length });
   }
+}
+
+async function appendFailureNote(domain: string, existing: CatalogSkill, result: AgentLoopResult): Promise<void> {
+  const antiBotHit = result.steps.some(
+    (s) => s.action.action === 'press_and_hold' || s.action.action === 'click_cloudflare',
+  );
+  if (!antiBotHit) return;
+  const date = new Date().toISOString().slice(0, 10);
+  const url = result.final_url ?? '';
+  const note = `[${date}] Anti-bot wall hit at ${url}. This domain's URL pattern triggered press-and-hold/checkbox challenge — pivot to alternative sources (web_search for the task, or other sites covering the same content) rather than retrying here.`;
+  const updated: SkillOutput = {
+    ...existing.skill,
+    failure_notes: [...(existing.skill.failure_notes ?? []), note].slice(-5),
+  };
+  await saveSkill(domain, updated, existing.tags, existing.run_count);
+  logger.info({ domain, note }, 'Saved failure note to skill');
 }
 
 async function tryGenerateSkill(
