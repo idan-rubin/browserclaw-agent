@@ -1874,6 +1874,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
           const intermittent = await isIntermittentError(holder.page);
+          logger.info({ step, intermittent }, 'press_and_hold failed — post-check');
           agentStep.action.error_feedback = intermittent ? PAH_INTERMITTENT_FEEDBACK : PAH_BLOCKED_FEEDBACK;
         }
         step++;
