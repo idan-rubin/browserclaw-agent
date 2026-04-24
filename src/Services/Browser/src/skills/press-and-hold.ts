@@ -262,55 +262,40 @@ async function waitForButtonReady(page: CrawlPage, x: number, y: number): Promis
   return false;
 }
 
-async function reloadUntilNetworkIdle(page: CrawlPage, maxAttempts = 2): Promise<void> {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    await page.reload();
-    try {
-      await page.waitFor({ loadState: 'networkidle' });
-      return;
-    } catch (err) {
-      logger.info(
-        { attempt: attempt + 1, err: err instanceof Error ? err.message : err },
-        'press-and-hold: network did not idle — reloading again',
-      );
-    }
-  }
-}
-
-async function attemptPressAndHold(page: CrawlPage, holdMsOverride?: number): Promise<boolean> {
-  await reloadUntilNetworkIdle(page);
-
-  const coords = await findButtonCoordinates(page);
-  if (!coords) {
-    logger.info('press-and-hold: no suitable button found');
-    return false;
-  }
-  await waitForButtonReady(page, coords.x, coords.y);
-  const { x, y } = coords;
-  logger.info({ x, y }, 'press-and-hold: found button');
-
-  const jitterX = x + Math.floor(Math.random() * 20) - 10;
-  const jitterY = y + Math.floor(Math.random() * 10) - 5;
-  const holdMs = holdMsOverride ?? humanHoldMs();
-  const delay = 100 + Math.floor(Math.random() * 200);
-  logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
-  await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
-  logger.info({ holdMs }, 'press-and-hold: released');
-
-  const cleared = await waitForChallengeCleared(page, 'press_and_hold');
-  logger.info({ cleared }, 'press-and-hold: resolved');
-  return cleared;
-}
-
 export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }): Promise<boolean> {
   try {
     logger.info('press-and-hold: starting');
-    if (await attemptPressAndHold(page, opts?.holdMs)) return true;
+    await page.reload();
+    try {
+      await page.waitFor({ loadState: 'networkidle' });
+    } catch (err) {
+      logger.info(
+        { err: err instanceof Error ? err.message : err },
+        'press-and-hold: network did not idle — proceeding anyway',
+      );
+    }
 
-    const state = await classifyPaHVisualState(page);
-    if (state === 'error') return false;
-    logger.info({ state }, 'press-and-hold: retrying once after visual check');
-    return await attemptPressAndHold(page, opts?.holdMs);
+    const coords = await findButtonCoordinates(page);
+    if (!coords) {
+      logger.info('press-and-hold: no suitable button found');
+      return false;
+    }
+    await waitForButtonReady(page, coords.x, coords.y);
+    const { x, y } = coords;
+    logger.info({ x, y }, 'press-and-hold: found button');
+
+    const jitterX = x + Math.floor(Math.random() * 20) - 10;
+    const jitterY = y + Math.floor(Math.random() * 10) - 5;
+    const holdMs = opts?.holdMs ?? humanHoldMs();
+    const delay = 100 + Math.floor(Math.random() * 200);
+    logger.info({ x: jitterX, y: jitterY, holdMs, delay }, 'press-and-hold: pressing');
+    await page.pressAndHold(jitterX, jitterY, { delay, holdMs });
+    logger.info({ holdMs }, 'press-and-hold: released');
+
+    const cleared = await waitForChallengeCleared(page, 'press_and_hold');
+    logger.info({ cleared }, 'press-and-hold: resolved');
+    if (!cleared) await classifyPaHVisualState(page);
+    return cleared;
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : err }, 'press-and-hold: failed');
     return false;
