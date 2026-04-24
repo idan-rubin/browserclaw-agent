@@ -243,19 +243,15 @@ async function waitForButtonReady(page: CrawlPage, x: number, y: number): Promis
 
 export async function pressAndHold(page: CrawlPage, opts?: { holdMs?: number }): Promise<boolean> {
   try {
-    logger.info('press-and-hold: starting');
+    logger.info('press-and-hold: starting — reloading for fresh button state');
+    await page.reload();
 
-    let coords = await findButtonCoordinates(page);
-    if (coords && !(await waitForButtonReady(page, coords.x, coords.y))) {
-      logger.info('press-and-hold: button not interactive after 5s — reloading');
-      await page.reload();
-      coords = await findButtonCoordinates(page);
-      if (coords) await waitForButtonReady(page, coords.x, coords.y);
-    }
+    const coords = await findButtonCoordinates(page);
     if (!coords) {
-      logger.info('press-and-hold: no suitable button found');
+      logger.info('press-and-hold: no suitable button found after reload');
       return false;
     }
+    await waitForButtonReady(page, coords.x, coords.y);
     const { x, y } = coords;
     logger.info({ x, y }, 'press-and-hold: found button');
 
