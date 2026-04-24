@@ -547,11 +547,7 @@ async function aggregateDomainSkills(
   }
 }
 
-async function appendFailureNote(
-  domain: string,
-  existing: CatalogSkill,
-  result: AgentLoopResult,
-): Promise<void> {
+async function appendFailureNote(domain: string, existing: CatalogSkill, result: AgentLoopResult): Promise<void> {
   const antiBotHit = result.steps.some(
     (s) => s.action.action === 'press_and_hold' || s.action.action === 'click_cloudflare',
   );

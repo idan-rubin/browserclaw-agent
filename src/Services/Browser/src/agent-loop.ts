@@ -1,5 +1,11 @@
 import type { CrawlPage, BrowserClaw } from 'browserclaw';
-import { pressAndHold, detectAntiBot, enrichSnapshot, getPageText, isIntermittentError } from './skills/press-and-hold.js';
+import {
+  pressAndHold,
+  detectAntiBot,
+  enrichSnapshot,
+  getPageText,
+  isIntermittentError,
+} from './skills/press-and-hold.js';
 import { clickCloudflareCheckbox } from './skills/cloudflare-checkbox.js';
 import { capturePopupSignatures, detectPopup, dismissPopup } from './skills/dismiss-popup.js';
 import { detectLoop } from './skills/loop-detection.js';
