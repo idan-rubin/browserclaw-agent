@@ -1951,7 +1951,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           const items = await extractItems(holder.page);
           const header =
             items.count >= 5
-              ? `${String(items.count)} records extracted from ${items.source}. This is your data — parse the records and respond. Drill into an individual listing ONLY if a record is missing a specific field the user asked for; for counts/summaries, answer directly from these records.\n`
+              ? `${String(items.count)} records extracted from ${items.source}. This is your data — parse and respond. The active page filters (URL path/query, visible filter chips) ALREADY satisfy any filter-shaped constraints in the user's prompt (price cap, neighborhood, pets allowed, etc.); the records inherit those filters and you should TRUST them as evidence — do NOT drill detail pages to re-verify what the page-level filter already enforces. Drill ONLY when a specific named field the user asked for (e.g. exact bedrooms, address, URL) is missing from a given record.\n`
               : '';
           const payload =
             header +
