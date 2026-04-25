@@ -1262,8 +1262,8 @@ Step 1 — Refine the goal into a SMART task:
   • If the user specified a count, use it. Otherwise, don't pick an arbitrary number — the agent should stop when diminishing returns kick in.
 - If the prompt is already specific ("book a flight from NYC to LAX on Dec 15"), return it unchanged.
 - Examples:
-  • "find apartments in Chelsea" → "Search for apartments in Chelsea on a major listings site. Collect listings with: name/address, price, bedrooms, and URL. Stop when results start repeating or losing relevance."
-  • "compare laptops" → "Search for laptops on an electronics site. Compare options by: name, price, specs, and rating. Gather enough to make a meaningful comparison."
+  • "find apartments in Chelsea" → "Find apartments in Chelsea. Collect listings with: name/address, price, bedrooms, and URL. Stop when results start repeating or losing relevance."
+  • "compare laptops" → "Compare laptops by: name, price, specs, and rating. Gather enough to make a meaningful comparison."
   • "book a table at Nobu" → "book a table at Nobu" (already specific)
 
 Step 2 — Create an action plan:
