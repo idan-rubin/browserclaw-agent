@@ -72,7 +72,7 @@ You MUST respond with valid JSON matching this schema:
 
 Rules:
 - Title should be concise (under 60 chars).
-- Capture only the successful, reusable path — collapse intermediate waits, scrolls, and any recovered failures into the clean logical sequence.
+- Capture only the successful, reusable path. Steps annotated with "⚠ NEGATIVE FEEDBACK" are failures or nudges — exclude them from the skill's steps and treat their context as signal about what NOT to write into tips.
 - Description should be one sentence explaining the end-to-end task.
 - Steps should be human-readable — use natural language, not technical refs.
 - The "action" field must exactly match the action type the step performed in the history. If a step extracted data, use "extract"; if it reviewed/processed data outside the browser, omit the step rather than picking an unrelated action name.
@@ -96,6 +96,8 @@ function buildPrompt(userPrompt: string, result: AgentLoopResult): string {
     if (action.url !== undefined && action.url !== '') detail += ` (url: ${action.url})`;
     if (step.page_title !== undefined && step.page_title !== '') detail += ` [page: ${step.page_title}]`;
     if (step.outcome !== undefined && step.outcome !== '') detail += ` → ${step.outcome}`;
+    if (action.error_feedback !== undefined && action.error_feedback !== '')
+      detail += ` ⚠ NEGATIVE FEEDBACK: ${action.error_feedback}`;
     message += `  ${detail}\n`;
   }
 
