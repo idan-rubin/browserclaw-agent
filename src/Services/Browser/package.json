@@ -28,7 +28,7 @@
     "prepublishOnly": "npm run build && npm run test:pack"
   },
   "dependencies": {
-    "browserclaw": "^0.15.3",
+    "browserclaw": "^0.16.0",
     "openai": "^4.80.0",
     "pino": "^10.3.1"
   },
