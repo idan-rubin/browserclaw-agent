@@ -179,6 +179,7 @@ export async function createSession(
     headless,
     noSandbox: process.platform === 'linux',
     cdpPort,
+    stealth: true,
     ssrfPolicy: {
       dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
     },
