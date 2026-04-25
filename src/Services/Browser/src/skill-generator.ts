@@ -66,17 +66,13 @@ Rules:
 - what_worked: capture the successful patterns — the approach, the shortcuts, the order. Keep entries crisp and reusable across similar tasks on this domain.`;
 
 function buildPrompt(userPrompt: string, result: AgentLoopResult): string {
-  const successful = result.steps.filter(
-    (s) => s.action.error_feedback === undefined || s.action.error_feedback === '',
-  );
-
   let message = `Original task: ${userPrompt}\n\n`;
   message += `Final URL: ${result.final_url ?? 'unknown'}\n`;
-  message += `Successful steps: ${String(successful.length)} of ${String(result.steps.length)}\n`;
+  message += `Total steps: ${String(result.steps.length)}\n`;
   message += `Duration: ${String(result.duration_ms)}ms\n\n`;
-  message += 'Successful action history (reusable path — derive the skill from this):\n';
+  message += 'Action history — capture only the successful, reusable path:\n';
 
-  for (const step of successful) {
+  for (const step of result.steps) {
     const action = step.action;
     let detail = `Step ${String(step.step)}: ${action.action} — ${action.reasoning}`;
     if (action.ref !== undefined && action.ref !== '') detail += ` (ref: ${action.ref})`;
