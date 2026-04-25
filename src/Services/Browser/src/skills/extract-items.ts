@@ -205,18 +205,39 @@ const EXTRACTION_FN = `
 
   function tryDom() {
     const candidates = document.querySelectorAll('article, li, section, [role="listitem"], [role="article"], [class*="card" i], [class*="listing" i], [class*="item" i], [class*="result" i], [class*="search" i][class*="card" i], [data-testid*="card" i], [data-testid*="listing" i], [data-qa*="card" i], [data-qa*="listing" i], [data-qa*="result" i]');
-    const seenUrls = new Set();
-    const out = [];
+    const valid = [];
     for (const el of candidates) {
-      if (out.length >= MAX) break;
       const text = (el.innerText || '').trim();
       if (text.length < 15 || text.length > 1500) continue;
       const link = el.querySelector('a[href]');
       const href = link ? link.href : null;
       if (!href) continue;
-      if (seenUrls.has(href)) continue;
-      seenUrls.add(href);
-      out.push({ text: text.slice(0, 600), url: href });
+      valid.push({ el: el, text: text, href: href });
+    }
+    if (valid.length === 0) return null;
+
+    var byParent = new Map();
+    for (var i = 0; i < valid.length; i++) {
+      var parent = valid[i].el.parentElement;
+      if (!parent) continue;
+      var arr = byParent.get(parent) || [];
+      arr.push(valid[i]);
+      byParent.set(parent, arr);
+    }
+    var bestGroup = null;
+    var bestSize = 0;
+    byParent.forEach(function (arr) {
+      if (arr.length > bestSize) { bestGroup = arr; bestSize = arr.length; }
+    });
+    var group = bestSize >= 3 ? bestGroup : valid;
+
+    const seenUrls = new Set();
+    const out = [];
+    for (var j = 0; j < group.length && out.length < MAX; j++) {
+      var item = group[j];
+      if (seenUrls.has(item.href)) continue;
+      seenUrls.add(item.href);
+      out.push({ text: item.text.slice(0, 600), url: item.href });
     }
     return out.length > 0 ? out : null;
   }
@@ -232,22 +253,17 @@ const EXTRACTION_FN = `
     return { source: source, records: combined };
   }
 
-  var domOnly = tryDom();
-  if (domOnly && domOnly.length >= 3) {
-    return { source: 'dom', records: domOnly.slice(0, MAX) };
-  }
+  var ld = tryJsonLd();
+  if (ld) return mergeWithDom('json-ld', ld);
 
-  var results = tryNextData();
-  if (results) return mergeWithDom('next-data', results);
+  var nd = tryNextData();
+  if (nd) return mergeWithDom('next-data', nd);
 
   var apollo = tryGlobalState('__APOLLO_STATE__');
   if (apollo) return mergeWithDom('apollo', apollo);
 
   var initial = tryGlobalState('__INITIAL_STATE__');
   if (initial) return mergeWithDom('initial-state', initial);
-
-  var ld = tryJsonLd();
-  if (ld) return mergeWithDom('json-ld', ld);
 
   var dom = tryDom();
   if (dom) return { source: 'dom', records: dom.slice(0, MAX) };

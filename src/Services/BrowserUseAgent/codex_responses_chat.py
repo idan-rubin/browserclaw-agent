@@ -19,6 +19,8 @@ JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
 
 def _flatten_content(content: Any) -> str:
+    if content is None:
+        return ""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
