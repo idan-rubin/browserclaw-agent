@@ -425,6 +425,10 @@ const PAH_BLOCKED_FEEDBACK = 'press_and_hold did not clear the challenge — the
 const PAH_MAX_FAILURES = 3;
 const PAH_BAIL_FEEDBACK = `press_and_hold has failed ${String(PAH_MAX_FAILURES)} times on this session — this IP is walled by the site. Pivot to a different source; do NOT call press_and_hold again.`;
 
+function walledNavigateFeedback(domain: string): string {
+  return `${domain} is walled by anti-bot this session — do NOT navigate to any URL on this domain again. Pivot to a different source.`;
+}
+
 function findLatestExtractIdx(history: AgentStep[]): number {
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].action.extract_result !== undefined) return i;
@@ -2033,7 +2037,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         const targetDomain = extractDomain(action.url);
         if (targetDomain !== '' && walledDomains.has(targetDomain)) {
           logger.warn({ step, targetDomain }, 'navigate refused — domain walled this session');
-          agentStep.action.error_feedback = `${targetDomain} is walled by anti-bot this session — do NOT navigate to any URL on this domain again. Pivot to a different source.`;
+          agentStep.action.error_feedback = walledNavigateFeedback(targetDomain);
           step++;
           break;
         }

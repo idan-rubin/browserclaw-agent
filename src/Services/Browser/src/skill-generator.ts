@@ -5,10 +5,26 @@ interface TagResult {
   tags: string[];
 }
 
-const NEGATIVE_TIP_RE = /^\s*(?:[⚠🔍]|avoid:?|don't|do not|never|stop|skip|don't try|⚠ Avoid:|🔍 Site quirk:)/i;
+const NEGATIVE_TIP_RE = /^\s*(?:[⚠🔍]|avoid:?|don't|do not|never|stop|skip)/i;
 
 function sanitizeTips(input: string[]): string[] {
   return input.filter((t) => t.trim() !== '' && !NEGATIVE_TIP_RE.test(t));
+}
+
+function dedupeKey(tip: string): string {
+  return tip.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+function mergeTips(existing: string[], incoming: string[]): string[] {
+  const seen = new Set(existing.map(dedupeKey));
+  const out = [...existing];
+  for (const tip of incoming) {
+    const key = dedupeKey(tip);
+    if (key === '' || seen.has(key)) continue;
+    seen.add(key);
+    out.push(tip);
+  }
+  return out;
 }
 
 export async function generateSkillTags(prompt: string, skill: SkillOutput): Promise<string[]> {
@@ -172,23 +188,8 @@ export async function mergeSkills(
   result: AgentLoopResult,
 ): Promise<SkillOutput> {
   const newSkill = await generateSkill(prompt, result);
-
-  const existingTips = sanitizeTips(existing.tips);
-  const allTips = [...existingTips];
-  for (const tip of newSkill.tips) {
-    if (!allTips.some((t) => t.toLowerCase().includes(tip.toLowerCase().slice(0, 30)))) {
-      allTips.push(tip);
-    }
-  }
-
-  const existingWorked = sanitizeTips(existing.what_worked ?? []);
-  const allWorked = [...existingWorked];
-  for (const w of newSkill.what_worked ?? []) {
-    if (!allWorked.some((aw) => aw.toLowerCase().includes(w.toLowerCase().slice(0, 30)))) {
-      allWorked.push(w);
-    }
-  }
-
+  const allTips = mergeTips(sanitizeTips(existing.tips), newSkill.tips);
+  const allWorked = mergeTips(sanitizeTips(existing.what_worked ?? []), newSkill.what_worked ?? []);
   const steps = newSkill.steps.length < existing.steps.length ? newSkill.steps : existing.steps;
 
   return {
