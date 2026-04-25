@@ -205,6 +205,7 @@ const EXTRACTION_FN = `
 
   function tryDom() {
     const candidates = document.querySelectorAll('article, li, section, [role="listitem"], [role="article"], [class*="card" i], [class*="listing" i], [class*="item" i], [class*="result" i], [class*="search" i][class*="card" i], [data-testid*="card" i], [data-testid*="listing" i], [data-qa*="card" i], [data-qa*="listing" i], [data-qa*="result" i]');
+    const seenUrls = new Set();
     const out = [];
     for (const el of candidates) {
       if (out.length >= MAX) break;
@@ -213,14 +214,9 @@ const EXTRACTION_FN = `
       const link = el.querySelector('a[href]');
       const href = link ? link.href : null;
       if (!href) continue;
-      const rec = { text: text.slice(0, 400), url: href };
-      const priceMatch = text.match(/\\$[\\d,]+(?:\\/(?:mo|month))?/i);
-      if (priceMatch) rec.price = priceMatch[0];
-      const bedMatch = text.match(/(\\d+)\\s*(?:bed|br|bedroom)/i);
-      if (bedMatch) rec.bedrooms = bedMatch[1];
-      const studioMatch = /\\bstudio\\b/i.test(text);
-      if (studioMatch && !rec.bedrooms) rec.bedrooms = 'studio';
-      out.push(rec);
+      if (seenUrls.has(href)) continue;
+      seenUrls.add(href);
+      out.push({ text: text.slice(0, 600), url: href });
     }
     return out.length > 0 ? out : null;
   }
@@ -238,11 +234,7 @@ const EXTRACTION_FN = `
 
   var domOnly = tryDom();
   if (domOnly && domOnly.length >= 3) {
-    var strong = [];
-    for (var k = 0; k < domOnly.length; k++) {
-      if (Object.keys(domOnly[k]).length >= 3) strong.push(domOnly[k]);
-    }
-    if (strong.length >= 3) return { source: 'dom', records: strong.slice(0, MAX) };
+    return { source: 'dom', records: domOnly.slice(0, MAX) };
   }
 
   var results = tryNextData();
