@@ -184,6 +184,9 @@ export async function generateSkill(prompt: string, result: AgentLoopResult): Pr
   };
 }
 
+const MAX_TIPS = 8;
+const MAX_WHAT_WORKED = 6;
+
 export async function mergeSkills(
   existing: SkillOutput,
   prompt: string,
@@ -191,41 +194,38 @@ export async function mergeSkills(
 ): Promise<SkillOutput> {
   const newSkill = await generateSkill(prompt, result);
 
-  // Merge tips: deduplicate by keeping unique entries from both
   const allTips = [...existing.tips];
   for (const tip of newSkill.tips) {
     if (!allTips.some((t) => t.toLowerCase().includes(tip.toLowerCase().slice(0, 30)))) {
       allTips.push(tip);
     }
   }
+  const cappedTips = allTips.slice(-MAX_TIPS);
 
-  // Merge what_worked
   const allWorked = [...(existing.what_worked ?? [])];
   for (const w of newSkill.what_worked ?? []) {
     if (!allWorked.some((aw) => aw.toLowerCase().includes(w.toLowerCase().slice(0, 30)))) {
       allWorked.push(w);
     }
   }
+  const cappedWorked = allWorked.slice(-MAX_WHAT_WORKED);
 
-  // Always keep the shorter (more efficient) steps. mergeSkills is called when
-  // the new run took more steps, so existing steps are usually shorter — but
-  // we check explicitly in case the new run found a shorter path.
   const steps = newSkill.steps.length < existing.steps.length ? newSkill.steps : existing.steps;
 
   return {
     title: existing.title,
     description: existing.description,
     steps,
-    tips: allTips,
-    what_worked: allWorked,
+    tips: cappedTips,
+    what_worked: cappedWorked,
     failure_notes: existing.failure_notes,
     metadata: newSkill.metadata,
     markdown: toMarkdown(
       existing.title,
       existing.description,
       steps,
-      allTips,
-      allWorked,
+      cappedTips,
+      cappedWorked,
       prompt,
       newSkill.metadata.url,
       newSkill.metadata.duration_ms,
