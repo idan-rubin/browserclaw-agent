@@ -5,6 +5,28 @@ interface TagResult {
   tags: string[];
 }
 
+const NEGATIVE_TIP_RE = /^\s*(?:[⚠🔍]|avoid:?|don't|do not|never|stop|skip)/i;
+
+function sanitizeTips(input: string[]): string[] {
+  return input.filter((t) => t.trim() !== '' && !NEGATIVE_TIP_RE.test(t));
+}
+
+function dedupeKey(tip: string): string {
+  return tip.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+function mergeTips(existing: string[], incoming: string[]): string[] {
+  const seen = new Set(existing.map(dedupeKey));
+  const out = [...existing];
+  for (const tip of incoming) {
+    const key = dedupeKey(tip);
+    if (key === '' || seen.has(key)) continue;
+    seen.add(key);
+    out.push(tip);
+  }
+  return out;
+}
+
 export async function generateSkillTags(prompt: string, skill: SkillOutput): Promise<string[]> {
   try {
     const result = await llmJson<TagResult>({
@@ -24,11 +46,9 @@ interface ParsedSkill {
   steps: SkillStep[];
   tips?: string[];
   what_worked?: string[];
-  what_to_avoid?: string[];
-  site_quirks?: string[];
 }
 
-const SYSTEM_PROMPT = `You are a skill documentation generator. Given a browser automation task and the actions that were taken (including failures), generate a clean, structured skill document with reflective analysis.
+const SYSTEM_PROMPT = `You are a skill documentation generator. Given a browser automation task and the successful actions that solved it, produce a clean, reusable skill document for any future run on the same domain.
 
 You MUST respond with valid JSON matching this schema:
 {
@@ -43,38 +63,30 @@ You MUST respond with valid JSON matching this schema:
     }
   ],
   "tips": [
-    "practical tips about this site that would save time on the next visit"
+    "concise positive site knowledge that saves time on the next visit (URL patterns, filter shortcuts, where data lives)"
   ],
   "what_worked": [
     "patterns or approaches that succeeded and should be repeated"
-  ],
-  "what_to_avoid": [
-    "patterns or approaches that failed or wasted steps — so future runs skip them"
-  ],
-  "site_quirks": [
-    "site-specific behaviors discovered: slow loading, aggressive popups, unusual navigation, anti-bot, etc."
   ]
 }
 
 Rules:
 - Title should be concise (under 60 chars).
-- Collapse redundant or failed steps — only include the successful logical steps.
+- Capture only the successful, reusable path. Steps annotated with "⚠ NEGATIVE FEEDBACK" are failures or nudges — exclude them from the skill's steps and treat their context as signal about what NOT to write into tips.
 - Description should be one sentence explaining the end-to-end task.
 - Steps should be human-readable — use natural language, not technical refs.
 - The "action" field must exactly match the action type the step performed in the history. If a step extracted data, use "extract"; if it reviewed/processed data outside the browser, omit the step rather than picking an unrelated action name.
 - Omit intermediate waits and scrolls unless they're meaningful to the workflow.
-- Tips should capture site-specific knowledge: cookie banners, autocomplete behavior, loading delays, popup dismissals, anti-bot challenges, hidden buttons, required wait times, URL patterns.
+- Tips must be POSITIVE, REUSABLE site knowledge — URL patterns, filter shortcuts, where structured data lives, autocomplete/cookie behavior. Do NOT write defensive content ("avoid X", "don't Y", "this site sometimes fails"). If something failed in this run, leave it out — domain skills are recipes, not session diaries.
 - URL normalization: when citing the final URL or recommending a URL pattern, include only filter tokens (path segments, query params) that map to constraints explicitly in the user's original prompt. Strip amenity/price/location/sort filters the agent added but the user did not request — they contaminate future runs with different constraints.
-- what_worked: analyze the successful patterns — what approach worked? What shortcuts did the agent find?
-- what_to_avoid: analyze the failures — what approaches failed? What dead ends should future runs skip?
-- site_quirks: what unusual behaviors did this site exhibit? Overlays, slow loads, redirects, anti-bot?`;
+- what_worked: capture the successful patterns — the approach, the shortcuts, the order. Keep entries crisp and reusable across similar tasks on this domain.`;
 
 function buildPrompt(userPrompt: string, result: AgentLoopResult): string {
   let message = `Original task: ${userPrompt}\n\n`;
   message += `Final URL: ${result.final_url ?? 'unknown'}\n`;
-  message += `Total steps executed: ${String(result.steps.length)}\n`;
+  message += `Total steps: ${String(result.steps.length)}\n`;
   message += `Duration: ${String(result.duration_ms)}ms\n\n`;
-  message += "Action history (including failures — analyze what worked and what didn't):\n";
+  message += 'Action history — capture only the successful, reusable path:\n';
 
   for (const step of result.steps) {
     const action = step.action;
@@ -85,7 +97,7 @@ function buildPrompt(userPrompt: string, result: AgentLoopResult): string {
     if (step.page_title !== undefined && step.page_title !== '') detail += ` [page: ${step.page_title}]`;
     if (step.outcome !== undefined && step.outcome !== '') detail += ` → ${step.outcome}`;
     if (action.error_feedback !== undefined && action.error_feedback !== '')
-      detail += ` ⚠ FAILED: ${action.error_feedback}`;
+      detail += ` ⚠ NEGATIVE FEEDBACK: ${action.error_feedback}`;
     message += `  ${detail}\n`;
   }
 
@@ -141,20 +153,8 @@ export async function generateSkill(prompt: string, result: AgentLoopResult): Pr
     maxTokens: 2048,
   });
 
-  // Merge what_to_avoid and site_quirks into tips for a unified guidance section
-  const tips = [...(parsed.tips ?? [])];
-  if (parsed.what_to_avoid !== undefined) {
-    for (const avoid of parsed.what_to_avoid) {
-      tips.push(`⚠ Avoid: ${avoid}`);
-    }
-  }
-  if (parsed.site_quirks !== undefined) {
-    for (const quirk of parsed.site_quirks) {
-      tips.push(`🔍 Site quirk: ${quirk}`);
-    }
-  }
-
-  const whatWorked = parsed.what_worked ?? [];
+  const tips = sanitizeTips(parsed.tips ?? []);
+  const whatWorked = sanitizeTips(parsed.what_worked ?? []);
 
   const metadata = {
     prompt,
@@ -190,26 +190,8 @@ export async function mergeSkills(
   result: AgentLoopResult,
 ): Promise<SkillOutput> {
   const newSkill = await generateSkill(prompt, result);
-
-  // Merge tips: deduplicate by keeping unique entries from both
-  const allTips = [...existing.tips];
-  for (const tip of newSkill.tips) {
-    if (!allTips.some((t) => t.toLowerCase().includes(tip.toLowerCase().slice(0, 30)))) {
-      allTips.push(tip);
-    }
-  }
-
-  // Merge what_worked
-  const allWorked = [...(existing.what_worked ?? [])];
-  for (const w of newSkill.what_worked ?? []) {
-    if (!allWorked.some((aw) => aw.toLowerCase().includes(w.toLowerCase().slice(0, 30)))) {
-      allWorked.push(w);
-    }
-  }
-
-  // Always keep the shorter (more efficient) steps. mergeSkills is called when
-  // the new run took more steps, so existing steps are usually shorter — but
-  // we check explicitly in case the new run found a shorter path.
+  const allTips = mergeTips(sanitizeTips(existing.tips), newSkill.tips);
+  const allWorked = mergeTips(sanitizeTips(existing.what_worked ?? []), newSkill.what_worked ?? []);
   const steps = newSkill.steps.length < existing.steps.length ? newSkill.steps : existing.steps;
 
   return {

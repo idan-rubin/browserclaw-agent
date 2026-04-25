@@ -205,22 +205,39 @@ const EXTRACTION_FN = `
 
   function tryDom() {
     const candidates = document.querySelectorAll('article, li, section, [role="listitem"], [role="article"], [class*="card" i], [class*="listing" i], [class*="item" i], [class*="result" i], [class*="search" i][class*="card" i], [data-testid*="card" i], [data-testid*="listing" i], [data-qa*="card" i], [data-qa*="listing" i], [data-qa*="result" i]');
-    const out = [];
+    const valid = [];
     for (const el of candidates) {
-      if (out.length >= MAX) break;
       const text = (el.innerText || '').trim();
       if (text.length < 15 || text.length > 1500) continue;
       const link = el.querySelector('a[href]');
       const href = link ? link.href : null;
       if (!href) continue;
-      const rec = { text: text.slice(0, 400), url: href };
-      const priceMatch = text.match(/\\$[\\d,]+(?:\\/(?:mo|month))?/i);
-      if (priceMatch) rec.price = priceMatch[0];
-      const bedMatch = text.match(/(\\d+)\\s*(?:bed|br|bedroom)/i);
-      if (bedMatch) rec.bedrooms = bedMatch[1];
-      const studioMatch = /\\bstudio\\b/i.test(text);
-      if (studioMatch && !rec.bedrooms) rec.bedrooms = 'studio';
-      out.push(rec);
+      valid.push({ el: el, text: text, href: href });
+    }
+    if (valid.length === 0) return null;
+
+    var byParent = new Map();
+    for (var i = 0; i < valid.length; i++) {
+      var parent = valid[i].el.parentElement;
+      if (!parent) continue;
+      var arr = byParent.get(parent) || [];
+      arr.push(valid[i]);
+      byParent.set(parent, arr);
+    }
+    var bestGroup = null;
+    var bestSize = 0;
+    byParent.forEach(function (arr) {
+      if (arr.length > bestSize) { bestGroup = arr; bestSize = arr.length; }
+    });
+    var group = bestSize >= 3 ? bestGroup : valid;
+
+    const seenUrls = new Set();
+    const out = [];
+    for (var j = 0; j < group.length && out.length < MAX; j++) {
+      var item = group[j];
+      if (seenUrls.has(item.href)) continue;
+      seenUrls.add(item.href);
+      out.push({ text: item.text.slice(0, 600), url: item.href });
     }
     return out.length > 0 ? out : null;
   }
@@ -236,17 +253,8 @@ const EXTRACTION_FN = `
     return { source: source, records: combined };
   }
 
-  var domOnly = tryDom();
-  if (domOnly && domOnly.length >= 3) {
-    var strong = [];
-    for (var k = 0; k < domOnly.length; k++) {
-      if (Object.keys(domOnly[k]).length >= 3) strong.push(domOnly[k]);
-    }
-    if (strong.length >= 3) return { source: 'dom', records: strong.slice(0, MAX) };
-  }
-
-  var results = tryNextData();
-  if (results) return mergeWithDom('next-data', results);
+  var nd = tryNextData();
+  if (nd) return mergeWithDom('next-data', nd);
 
   var apollo = tryGlobalState('__APOLLO_STATE__');
   if (apollo) return mergeWithDom('apollo', apollo);
@@ -261,6 +269,21 @@ const EXTRACTION_FN = `
   if (dom) return { source: 'dom', records: dom.slice(0, MAX) };
 
   return { source: 'none', records: [] };
+})()
+`;
+
+const RENDER_WAIT_FN = `
+(async function() {
+  const start = Date.now();
+  const cardSelector = '[role="listitem"], [class*="card" i], [class*="listing" i], [class*="result" i], [data-testid*="card" i], [data-testid*="listing" i], [data-testid*="result" i], [data-qa*="card" i], [data-qa*="listing" i], [data-qa*="result" i]';
+  const ldSelector = 'script[type="application/ld+json"]';
+  while (Date.now() - start < 8000) {
+    const cards = document.querySelectorAll(cardSelector).length;
+    const ld = document.querySelectorAll(ldSelector).length;
+    if (cards >= 3 || ld > 0) return { cards: cards, ld: ld, ms: Date.now() - start };
+    await new Promise(function(r) { setTimeout(r, 250); });
+  }
+  return { cards: document.querySelectorAll(cardSelector).length, ld: document.querySelectorAll(ldSelector).length, ms: Date.now() - start, timedOut: true };
 })()
 `;
 
@@ -285,6 +308,15 @@ const LAZY_LOAD_TRIGGER_FN = `
 
 export async function extractItems(page: CrawlPage): Promise<ExtractItemsResult> {
   try {
+    try {
+      const renderInfo = await page.evaluate(RENDER_WAIT_FN);
+      logger.info({ renderInfo }, 'extract-items: render wait');
+    } catch (renderErr) {
+      logger.warn(
+        { err: renderErr instanceof Error ? renderErr.message : renderErr },
+        'extract-items: render wait failed',
+      );
+    }
     try {
       await page.evaluate(LAZY_LOAD_TRIGGER_FN);
     } catch (scrollErr) {

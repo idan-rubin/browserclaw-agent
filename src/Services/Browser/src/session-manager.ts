@@ -182,12 +182,7 @@ export async function createSession(
     ssrfPolicy: {
       dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
     },
-    chromeArgs: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-downloads',
-      '--disable-file-system',
-      ...(headless === true ? [] : ['--start-maximized']),
-    ],
+    chromeArgs: [...(headless === true ? [] : ['--start-maximized'])],
   };
   let browser: BrowserClaw;
   try {
@@ -413,11 +408,6 @@ async function startAgentLoop(sessionId: string): Promise<void> {
           skill_outcome: skillOutcome,
         });
       } else {
-        if (!managed.skipPostprocessing && managed.domain !== null && domainSkill !== null) {
-          await appendFailureNote(managed.domain, domainSkill, result).catch((err: unknown) => {
-            logger.warn({ err, domain: managed.domain }, 'Failed to append failure note');
-          });
-        }
         emitter('failed', {
           step: result.steps.length,
           error: result.error,
@@ -545,22 +535,6 @@ async function aggregateDomainSkills(
   if (entries.length > 0) {
     emitter('domain_skills', { skills: entries, count: entries.length });
   }
-}
-
-async function appendFailureNote(domain: string, existing: CatalogSkill, result: AgentLoopResult): Promise<void> {
-  const antiBotHit = result.steps.some(
-    (s) => s.action.action === 'press_and_hold' || s.action.action === 'click_cloudflare',
-  );
-  if (!antiBotHit) return;
-  const date = new Date().toISOString().slice(0, 10);
-  const url = result.final_url ?? '';
-  const note = `[${date}] Anti-bot wall hit at ${url}. This domain's URL pattern triggered press-and-hold/checkbox challenge — pivot to alternative sources (web_search for the task, or other sites covering the same content) rather than retrying here.`;
-  const updated: SkillOutput = {
-    ...existing.skill,
-    failure_notes: [...(existing.skill.failure_notes ?? []), note].slice(-5),
-  };
-  await saveSkill(domain, updated, existing.tags, existing.run_count);
-  logger.info({ domain, note }, 'Saved failure note to skill');
 }
 
 async function tryGenerateSkill(

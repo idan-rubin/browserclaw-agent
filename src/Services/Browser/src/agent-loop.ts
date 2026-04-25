@@ -425,6 +425,10 @@ const PAH_BLOCKED_FEEDBACK = 'press_and_hold did not clear the challenge — the
 const PAH_MAX_FAILURES = 3;
 const PAH_BAIL_FEEDBACK = `press_and_hold has failed ${String(PAH_MAX_FAILURES)} times on this session — this IP is walled by the site. Pivot to a different source; do NOT call press_and_hold again.`;
 
+function walledNavigateFeedback(domain: string): string {
+  return `${domain} is walled by anti-bot this session — do NOT navigate to any URL on this domain again. Pivot to a different source.`;
+}
+
 function findLatestExtractIdx(history: AgentStep[]): number {
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].action.extract_result !== undefined) return i;
@@ -1221,6 +1225,7 @@ export async function runAgentLoop(
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
   const antiBotHitsByDomain = new Map<string, number>();
+  const walledDomains = new Set<string>();
 
   let answerSchema: AnswerSchema | null = null;
 
@@ -1255,16 +1260,12 @@ export async function runAgentLoop(
       system: `You are a browser automation planner. Given a user prompt, produce a SMART task and a plan.
 
 Step 1 — Refine the goal into a SMART task:
-- If the prompt is vague or open-ended ("find apartments", "look for flights", "show me hotels"), make it specific:
-  • Specify what details to extract for each result (price, name, URL, key attributes)
-  • Scope to one site or one search
-  • Define a clear stopping point: collect results until new ones stop being relevant or distinct, then present findings
+- If the prompt is vague or open-ended, make it specific by adding:
+  • What details to extract for each result, when applicable.
+  • Scope to one site or one search.
+  • A clear stopping point: collect results until new ones stop being relevant or distinct, then present findings.
   • If the user specified a count, use it. Otherwise, don't pick an arbitrary number — the agent should stop when diminishing returns kick in.
-- If the prompt is already specific ("book a flight from NYC to LAX on Dec 15"), return it unchanged.
-- Examples:
-  • "find apartments in Chelsea" → "Search for apartments in Chelsea on a major listings site. Collect listings with: name/address, price, bedrooms, and URL. Stop when results start repeating or losing relevance."
-  • "compare laptops" → "Search for laptops on an electronics site. Compare options by: name, price, specs, and rating. Gather enough to make a meaningful comparison."
-  • "book a table at Nobu" → "book a table at Nobu" (already specific)
+- If the prompt is already specific, return it unchanged.
 
 Step 2 — Create an action plan:
 - Navigate directly to the best site for the task — never search Google first.
@@ -1291,7 +1292,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 
   let step = 0;
   let recentFailureCount = 0;
-  let pahFailureCount = 0;
+  const pahFailuresByDomain = new Map<string, number>();
   let urgentLoopNudges = 0;
   let replanInterval = REPLAN_BASE_INTERVAL;
   let nextReplanStep = replanInterval;
@@ -1880,17 +1881,28 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'press_and_hold') {
-        if (pahFailureCount >= PAH_MAX_FAILURES) {
-          logger.warn({ step, pahFailureCount }, 'press_and_hold short-circuited — bail limit reached');
+        const pahDomain = extractDomain(await holder.page.url());
+        const priorFailures = pahFailuresByDomain.get(pahDomain) ?? 0;
+        if (priorFailures >= PAH_MAX_FAILURES) {
+          logger.warn(
+            { step, pahDomain, pahFailureCount: priorFailures },
+            'press_and_hold short-circuited — bail limit reached',
+          );
+          if (pahDomain !== '') walledDomains.add(pahDomain);
           agentStep.action.error_feedback = PAH_BAIL_FEEDBACK;
           step++;
           break;
         }
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
-          pahFailureCount++;
+          const newFailures = priorFailures + 1;
+          pahFailuresByDomain.set(pahDomain, newFailures);
+          if (pahDomain !== '' && newFailures >= PAH_MAX_FAILURES) walledDomains.add(pahDomain);
           const intermittent = await isIntermittentError(holder.page);
-          logger.info({ step, intermittent, pahFailureCount }, 'press_and_hold failed — post-check');
+          logger.info(
+            { step, pahDomain, intermittent, pahFailureCount: newFailures },
+            'press_and_hold failed — post-check',
+          );
           agentStep.action.error_feedback = intermittent ? PAH_INTERMITTENT_FEEDBACK : PAH_BLOCKED_FEEDBACK;
         }
         step++;
@@ -2020,6 +2032,16 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       const preActionUrl = await holder.page.url();
+
+      if (action.action === 'navigate' && action.url !== undefined && action.url !== '') {
+        const targetDomain = extractDomain(action.url);
+        if (targetDomain !== '' && walledDomains.has(targetDomain)) {
+          logger.warn({ step, targetDomain }, 'navigate refused — domain walled this session');
+          agentStep.action.error_feedback = walledNavigateFeedback(targetDomain);
+          step++;
+          break;
+        }
+      }
 
       try {
         const customHandler = options?.customActions?.[action.action];
