@@ -28,6 +28,31 @@ def _flatten_content(content: Any) -> str:
     return str(content)
 
 
+def _serialize_content(content: Any) -> str | list[dict[str, Any]]:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[dict[str, Any]] = []
+        for p in content:
+            text = getattr(p, "text", None)
+            if text:
+                parts.append({"type": "input_text", "text": text})
+                continue
+            image_url = getattr(p, "image_url", None)
+            if image_url is not None:
+                url = getattr(image_url, "url", None) or (image_url if isinstance(image_url, str) else None)
+                if url:
+                    parts.append({"type": "input_image", "image_url": url})
+        if not parts:
+            return ""
+        if len(parts) == 1 and parts[0]["type"] == "input_text":
+            return parts[0]["text"]
+        return parts
+    return str(content)
+
+
 def _strip_json_fence(text: str) -> str:
     m = JSON_FENCE_RE.match(text.strip())
     return m.group(1) if m else text
@@ -57,12 +82,11 @@ class CodexResponsesChat:
         instructions_parts: list[str] = []
         input_items: list[dict[str, Any]] = []
         for m in messages:
-            content = _flatten_content(m.content)
             if isinstance(m, SystemMessage):
-                instructions_parts.append(content)
+                instructions_parts.append(_flatten_content(m.content))
             else:
                 role = "user" if isinstance(m, UserMessage) else "assistant"
-                input_items.append({"role": role, "content": content})
+                input_items.append({"role": role, "content": _serialize_content(m.content)})
         return "\n\n".join(instructions_parts), input_items
 
     async def ainvoke(

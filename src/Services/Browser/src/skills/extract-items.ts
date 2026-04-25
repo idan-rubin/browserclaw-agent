@@ -275,7 +275,7 @@ const EXTRACTION_FN = `
 const RENDER_WAIT_FN = `
 (async function() {
   const start = Date.now();
-  const cardSelector = 'article, li, [role="listitem"], [class*="card" i], [class*="listing" i], [data-testid*="card" i], [data-testid*="listing" i]';
+  const cardSelector = '[role="listitem"], [class*="card" i], [class*="listing" i], [class*="result" i], [data-testid*="card" i], [data-testid*="listing" i], [data-testid*="result" i], [data-qa*="card" i], [data-qa*="listing" i], [data-qa*="result" i]';
   const ldSelector = 'script[type="application/ld+json"]';
   while (Date.now() - start < 8000) {
     const cards = document.querySelectorAll(cardSelector).length;
