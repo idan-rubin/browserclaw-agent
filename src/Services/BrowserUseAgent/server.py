@@ -118,6 +118,11 @@ SESSIONS: dict[str, Session] = {}
 def snapshot_tokens(agent: Agent | None) -> dict[str, int]:
     if agent is None:
         return {"input": 0, "output": 0, "total": 0}
+    llm = getattr(agent, "llm", None)
+    if isinstance(llm, CodexResponsesChat):
+        inp = llm.total_prompt_tokens
+        out = llm.total_completion_tokens
+        return {"input": inp, "output": out, "total": inp + out}
     tc = getattr(agent, "token_cost", None)
     if tc is None:
         return {"input": 0, "output": 0, "total": 0}

@@ -1,15 +1,3 @@
-"""
-Codex Responses API adapter for browser-use.
-
-Implements the BaseChatModel protocol so browser-use's Agent can drive the
-Codex Responses endpoint (chatgpt.com/backend-api/codex/responses) with a
-Codex OAuth bearer token. Mirrors the request/response shape used by
-browserclaw-agent's openai-oauth provider in src/Services/Browser/src/llm.ts.
-
-The OAuth lifecycle stays in the caller — this adapter is stateless and
-expects a fresh access token per request.
-"""
-
 from __future__ import annotations
 
 import json
@@ -44,12 +32,12 @@ def _strip_json_fence(text: str) -> str:
 
 
 class CodexResponsesChat:
-    """browser-use BaseChatModel adapter that calls the Codex Responses API."""
-
     def __init__(self, model: str, api_key: str, reasoning_effort: str = "low") -> None:
         self.model = model
         self.api_key = api_key
         self.reasoning_effort = reasoning_effort
+        self.total_prompt_tokens: int = 0
+        self.total_completion_tokens: int = 0
 
     @property
     def provider(self) -> str:
@@ -115,6 +103,8 @@ class CodexResponsesChat:
             )
 
         text, usage_in, usage_out = self._parse_sse_body(response.text)
+        self.total_prompt_tokens += usage_in
+        self.total_completion_tokens += usage_out
         usage = ChatInvokeUsage(
             prompt_tokens=usage_in,
             prompt_cached_tokens=None,

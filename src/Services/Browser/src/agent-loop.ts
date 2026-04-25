@@ -424,6 +424,8 @@ const PAH_INTERMITTENT_FEEDBACK =
 const PAH_BLOCKED_FEEDBACK = 'press_and_hold did not clear the challenge — the blocking page is still present.';
 const PAH_MAX_FAILURES = 3;
 const PAH_BAIL_FEEDBACK = `press_and_hold has failed ${String(PAH_MAX_FAILURES)} times on this session — this IP is walled by the site. Pivot to a different source; do NOT call press_and_hold again.`;
+const EXTRACT_MAX_MISSES_PER_URL = 2;
+const EXTRACT_BAIL_FEEDBACK = `extract has returned no usable data from this URL ${String(EXTRACT_MAX_MISSES_PER_URL)} times. The page is either anti-extraction-defended or doesn't expose the data in a parseable form. Pivot to a different source — do NOT call extract on this URL again.`;
 
 function findLatestExtractIdx(history: AgentStep[]): number {
   for (let i = history.length - 1; i >= 0; i--) {
@@ -1221,6 +1223,7 @@ export async function runAgentLoop(
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
   const antiBotHitsByDomain = new Map<string, number>();
+  const extractMissesByUrl = new Map<string, number>();
 
   let answerSchema: AnswerSchema | null = null;
 
@@ -1257,17 +1260,17 @@ export async function runAgentLoop(
 Step 1 — Refine the goal into a SMART task:
 - If the prompt is vague or open-ended ("find apartments", "look for flights", "show me hotels"), make it specific:
   • Specify what details to extract for each result (price, name, URL, key attributes)
-  • Scope to one site or one search
   • Define a clear stopping point: collect results until new ones stop being relevant or distinct, then present findings
   • If the user specified a count, use it. Otherwise, don't pick an arbitrary number — the agent should stop when diminishing returns kick in.
 - If the prompt is already specific ("book a flight from NYC to LAX on Dec 15"), return it unchanged.
 - Examples:
-  • "find apartments in Chelsea" → "Search for apartments in Chelsea on a major listings site. Collect listings with: name/address, price, bedrooms, and URL. Stop when results start repeating or losing relevance."
-  • "compare laptops" → "Search for laptops on an electronics site. Compare options by: name, price, specs, and rating. Gather enough to make a meaningful comparison."
+  • "find apartments in Chelsea" → "Find apartments in Chelsea. Collect listings with: name/address, price, bedrooms, and URL. Stop when results start repeating or losing relevance."
+  • "compare laptops" → "Compare laptops by: name, price, specs, and rating. Gather enough to make a meaningful comparison."
   • "book a table at Nobu" → "book a table at Nobu" (already specific)
 
 Step 2 — Create an action plan:
-- Navigate directly to the best site for the task — never search Google first.
+- If the prompt names a specific site, use it. Otherwise, hold 2-3 candidate sources in mind, start with one, and pivot fast if it fights back (anti-bot wall, hidden listings, repeated extract failures). Don't lock onto the first site — losing 30 seconds on a wall is cheap; losing the whole run isn't.
+- Navigate directly to the chosen site — never search Google first.
 - For simple tasks (search, click, fill a form): 2-4 steps.
 - For complex tasks (research, compare, rank): break into phases.
 - If existing skills are provided, incorporate them.
@@ -1904,6 +1907,15 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'extract') {
+        const extractUrl = await holder.page.url();
+        const priorMisses = extractMissesByUrl.get(extractUrl) ?? 0;
+        if (priorMisses >= EXTRACT_MAX_MISSES_PER_URL) {
+          logger.warn({ step, extractUrl, priorMisses }, 'extract short-circuited — bail limit reached');
+          agentStep.action.error_feedback = EXTRACT_BAIL_FEEDBACK;
+          step++;
+          break;
+        }
+        let extractMissed = false;
         if (action.expression !== undefined && action.expression !== '') {
           try {
             assertExtractExpressionAllowed(action.expression);
@@ -1913,8 +1925,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             if (result.length > EXTRACT_RESULT_MAX_CHARS) {
               agentStep.action.extract_result += '\n…(truncated)';
             }
+            if (result === '' || result === '[]' || result === '{}' || result === 'null') extractMissed = true;
           } catch (evalErr) {
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
+            extractMissed = true;
           }
         } else if (action.urls !== undefined && action.urls.length > 0 && browser !== undefined) {
           for (const url of action.urls) assertNavigateUrlAllowed(url);
@@ -1934,6 +1948,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           if (payload.length > EXTRACT_RESULT_MAX_CHARS) {
             agentStep.action.extract_result += '\n…(truncated)';
           }
+          if (batch.count === 0) extractMissed = true;
           logger.info({ step, count: batch.count, failedCount: batch.failedUrls.length }, 'extract items batch');
         } else {
           const items = await extractItems(holder.page);
@@ -1953,7 +1968,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           if (payload.length > EXTRACT_RESULT_MAX_CHARS) {
             agentStep.action.extract_result += '\n…(truncated)';
           }
+          if (items.count === 0) extractMissed = true;
           logger.info({ step, source: items.source, count: items.count }, 'extract items auto');
+        }
+        if (extractMissed) {
+          extractMissesByUrl.set(extractUrl, priorMisses + 1);
         }
         logger.info({ step, result: agentStep.action.extract_result.slice(0, 100) }, 'Extract action');
         step++;
