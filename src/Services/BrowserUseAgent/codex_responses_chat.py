@@ -165,4 +165,11 @@ class CodexResponsesChat:
                 status_code=502,
                 model="openai-oauth",
             )
-        return "".join(text_parts), usage_in, usage_out
+        text = "".join(text_parts)
+        if not text:
+            raise ModelProviderError(
+                message="Codex Responses stream completed with no model text (refusal or malformed payload)",
+                status_code=502,
+                model="openai-oauth",
+            )
+        return text, usage_in, usage_out
