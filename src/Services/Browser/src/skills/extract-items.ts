@@ -264,6 +264,21 @@ const EXTRACTION_FN = `
 })()
 `;
 
+const RENDER_WAIT_FN = `
+(async function() {
+  const start = Date.now();
+  const cardSelector = 'article, li, [role="listitem"], [class*="card" i], [class*="listing" i], [data-testid*="card" i], [data-testid*="listing" i]';
+  const ldSelector = 'script[type="application/ld+json"]';
+  while (Date.now() - start < 8000) {
+    const cards = document.querySelectorAll(cardSelector).length;
+    const ld = document.querySelectorAll(ldSelector).length;
+    if (cards >= 3 || ld > 0) return { cards: cards, ld: ld, ms: Date.now() - start };
+    await new Promise(function(r) { setTimeout(r, 250); });
+  }
+  return { cards: document.querySelectorAll(cardSelector).length, ld: document.querySelectorAll(ldSelector).length, ms: Date.now() - start, timedOut: true };
+})()
+`;
+
 const LAZY_LOAD_TRIGGER_FN = `
 (async function() {
   const start = Date.now();
@@ -285,6 +300,15 @@ const LAZY_LOAD_TRIGGER_FN = `
 
 export async function extractItems(page: CrawlPage): Promise<ExtractItemsResult> {
   try {
+    try {
+      const renderInfo = await page.evaluate(RENDER_WAIT_FN);
+      logger.info({ renderInfo }, 'extract-items: render wait');
+    } catch (renderErr) {
+      logger.warn(
+        { err: renderErr instanceof Error ? renderErr.message : renderErr },
+        'extract-items: render wait failed',
+      );
+    }
     try {
       await page.evaluate(LAZY_LOAD_TRIGGER_FN);
     } catch (scrollErr) {
