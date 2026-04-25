@@ -1255,16 +1255,12 @@ export async function runAgentLoop(
       system: `You are a browser automation planner. Given a user prompt, produce a SMART task and a plan.
 
 Step 1 — Refine the goal into a SMART task:
-- If the prompt is vague or open-ended ("find apartments", "look for flights", "show me hotels"), make it specific:
-  • Specify what details to extract for each result (price, name, URL, key attributes)
-  • Scope to one site or one search
-  • Define a clear stopping point: collect results until new ones stop being relevant or distinct, then present findings
+- If the prompt is vague or open-ended, make it specific by adding:
+  • What details to extract for each result, when applicable.
+  • Scope to one site or one search.
+  • A clear stopping point: collect results until new ones stop being relevant or distinct, then present findings.
   • If the user specified a count, use it. Otherwise, don't pick an arbitrary number — the agent should stop when diminishing returns kick in.
-- If the prompt is already specific ("book a flight from NYC to LAX on Dec 15"), return it unchanged.
-- Examples:
-  • "find apartments in Chelsea" → "Find apartments in Chelsea. Collect listings with: name/address, price, bedrooms, and URL. Stop when results start repeating or losing relevance."
-  • "compare laptops" → "Compare laptops by: name, price, specs, and rating. Gather enough to make a meaningful comparison."
-  • "book a table at Nobu" → "book a table at Nobu" (already specific)
+- If the prompt is already specific, return it unchanged.
 
 Step 2 — Create an action plan:
 - Navigate directly to the best site for the task — never search Google first.
