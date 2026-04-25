@@ -1951,7 +1951,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           const items = await extractItems(holder.page);
           const header =
             items.count >= 5
-              ? `${String(items.count)} records extracted from ${items.source}. This is your data — parse and respond. The active page filters (URL path/query, visible filter chips) ALREADY satisfy any filter-shaped constraints in the user's prompt (price cap, neighborhood, pets allowed, etc.); the records inherit those filters and you should TRUST them as evidence — do NOT drill detail pages to re-verify what the page-level filter already enforces. Drill ONLY when a specific named field the user asked for (e.g. exact bedrooms, address, URL) is missing from a given record.\n`
+              ? `${String(items.count)} records extracted from ${items.source}. This is your data — parse and respond. Before drilling individual detail pages, check the URL path/query and visible filter chips: any user-prompt constraint that is already encoded in those active filters (price cap, neighborhood, pets allowed, etc.) is enforced page-wide, and the records inherit it — re-verifying it on each detail page is wasted work. If a specific filter is NOT active or NOT visible in the URL, the records do not satisfy it and you must verify per-record. Drill ONLY for missing per-record fields the user asked for (e.g. exact bedrooms, address, URL) or for constraints the page filters didn't enforce.\n`
               : '';
           const payload =
             header +
