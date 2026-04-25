@@ -39,6 +39,8 @@ from pydantic import BaseModel, Field
 from browser_use import Agent, BrowserProfile, BrowserSession
 from browser_use.llm import ChatAnthropic, ChatGoogle, ChatGroq, ChatOpenAI
 
+from codex_responses_chat import CodexResponsesChat
+
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("browser-use-sidecar")
 
@@ -78,6 +80,7 @@ def require_token(authorization: str = Header(default="")) -> None:
 PROVIDERS = {
     "anthropic": ChatAnthropic,
     "openai": ChatOpenAI,
+    "openai-oauth": CodexResponsesChat,
     "gemini": ChatGoogle,
     "groq": ChatGroq,
 }

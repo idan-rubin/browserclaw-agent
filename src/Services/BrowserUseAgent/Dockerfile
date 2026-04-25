@@ -29,7 +29,7 @@ COPY requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir -r requirements.txt
 
-COPY server.py ./
+COPY server.py codex_responses_chat.py ./
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 RUN groupadd -r browser && useradd -r -g browser -G audio,video -m browser \
