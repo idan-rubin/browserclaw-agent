@@ -182,12 +182,7 @@ export async function createSession(
     ssrfPolicy: {
       dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
     },
-    chromeArgs: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-downloads',
-      '--disable-file-system',
-      ...(headless === true ? [] : ['--start-maximized']),
-    ],
+    chromeArgs: [...(headless === true ? [] : ['--start-maximized'])],
   };
   let browser: BrowserClaw;
   try {
