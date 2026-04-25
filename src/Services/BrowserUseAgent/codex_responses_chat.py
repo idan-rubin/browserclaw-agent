@@ -177,13 +177,12 @@ class CodexResponsesChat:
                 usage = resp.get("usage") or {}
                 usage_in = int(usage.get("input_tokens") or 0)
                 usage_out = int(usage.get("output_tokens") or 0)
-                outputs = resp.get("output") or []
-                if outputs:
-                    contents = outputs[0].get("content") or []
-                    if contents:
-                        legacy = contents[0].get("text")
-                        if legacy and not text_parts:
-                            text_parts.append(legacy)
+                if not text_parts:
+                    for output in resp.get("output") or []:
+                        for piece in output.get("content") or []:
+                            legacy = piece.get("text")
+                            if legacy:
+                                text_parts.append(legacy)
 
         if not saw_completed:
             raise ModelProviderError(

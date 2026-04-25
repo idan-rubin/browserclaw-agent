@@ -253,9 +253,6 @@ const EXTRACTION_FN = `
     return { source: source, records: combined };
   }
 
-  var ld = tryJsonLd();
-  if (ld) return mergeWithDom('json-ld', ld);
-
   var nd = tryNextData();
   if (nd) return mergeWithDom('next-data', nd);
 
@@ -264,6 +261,9 @@ const EXTRACTION_FN = `
 
   var initial = tryGlobalState('__INITIAL_STATE__');
   if (initial) return mergeWithDom('initial-state', initial);
+
+  var ld = tryJsonLd();
+  if (ld) return mergeWithDom('json-ld', ld);
 
   var dom = tryDom();
   if (dom) return { source: 'dom', records: dom.slice(0, MAX) };
