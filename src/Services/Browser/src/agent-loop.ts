@@ -1288,7 +1288,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
 
   let step = 0;
   let recentFailureCount = 0;
-  let pahFailureCount = 0;
+  const pahFailuresByDomain = new Map<string, number>();
   let urgentLoopNudges = 0;
   let replanInterval = REPLAN_BASE_INTERVAL;
   let nextReplanStep = replanInterval;
@@ -1877,19 +1877,23 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'press_and_hold') {
+        const pahDomain = extractDomain(await holder.page.url());
+        const pahFailureCount = pahFailuresByDomain.get(pahDomain) ?? 0;
         if (pahFailureCount >= PAH_MAX_FAILURES) {
-          logger.warn({ step, pahFailureCount }, 'press_and_hold short-circuited — bail limit reached');
-          const bailDomain = extractDomain(await holder.page.url());
-          if (bailDomain !== '') walledDomains.add(bailDomain);
+          logger.warn({ step, pahDomain, pahFailureCount }, 'press_and_hold short-circuited — bail limit reached');
+          if (pahDomain !== '') walledDomains.add(pahDomain);
           agentStep.action.error_feedback = PAH_BAIL_FEEDBACK;
           step++;
           break;
         }
         const solved = await pressAndHold(holder.page, { holdMs: action.hold_ms });
         if (!solved) {
-          pahFailureCount++;
+          pahFailuresByDomain.set(pahDomain, pahFailureCount + 1);
           const intermittent = await isIntermittentError(holder.page);
-          logger.info({ step, intermittent, pahFailureCount }, 'press_and_hold failed — post-check');
+          logger.info(
+            { step, pahDomain, intermittent, pahFailureCount: pahFailureCount + 1 },
+            'press_and_hold failed — post-check',
+          );
           agentStep.action.error_feedback = intermittent ? PAH_INTERMITTENT_FEEDBACK : PAH_BLOCKED_FEEDBACK;
         }
         step++;
