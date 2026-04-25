@@ -1221,6 +1221,7 @@ export async function runAgentLoop(
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
   const antiBotHitsByDomain = new Map<string, number>();
+  const walledDomains = new Set<string>();
 
   let answerSchema: AnswerSchema | null = null;
 
@@ -1878,6 +1879,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       if (action.action === 'press_and_hold') {
         if (pahFailureCount >= PAH_MAX_FAILURES) {
           logger.warn({ step, pahFailureCount }, 'press_and_hold short-circuited — bail limit reached');
+          const bailDomain = extractDomain(await holder.page.url());
+          if (bailDomain !== '') walledDomains.add(bailDomain);
           agentStep.action.error_feedback = PAH_BAIL_FEEDBACK;
           step++;
           break;
@@ -2016,6 +2019,16 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       const preActionUrl = await holder.page.url();
+
+      if (action.action === 'navigate' && action.url !== undefined && action.url !== '') {
+        const targetDomain = extractDomain(action.url);
+        if (targetDomain !== '' && walledDomains.has(targetDomain)) {
+          logger.warn({ step, targetDomain }, 'navigate refused — domain walled this session');
+          agentStep.action.error_feedback = `${targetDomain} is walled by anti-bot this session — do NOT navigate to any URL on this domain again. Pivot to a different source.`;
+          step++;
+          break;
+        }
+      }
 
       try {
         const customHandler = options?.customActions?.[action.action];
