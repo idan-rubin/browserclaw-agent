@@ -1,0 +1,55 @@
+name: Notify subscribers of new release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  fan-out:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SUBSCRIBER_DISPATCH_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const file = fs.readFileSync('.github/subscribers.yml', 'utf8');
+            const list = file
+              .split('\n')
+              .map((l) => l.match(/^\s*-\s*([\w.-]+\/[\w.-]+)\s*$/)?.[1])
+              .filter(Boolean);
+            let tag = context.payload.release?.tag_name;
+            if (!tag) {
+              const release = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              tag = release.data.tag_name;
+            }
+            const version = String(tag || '').replace(/^v/, '');
+            if (!version) throw new Error('no version to broadcast');
+            const pkg = 'browserclaw-agent';
+            const failures = [];
+            for (const fullName of list) {
+              const [owner, repo] = fullName.split('/');
+              try {
+                await github.rest.repos.createDispatchEvent({
+                  owner,
+                  repo,
+                  event_type: 'browserclaw-update',
+                  client_payload: { package: pkg, version },
+                });
+                core.info(`dispatched browserclaw-update ${pkg}@${version} → ${fullName}`);
+              } catch (err) {
+                failures.push(`${fullName}: ${err.message}`);
+                core.error(`failed to dispatch to ${fullName}: ${err.message}`);
+              }
+            }
+            if (failures.length > 0) {
+              throw new Error(`dispatch failed for ${failures.length}/${list.length} subscribers:\n  - ${failures.join('\n  - ')}`);
+            }
