@@ -132,7 +132,6 @@ describe('generateSkill', () => {
     const call = mockedLlmJson.mock.calls[0][0];
     expect(call.message).toContain('Final URL: https://foo.com/bar');
   });
-
 });
 
 describe('mergeSkills', () => {
