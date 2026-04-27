@@ -7,6 +7,9 @@ export type { AgentConfig } from './config.js';
 export { runWithLlmConfig, getTokenUsage } from './llm.js';
 export type { TokenUsage } from './llm.js';
 
+export { fillIframeFieldByTokens } from './skills/fill-iframe-field.js';
+export type { FillIframeFieldResult } from './skills/fill-iframe-field.js';
+
 export type {
   AgentAction,
   AgentActionType,
