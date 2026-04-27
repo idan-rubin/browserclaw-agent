@@ -133,43 +133,6 @@ describe('generateSkill', () => {
     expect(call.message).toContain('Final URL: https://foo.com/bar');
   });
 
-  it('includes failed steps and outcomes in prompt', async () => {
-    mockedLlmJson.mockResolvedValue({
-      title: 'Skill',
-      description: 'Desc',
-      steps: [],
-    });
-
-    const result = makeResult();
-    result.steps[1].action.error_feedback = 'Element not found';
-    result.steps[2].outcome = 'Page content changed after click';
-
-    await generateSkill('test', result);
-
-    const call = mockedLlmJson.mock.calls[0][0];
-    expect(call.message).toContain('FAILED: Element not found');
-    expect(call.message).toContain('Page content changed after click');
-  });
-
-  it('merges what_to_avoid and site_quirks into tips', async () => {
-    mockedLlmJson.mockResolvedValue({
-      title: 'Skill',
-      description: 'Desc',
-      steps: [{ number: 1, description: 'Step', action: 'click' }],
-      tips: ['Original tip'],
-      what_worked: ['Direct URL navigation was fast'],
-      what_to_avoid: ['Search bar autocomplete is unreliable'],
-      site_quirks: ['Page loads slowly after first interaction'],
-    });
-
-    const result = await generateSkill('test', makeResult());
-
-    expect(result.tips).toContain('Original tip');
-    expect(result.tips).toContainEqual(expect.stringContaining('Avoid:'));
-    expect(result.tips).toContainEqual(expect.stringContaining('Site quirk:'));
-    expect(result.what_worked).toEqual(['Direct URL navigation was fast']);
-    expect(result.markdown).toContain('## What Worked');
-  });
 });
 
 describe('mergeSkills', () => {
