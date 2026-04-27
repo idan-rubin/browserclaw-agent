@@ -29,7 +29,10 @@ export async function fillIframeFieldByTokens(
       var attrTokens = attrSource.split(/[^a-z0-9]+/).filter(Boolean);
       var matchAll = keyTokens.every(function(k) { return attrTokens.indexOf(k) !== -1; });
       if (!matchAll) continue;
-      var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+      var proto = el instanceof window.HTMLSelectElement
+        ? window.HTMLSelectElement.prototype
+        : window.HTMLInputElement.prototype;
+      var setter = Object.getOwnPropertyDescriptor(proto, 'value');
       if (setter && setter.set) { setter.set.call(el, value); }
       else { el.value = value; }
       el.dispatchEvent(new Event('input', { bubbles: true }));
