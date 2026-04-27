@@ -23,11 +23,15 @@ jobs:
               .split('\n')
               .map((l) => l.match(/^\s*-\s*([\w.-]+\/[\w.-]+)\s*$/)?.[1])
               .filter(Boolean);
-            const release = await github.rest.repos.getLatestRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            const version = release.data.tag_name.replace(/^v/, '');
+            let tag = context.payload.release?.tag_name;
+            if (!tag) {
+              const release = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              tag = release.data.tag_name;
+            }
+            const version = String(tag || '').replace(/^v/, '');
             if (!version) throw new Error('no version to broadcast');
             const pkg = 'browserclaw-agent';
             const failures = [];
@@ -42,10 +46,10 @@ jobs:
                 });
                 core.info(`dispatched browserclaw-update ${pkg}@${version} → ${fullName}`);
               } catch (err) {
-                failures.push({ subscriber: fullName, error: err.message });
+                failures.push(`${fullName}: ${err.message}`);
                 core.error(`failed to dispatch to ${fullName}: ${err.message}`);
               }
             }
-            if (list.length > 0 && failures.length === list.length) {
-              throw new Error('all subscribers failed to receive dispatch');
+            if (failures.length > 0) {
+              throw new Error(`dispatch failed for ${failures.length}/${list.length} subscribers:\n  - ${failures.join('\n  - ')}`);
             }
