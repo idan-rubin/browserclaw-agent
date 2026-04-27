@@ -19,6 +19,8 @@ export async function fillIframeFieldByTokens(
     var inputs = Array.from(document.querySelectorAll('input, select'));
     for (var i = 0; i < inputs.length; i++) {
       var el = inputs[i];
+      if (el.disabled || el.readOnly) continue;
+      if (el instanceof window.HTMLInputElement && el.type === 'hidden') continue;
       var attrSource = [
         el.name, el.id,
         el.getAttribute('autocomplete'),
