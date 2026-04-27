@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export function findConsumers(root, pkg) {
   const targets = [];
@@ -21,7 +22,7 @@ export function findConsumers(root, pkg) {
   return targets;
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const [root, pkg] = process.argv.slice(2);
   if (!root || !pkg) {
     console.error('usage: find-consumers.mjs <root> <package>');
