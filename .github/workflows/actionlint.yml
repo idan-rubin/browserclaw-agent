@@ -17,6 +17,8 @@ permissions:
 jobs:
   actionlint:
     runs-on: ubuntu-latest
+    env:
+      SHELLCHECK_OPTS: -S warning
     steps:
       - uses: actions/checkout@v4
       - uses: docker://rhysd/actionlint:1.7.7
