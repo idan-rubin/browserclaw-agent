@@ -118,7 +118,7 @@ const routes: Route[] = [
       // Validate BYOK LLM config if provided
       let llmConfig: LlmConfig | undefined;
       if (body.llm_config !== undefined) {
-        const { provider, model, api_key } = body.llm_config;
+        const { provider, model, api_key, refresh_token } = body.llm_config;
         if (!(provider in BYOK_PROVIDERS)) {
           sendError(res, 400, `Invalid provider. Must be one of: ${Object.keys(BYOK_PROVIDERS).join(', ')}`);
           return;
@@ -131,7 +131,14 @@ const routes: Route[] = [
           sendError(res, 400, 'api_key is required');
           return;
         }
+        if (refresh_token !== undefined && typeof refresh_token !== 'string') {
+          sendError(res, 400, 'refresh_token must be a string');
+          return;
+        }
         llmConfig = { provider, model: model.trim(), api_key: api_key.trim() };
+        if (typeof refresh_token === 'string' && refresh_token.trim() !== '') {
+          llmConfig.refresh_token = refresh_token.trim();
+        }
       }
 
       const { session } = await createSession(
