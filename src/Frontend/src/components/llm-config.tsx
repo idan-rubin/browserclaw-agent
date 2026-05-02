@@ -37,30 +37,57 @@ const MODELS: Record<string, { value: string; label: string }[]> = {
 
 const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
 const STORAGE_KEY = 'browserclaw_llm_config';
+const SECRETS_KEY = 'browserclaw_llm_secrets';
 
 function loadConfig(): { provider: LlmConfig['provider']; model: string; apiKey: string; refreshToken: string } {
-  if (typeof window === 'undefined')
-    return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '', refreshToken: '' };
+  const fallback = {
+    provider: DEFAULT_PROVIDER,
+    model: MODELS[DEFAULT_PROVIDER][0].value,
+    apiKey: '',
+    refreshToken: '',
+  };
+  if (typeof window === 'undefined') return fallback;
+  let provider = DEFAULT_PROVIDER;
+  let model = MODELS[DEFAULT_PROVIDER][0].value;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null)
-      return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '', refreshToken: '' };
-    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
-    const provider = parsed.provider ?? DEFAULT_PROVIDER;
-    const models = MODELS[provider] ?? [];
-    const model =
-      parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
-        ? parsed.model
-        : (models[0]?.value ?? '');
-    return { provider, model, apiKey: '', refreshToken: '' };
+    if (raw !== null) {
+      const parsed = JSON.parse(raw) as Partial<Pick<LlmConfig, 'provider' | 'model'>>;
+      provider = parsed.provider ?? DEFAULT_PROVIDER;
+      const models = MODELS[provider] ?? [];
+      model =
+        parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
+          ? parsed.model
+          : (models[0]?.value ?? '');
+    }
   } catch {
-    return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '', refreshToken: '' };
+    return fallback;
   }
+  let apiKey = '';
+  let refreshToken = '';
+  try {
+    const rawSecrets = sessionStorage.getItem(SECRETS_KEY);
+    if (rawSecrets !== null) {
+      const parsedSecrets = JSON.parse(rawSecrets) as Partial<Pick<LlmConfig, 'api_key' | 'refresh_token'>>;
+      apiKey = parsedSecrets.api_key ?? '';
+      refreshToken = parsedSecrets.refresh_token ?? '';
+    }
+  } catch {
+    /* ignore */
+  }
+  return { provider, model, apiKey, refreshToken };
 }
 
-function saveConfig(provider: LlmConfig['provider'], model: string, _apiKey: string, _refreshToken: string) {
-  const payload: Pick<LlmConfig, 'provider' | 'model'> = { provider, model };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+function saveConfig(provider: LlmConfig['provider'], model: string, apiKey: string, refreshToken: string) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, model }));
+  if (apiKey === '' && refreshToken === '') {
+    sessionStorage.removeItem(SECRETS_KEY);
+    return;
+  }
+  const secrets: Partial<Pick<LlmConfig, 'api_key' | 'refresh_token'>> = {};
+  if (apiKey !== '') secrets.api_key = apiKey;
+  if (refreshToken !== '') secrets.refresh_token = refreshToken;
+  sessionStorage.setItem(SECRETS_KEY, JSON.stringify(secrets));
 }
 
 export function useLlmConfig() {
@@ -188,7 +215,7 @@ export function LlmConfigPanel({
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
-            Your key is never stored on our servers
+            Your key never leaves this browser tab
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <select
@@ -249,8 +276,8 @@ export function LlmConfigPanel({
           )}
 
           <p className="text-[11px] leading-relaxed text-muted-foreground/50">
-            Your key is saved in your browser&apos;s local storage and never sent to our servers except to make LLM
-            calls during your run.
+            Your key stays in this browser tab&apos;s session storage (cleared when you close the tab) and is never sent
+            to our servers except to make LLM calls during your run.
           </p>
         </div>
       )}
