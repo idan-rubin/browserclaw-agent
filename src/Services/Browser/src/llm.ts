@@ -26,7 +26,7 @@ interface SessionLlmContext {
   outputTokens: number;
   byokClient?: OpenAI;
   byokOauthToken?: string;
-  byokRefreshAttempted?: boolean;
+  byokRefreshToken?: string;
 }
 
 export interface TokenUsage {
@@ -477,16 +477,12 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
       try {
         return await callOnce(ctx.byokOauthToken ?? byokConfig.api_key);
       } catch (err) {
-        if (
-          err instanceof Error &&
-          /^401\s/.test(err.message) &&
-          byokConfig.refresh_token !== undefined &&
-          ctx.byokRefreshAttempted !== true
-        ) {
+        const refreshToken = ctx.byokRefreshToken ?? byokConfig.refresh_token;
+        if (err instanceof Error && /^401\s/.test(err.message) && refreshToken !== undefined) {
           logger.info('Refreshing BYOK OAuth token after 401');
-          const tokens = await exchangeRefreshToken(byokConfig.refresh_token);
-          ctx.byokRefreshAttempted = true;
+          const tokens = await exchangeRefreshToken(refreshToken);
           ctx.byokOauthToken = tokens.access_token;
+          if (tokens.refresh_token !== undefined) ctx.byokRefreshToken = tokens.refresh_token;
           return await callOnce(tokens.access_token);
         }
         throw err;

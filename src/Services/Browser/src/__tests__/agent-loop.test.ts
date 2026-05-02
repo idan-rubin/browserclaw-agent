@@ -402,7 +402,23 @@ describe('runAgentLoop', () => {
     const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('authentication failed');
+    expect(result.error).toContain('rejected your credentials');
+    expect(mockedLlmJson).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails fast on insufficient_quota without retrying', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Try something' })
+      .mockRejectedValueOnce(new Error('429 {"error":{"code":"insufficient_quota"}}'));
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('quota exhausted');
     expect(mockedLlmJson).toHaveBeenCalledTimes(2);
   });
 

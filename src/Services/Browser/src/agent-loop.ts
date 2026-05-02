@@ -25,10 +25,19 @@ import type { AgentConfig } from './config.js';
 import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS } from './config.js';
 import { logger } from './logger.js';
 
-function isAuthError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  if (/^(401|403)\s/.test(err.message)) return true;
-  return /token_expired|invalid_api_key/i.test(err.message);
+function classifyFailFast(err: unknown): { reason: string; message: string } | null {
+  if (!(err instanceof Error)) return null;
+  const m = err.message;
+  if (/insufficient_quota/i.test(m)) {
+    return { reason: 'quota_exhausted', message: 'AI service quota exhausted. Check your billing and try again.' };
+  }
+  if (/^(401|403)\s/.test(m) || /token_expired|invalid_api_key|invalid_grant|invalid_client/i.test(m)) {
+    return {
+      reason: 'auth_failed',
+      message: 'AI service rejected your credentials. Check your API key and try again.',
+    };
+  }
+  return null;
 }
 
 function formatLessonForPrompt(lesson: TaskLesson): string {
@@ -1764,16 +1773,21 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       // API/network error — don't burn a step, the agent never got to act
-      if (isAuthError(err)) {
+      const failFast = classifyFailFast(err);
+      if (failFast !== null) {
         logger.error(
-          { step, errorMessage: err instanceof Error ? sanitizeErrorText(err.message).slice(0, 300) : 'unknown' },
-          'LLM auth error',
+          {
+            step,
+            reason: failFast.reason,
+            errorMessage: err instanceof Error ? sanitizeErrorText(err.message).slice(0, 300) : 'unknown',
+          },
+          'LLM fail-fast error',
         );
-        emit('step_error', { step, error: 'AI service authentication failed', type: 'auth_error' });
+        emit('step_error', { step, error: failFast.message, type: failFast.reason });
         return {
           success: false,
           steps: history,
-          error: 'AI service authentication failed. Refresh your token and try again.',
+          error: failFast.message,
           duration_ms: Date.now() - startTime,
         };
       }

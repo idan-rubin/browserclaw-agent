@@ -82,7 +82,7 @@ describe('BYOK openai-oauth refresh on 401', () => {
     expect(second.text).toBe('recovered');
   });
 
-  it('only refreshes once per session even if the retry also 401s', async () => {
+  it('a single call attempts at most one refresh + retry on 401', async () => {
     const fetchMock = vi.mocked(globalThis.fetch);
     fetchMock
       .mockResolvedValueOnce(new Response('{"error":{"code":"token_expired"}}', { status: 401 }))
@@ -98,5 +98,35 @@ describe('BYOK openai-oauth refresh on 401', () => {
     ).rejects.toThrow(/^401/);
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses the rotated refresh_token from the previous exchange on the next call', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    // Call 1: 401 → refresh (returns rotated r2) → retry succeeds
+    fetchMock
+      .mockResolvedValueOnce(new Response('{"error":{"code":"token_expired"}}', { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'token-2', refresh_token: 'r2' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(sseOk('first'))
+      // Call 2: 401 → refresh must use r2 (not the original r1) → succeeds
+      .mockResolvedValueOnce(new Response('{"error":{"code":"token_expired"}}', { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'token-3', refresh_token: 'r3' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(sseOk('second'));
+
+    await runWithLlmConfig(
+      { provider: 'openai-oauth', model: 'gpt-5.4', api_key: 'expired', refresh_token: 'r1' },
+      async () => {
+        const a = await llm({ system: 's', message: 'm', maxTokens: 16 });
+        const b = await llm({ system: 's', message: 'm', maxTokens: 16 });
+        expect(a.text).toBe('first');
+        expect(b.text).toBe('second');
+      },
+    );
+
+    const secondRefreshBody = fetchMock.mock.calls[4][1]?.body as URLSearchParams;
+    expect(secondRefreshBody.get('refresh_token')).toBe('r2');
   });
 });
