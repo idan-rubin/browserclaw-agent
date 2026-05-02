@@ -25,6 +25,12 @@ import type { AgentConfig } from './config.js';
 import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS } from './config.js';
 import { logger } from './logger.js';
 
+function isAuthError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (/^(401|403)\s/.test(err.message)) return true;
+  return /token_expired|invalid_api_key/i.test(err.message);
+}
+
 function formatLessonForPrompt(lesson: TaskLesson): string {
   const worked = lesson.domains.filter((d) => d.status === 'worked');
   if (worked.length === 0) return '';
@@ -1758,6 +1764,19 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       // API/network error — don't burn a step, the agent never got to act
+      if (isAuthError(err)) {
+        logger.error(
+          { step, errorMessage: err instanceof Error ? sanitizeErrorText(err.message).slice(0, 300) : 'unknown' },
+          'LLM auth error',
+        );
+        emit('step_error', { step, error: 'AI service authentication failed', type: 'auth_error' });
+        return {
+          success: false,
+          steps: history,
+          error: 'AI service authentication failed. Refresh your token and try again.',
+          duration_ms: Date.now() - startTime,
+        };
+      }
       consecutiveApiFailures++;
       logger.error(
         {

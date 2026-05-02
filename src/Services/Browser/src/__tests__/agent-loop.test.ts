@@ -390,6 +390,22 @@ describe('runAgentLoop', () => {
     expect(result.error).toContain('Unable to reach the AI service');
   });
 
+  it('fails fast on auth errors without retrying', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Try something' })
+      .mockRejectedValueOnce(new Error('401 {"error":{"code":"token_expired"}}'));
+
+    const { page } = mockPage();
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('authentication failed');
+    expect(mockedLlmJson).toHaveBeenCalledTimes(2);
+  });
+
   it('emits step events', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Plan' })
