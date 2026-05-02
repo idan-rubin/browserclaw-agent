@@ -265,6 +265,8 @@ export default function TryPage() {
                 setModel={llm.setModel}
                 apiKey={llm.apiKey}
                 setApiKey={llm.setApiKey}
+                refreshToken={llm.refreshToken}
+                setRefreshToken={llm.setRefreshToken}
               />
             </div>
 
