@@ -6,6 +6,7 @@ export interface LlmConfig {
   provider: 'anthropic' | 'openai' | 'openai-oauth' | 'gemini';
   model: string;
   api_key: string;
+  refresh_token?: string;
 }
 
 export const PROVIDERS = [
@@ -37,34 +38,34 @@ const MODELS: Record<string, { value: string; label: string }[]> = {
 const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
 const STORAGE_KEY = 'browserclaw_llm_config';
 
-function loadConfig(): { provider: LlmConfig['provider']; model: string; apiKey: string } {
-  if (typeof window === 'undefined')
-    return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '' };
+function loadPrefs(): { provider: LlmConfig['provider']; model: string } {
+  const fallback = { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value };
+  if (typeof window === 'undefined') return fallback;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '' };
-    const parsed = JSON.parse(raw) as Partial<LlmConfig & { api_key: string }>;
+    if (raw === null) return fallback;
+    const parsed = JSON.parse(raw) as Partial<Pick<LlmConfig, 'provider' | 'model'>>;
     const provider = parsed.provider ?? DEFAULT_PROVIDER;
     const models = MODELS[provider] ?? [];
     const model =
       parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
         ? parsed.model
         : (models[0]?.value ?? '');
-    const apiKey = parsed.api_key ?? '';
-    return { provider, model, apiKey };
+    return { provider, model };
   } catch {
-    return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '' };
+    return fallback;
   }
 }
 
-function saveConfig(provider: LlmConfig['provider'], model: string, apiKey: string) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, model, api_key: apiKey }));
+function savePrefs(provider: LlmConfig['provider'], model: string) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, model }));
 }
 
 export function useLlmConfig() {
-  const [provider, setProvider] = useState<LlmConfig['provider']>(() => loadConfig().provider);
-  const [model, setModel] = useState(() => loadConfig().model);
-  const [apiKey, setApiKey] = useState(() => loadConfig().apiKey);
+  const [provider, setProvider] = useState<LlmConfig['provider']>(() => loadPrefs().provider);
+  const [model, setModel] = useState(() => loadPrefs().model);
+  const [apiKey, setApiKey] = useState('');
+  const [refreshToken, setRefreshToken] = useState('');
 
   // Resolve model when provider changes
   const resolvedModel = useMemo(() => {
@@ -74,8 +75,8 @@ export function useLlmConfig() {
   }, [provider, model]);
 
   useEffect(() => {
-    saveConfig(provider, resolvedModel, apiKey);
-  }, [provider, resolvedModel, apiKey]);
+    savePrefs(provider, resolvedModel);
+  }, [provider, resolvedModel]);
 
   const handleSetProvider = useCallback((p: LlmConfig['provider']) => {
     setProvider(p);
@@ -85,10 +86,24 @@ export function useLlmConfig() {
 
   const getConfig = useCallback((): LlmConfig | undefined => {
     if (apiKey.trim() === '') return undefined;
-    return { provider, model: resolvedModel, api_key: apiKey.trim() };
-  }, [provider, resolvedModel, apiKey]);
+    const config: LlmConfig = { provider, model: resolvedModel, api_key: apiKey.trim() };
+    if (provider === 'openai-oauth' && refreshToken.trim() !== '') {
+      config.refresh_token = refreshToken.trim();
+    }
+    return config;
+  }, [provider, resolvedModel, apiKey, refreshToken]);
 
-  return { provider, setProvider: handleSetProvider, model: resolvedModel, setModel, apiKey, setApiKey, getConfig };
+  return {
+    provider,
+    setProvider: handleSetProvider,
+    model: resolvedModel,
+    setModel,
+    apiKey,
+    setApiKey,
+    refreshToken,
+    setRefreshToken,
+    getConfig,
+  };
 }
 
 const FIELD_CLASS =
@@ -101,6 +116,8 @@ export function LlmConfigPanel({
   setModel,
   apiKey,
   setApiKey,
+  refreshToken,
+  setRefreshToken,
   allowedProviders,
 }: {
   provider: LlmConfig['provider'];
@@ -109,6 +126,8 @@ export function LlmConfigPanel({
   setModel: (m: string) => void;
   apiKey: string;
   setApiKey: (k: string) => void;
+  refreshToken: string;
+  setRefreshToken: (t: string) => void;
   /**
    * Optional filter for the provider dropdown. Pages that integrate with
    * backends that don't support every provider can narrow the list.
@@ -167,7 +186,7 @@ export function LlmConfigPanel({
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
-            Your key is never stored on our servers
+            Your key is held in memory for this page only — never stored, never sent to our servers
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <select
@@ -213,9 +232,23 @@ export function LlmConfigPanel({
             />
           </div>
 
+          {provider === 'openai-oauth' && (
+            <input
+              type="password"
+              value={refreshToken}
+              onChange={(e) => {
+                setRefreshToken(e.target.value);
+              }}
+              placeholder="Refresh token (optional — auto-refreshes expired OAuth tokens)"
+              aria-label="OAuth Refresh Token"
+              autoComplete="off"
+              className={`${FIELD_CLASS} w-full placeholder:text-muted-foreground/40`}
+            />
+          )}
+
           <p className="text-[11px] leading-relaxed text-muted-foreground/50">
-            Your key is saved in your browser&apos;s local storage and never sent to our servers except to make LLM
-            calls during your run.
+            Your key stays in this browser tab&apos;s session storage (cleared when you close the tab) and is never sent
+            to our servers except to make LLM calls during your run.
           </p>
         </div>
       )}

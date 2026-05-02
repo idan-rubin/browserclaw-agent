@@ -1,7 +1,5 @@
 import OpenAI from 'openai';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import fs from 'node:fs';
-import path from 'node:path';
 import { parseJsonResponse } from './parse-json-response.js';
 import { logger } from './logger.js';
 import { LlmParseError } from './types.js';
@@ -27,6 +25,8 @@ interface SessionLlmContext {
   inputTokens: number;
   outputTokens: number;
   byokClient?: OpenAI;
+  byokOauthToken?: string;
+  byokRefreshToken?: string;
 }
 
 export interface TokenUsage {
@@ -118,6 +118,28 @@ const clientCache = new Map<string, OpenAI>();
 // Concurrent callers share a single in-flight refresh so we don't race on process.env.
 let oauthRefreshInFlight: Promise<void> | null = null;
 
+interface OAuthTokens {
+  access_token: string;
+  refresh_token?: string;
+}
+
+async function exchangeRefreshToken(refreshToken: string): Promise<OAuthTokens> {
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: CLIENT_ID,
+      refresh_token: refreshToken,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OAuth token refresh failed (${String(res.status)}): ${sanitizeErrorText(text)}`);
+  }
+  return (await res.json()) as OAuthTokens;
+}
+
 async function refreshOAuthToken(): Promise<void> {
   if (oauthRefreshInFlight !== null) return oauthRefreshInFlight;
   oauthRefreshInFlight = (async () => {
@@ -126,27 +148,11 @@ async function refreshOAuthToken(): Promise<void> {
       throw new Error('OPENAI_REFRESH_TOKEN is required to refresh the access token');
 
     logger.info('Refreshing OpenAI OAuth token');
-    const res = await fetch(TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        client_id: CLIENT_ID,
-        refresh_token: refreshToken,
-      }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`OAuth token refresh failed (${String(res.status)}): ${sanitizeErrorText(text)}`);
+    const tokens = await exchangeRefreshToken(refreshToken);
+    process.env.OPENAI_OAUTH_TOKEN = tokens.access_token;
+    if (tokens.refresh_token !== undefined) {
+      process.env.OPENAI_REFRESH_TOKEN = tokens.refresh_token;
     }
-
-    const token = (await res.json()) as { access_token: string; refresh_token?: string };
-    process.env.OPENAI_OAUTH_TOKEN = token.access_token;
-    if (token.refresh_token !== undefined) {
-      process.env.OPENAI_REFRESH_TOKEN = token.refresh_token;
-    }
-    persistOAuthTokens(token.access_token, token.refresh_token);
     clientCache.delete('openai-oauth');
     logger.info('OpenAI OAuth token refreshed successfully');
   })();
@@ -182,24 +188,6 @@ function shouldRefreshOAuthToken(): boolean {
   const lifetime = times.exp - times.iat;
   const elapsed = Date.now() - times.iat;
   return elapsed > lifetime * REFRESH_LIFETIME_FRACTION;
-}
-
-function persistOAuthTokens(accessToken: string, refreshToken?: string): void {
-  const envPath = path.join(process.cwd(), '.env.local');
-  if (!fs.existsSync(envPath)) return;
-  try {
-    let content = fs.readFileSync(envPath, 'utf-8');
-    if (/^OPENAI_OAUTH_TOKEN=.*$/m.test(content)) {
-      content = content.replace(/^OPENAI_OAUTH_TOKEN=.*$/m, `OPENAI_OAUTH_TOKEN=${accessToken}`);
-    }
-    if (refreshToken !== undefined && /^OPENAI_REFRESH_TOKEN=.*$/m.test(content)) {
-      content = content.replace(/^OPENAI_REFRESH_TOKEN=.*$/m, `OPENAI_REFRESH_TOKEN=${refreshToken}`);
-    }
-    fs.writeFileSync(envPath, content);
-    logger.info('Persisted rotated OAuth tokens to .env.local');
-  } catch (err) {
-    logger.warn({ err: err instanceof Error ? err.message : err }, 'Failed to persist OAuth tokens');
-  }
 }
 
 function resolveProvider(name: string): ProviderConfig {
@@ -480,14 +468,25 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
     const byokConfig = ctx.llmConfig;
     const providerConfig = resolveByokProvider(byokConfig);
     if (byokConfig.provider === 'openai-oauth') {
-      return await withTimeout(
-        retryTransient(
-          () => callCodexResponsesAPI(providerConfig, byokConfig.model, req, byokConfig.api_key),
-          'BYOK Codex API',
-        ),
-        LLM_CODEX_TIMEOUT_MS,
-        'LLM call (BYOK OAuth)',
-      );
+      const callOnce = (token: string): Promise<LLMResponse> =>
+        withTimeout(
+          retryTransient(() => callCodexResponsesAPI(providerConfig, byokConfig.model, req, token), 'BYOK Codex API'),
+          LLM_CODEX_TIMEOUT_MS,
+          'LLM call (BYOK OAuth)',
+        );
+      try {
+        return await callOnce(ctx.byokOauthToken ?? byokConfig.api_key);
+      } catch (err) {
+        const refreshToken = ctx.byokRefreshToken ?? byokConfig.refresh_token;
+        if (err instanceof Error && /^401\s/.test(err.message) && refreshToken !== undefined) {
+          logger.info('Refreshing BYOK OAuth token after 401');
+          const tokens = await exchangeRefreshToken(refreshToken);
+          ctx.byokOauthToken = tokens.access_token;
+          if (tokens.refresh_token !== undefined) ctx.byokRefreshToken = tokens.refresh_token;
+          return await callOnce(tokens.access_token);
+        }
+        throw err;
+      }
     }
     // Cache the BYOK client in the session context to avoid creating a new one per call
     ctx.byokClient ??= getByokClient(byokConfig, providerConfig);

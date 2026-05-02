@@ -197,6 +197,8 @@ export function CompareClient() {
             setModel={llm.setModel}
             apiKey={llm.apiKey}
             setApiKey={llm.setApiKey}
+            refreshToken={llm.refreshToken}
+            setRefreshToken={llm.setRefreshToken}
             allowedProviders={SHARED_PROVIDERS}
           />
           {launchError !== null && <p className="text-xs text-red-400">{launchError}</p>}
