@@ -52,17 +52,14 @@ function loadConfig(): { provider: LlmConfig['provider']; model: string; apiKey:
       parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
         ? parsed.model
         : (models[0]?.value ?? '');
-    const apiKey = parsed.api_key ?? '';
-    const refreshToken = parsed.refresh_token ?? '';
-    return { provider, model, apiKey, refreshToken };
+    return { provider, model, apiKey: '', refreshToken: '' };
   } catch {
     return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, apiKey: '', refreshToken: '' };
   }
 }
 
-function saveConfig(provider: LlmConfig['provider'], model: string, apiKey: string, refreshToken: string) {
-  const payload: Partial<LlmConfig> = { provider, model, api_key: apiKey };
-  if (refreshToken !== '') payload.refresh_token = refreshToken;
+function saveConfig(provider: LlmConfig['provider'], model: string, _apiKey: string, _refreshToken: string) {
+  const payload: Pick<LlmConfig, 'provider' | 'model'> = { provider, model };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
 
