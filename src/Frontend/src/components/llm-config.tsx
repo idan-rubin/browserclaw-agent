@@ -37,64 +37,35 @@ const MODELS: Record<string, { value: string; label: string }[]> = {
 
 const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
 const STORAGE_KEY = 'browserclaw_llm_config';
-const SECRETS_KEY = 'browserclaw_llm_secrets';
 
-function loadConfig(): { provider: LlmConfig['provider']; model: string; apiKey: string; refreshToken: string } {
-  const fallback = {
-    provider: DEFAULT_PROVIDER,
-    model: MODELS[DEFAULT_PROVIDER][0].value,
-    apiKey: '',
-    refreshToken: '',
-  };
+function loadPrefs(): { provider: LlmConfig['provider']; model: string } {
+  const fallback = { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value };
   if (typeof window === 'undefined') return fallback;
-  let provider = DEFAULT_PROVIDER;
-  let model = MODELS[DEFAULT_PROVIDER][0].value;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw !== null) {
-      const parsed = JSON.parse(raw) as Partial<Pick<LlmConfig, 'provider' | 'model'>>;
-      provider = parsed.provider ?? DEFAULT_PROVIDER;
-      const models = MODELS[provider] ?? [];
-      model =
-        parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
-          ? parsed.model
-          : (models[0]?.value ?? '');
-    }
+    if (raw === null) return fallback;
+    const parsed = JSON.parse(raw) as Partial<Pick<LlmConfig, 'provider' | 'model'>>;
+    const provider = parsed.provider ?? DEFAULT_PROVIDER;
+    const models = MODELS[provider] ?? [];
+    const model =
+      parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
+        ? parsed.model
+        : (models[0]?.value ?? '');
+    return { provider, model };
   } catch {
     return fallback;
   }
-  let apiKey = '';
-  let refreshToken = '';
-  try {
-    const rawSecrets = sessionStorage.getItem(SECRETS_KEY);
-    if (rawSecrets !== null) {
-      const parsedSecrets = JSON.parse(rawSecrets) as Partial<Pick<LlmConfig, 'api_key' | 'refresh_token'>>;
-      apiKey = parsedSecrets.api_key ?? '';
-      refreshToken = parsedSecrets.refresh_token ?? '';
-    }
-  } catch {
-    /* ignore */
-  }
-  return { provider, model, apiKey, refreshToken };
 }
 
-function saveConfig(provider: LlmConfig['provider'], model: string, apiKey: string, refreshToken: string) {
+function savePrefs(provider: LlmConfig['provider'], model: string) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, model }));
-  if (apiKey === '' && refreshToken === '') {
-    sessionStorage.removeItem(SECRETS_KEY);
-    return;
-  }
-  const secrets: Partial<Pick<LlmConfig, 'api_key' | 'refresh_token'>> = {};
-  if (apiKey !== '') secrets.api_key = apiKey;
-  if (refreshToken !== '') secrets.refresh_token = refreshToken;
-  sessionStorage.setItem(SECRETS_KEY, JSON.stringify(secrets));
 }
 
 export function useLlmConfig() {
-  const [provider, setProvider] = useState<LlmConfig['provider']>(() => loadConfig().provider);
-  const [model, setModel] = useState(() => loadConfig().model);
-  const [apiKey, setApiKey] = useState(() => loadConfig().apiKey);
-  const [refreshToken, setRefreshToken] = useState(() => loadConfig().refreshToken);
+  const [provider, setProvider] = useState<LlmConfig['provider']>(() => loadPrefs().provider);
+  const [model, setModel] = useState(() => loadPrefs().model);
+  const [apiKey, setApiKey] = useState('');
+  const [refreshToken, setRefreshToken] = useState('');
 
   // Resolve model when provider changes
   const resolvedModel = useMemo(() => {
@@ -104,8 +75,8 @@ export function useLlmConfig() {
   }, [provider, model]);
 
   useEffect(() => {
-    saveConfig(provider, resolvedModel, apiKey, refreshToken);
-  }, [provider, resolvedModel, apiKey, refreshToken]);
+    savePrefs(provider, resolvedModel);
+  }, [provider, resolvedModel]);
 
   const handleSetProvider = useCallback((p: LlmConfig['provider']) => {
     setProvider(p);
@@ -215,7 +186,7 @@ export function LlmConfigPanel({
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
-            Your key never leaves this browser tab
+            Your key is held in memory for this page only — never stored, never sent to our servers
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <select
