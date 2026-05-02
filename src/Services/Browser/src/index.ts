@@ -31,3 +31,6 @@ export type {
   UserMessage,
 } from './types.js';
 export { HttpError, LlmParseError } from './types.js';
+
+export { BrowserClaw } from 'browserclaw';
+export type { CrawlPage } from 'browserclaw';
