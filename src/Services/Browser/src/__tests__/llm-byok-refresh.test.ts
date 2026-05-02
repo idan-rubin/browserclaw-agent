@@ -54,6 +54,34 @@ describe('BYOK openai-oauth refresh on 401', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('does not lock the session when the refresh endpoint fails transiently', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    // First llm call: 401 → refresh fails with 5xx → propagates
+    fetchMock
+      .mockResolvedValueOnce(new Response('{"error":{"code":"token_expired"}}', { status: 401 }))
+      .mockResolvedValueOnce(new Response('{"error":"server"}', { status: 503 }));
+
+    await expect(
+      runWithLlmConfig({ provider: 'openai-oauth', model: 'gpt-5.4', api_key: 'expired', refresh_token: 'r1' }, () =>
+        llm({ system: 's', message: 'm', maxTokens: 16 }),
+      ),
+    ).rejects.toThrow(/OAuth token refresh failed/);
+
+    // Second llm call in the same session must still attempt the refresh — the prior failure didn't poison the session.
+    fetchMock
+      .mockResolvedValueOnce(new Response('{"error":{"code":"token_expired"}}', { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'fresh-token', refresh_token: 'r2' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(sseOk('recovered'));
+
+    const second = await runWithLlmConfig(
+      { provider: 'openai-oauth', model: 'gpt-5.4', api_key: 'expired', refresh_token: 'r1' },
+      () => llm({ system: 's', message: 'm', maxTokens: 16 }),
+    );
+    expect(second.text).toBe('recovered');
+  });
+
   it('only refreshes once per session even if the retry also 401s', async () => {
     const fetchMock = vi.mocked(globalThis.fetch);
     fetchMock

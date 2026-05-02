@@ -483,9 +483,9 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
           byokConfig.refresh_token !== undefined &&
           ctx.byokRefreshAttempted !== true
         ) {
-          ctx.byokRefreshAttempted = true;
           logger.info('Refreshing BYOK OAuth token after 401');
           const tokens = await exchangeRefreshToken(byokConfig.refresh_token);
+          ctx.byokRefreshAttempted = true;
           ctx.byokOauthToken = tokens.access_token;
           return await callOnce(tokens.access_token);
         }
