@@ -1067,9 +1067,7 @@ function validateAction(
   }
 }
 
-type CompressContextResult =
-  | { ok: true; summary: string }
-  | { ok: false; error: string };
+type CompressContextResult = { ok: true; summary: string } | { ok: false; error: string };
 
 async function compressContext(
   prompt: string,
@@ -1230,10 +1228,7 @@ export async function runAgentLoop(
   // Hard cap: a misconfigured MAX_STEPS (or rogue caller) must never produce
   // thousand-step runs. Clamp here at loop entry and warn loudly if we did so.
   if (maxSteps > MAX_STEPS_HARD_CEILING) {
-    logger.warn(
-      { configured: maxSteps, ceiling: MAX_STEPS_HARD_CEILING },
-      'maxSteps exceeded hard ceiling — clamping',
-    );
+    logger.warn({ configured: maxSteps, ceiling: MAX_STEPS_HARD_CEILING }, 'maxSteps exceeded hard ceiling — clamping');
     maxSteps = MAX_STEPS_HARD_CEILING;
   }
   // Accept either a bare CrawlPage or a PageHolder. When a PageHolder is
@@ -1297,17 +1292,14 @@ export async function runAgentLoop(
       const verdict = await llmJson<{ ok: 'YES' | 'NO'; reason: string }>({
         system:
           'You validate whether a saved playbook plausibly solves the user task. Reply with JSON {"ok": "YES"|"NO", "reason": "<one short line>"}. Be permissive — only say NO when the playbook is clearly for a different goal.',
-        message: `Task: ${prompt}\n\nDomain: ${domainSkill.domain}\nTags: ${domainSkill.tags.join(', ')}\n\nPlaybook:\n${domainSkill.skill}`,
+        message: `Task: ${prompt}\n\nDomain: ${domainSkill.domain}\nTags: ${domainSkill.tags.join(', ')}\n\nPlaybook:\n${JSON.stringify(domainSkill.skill, null, 2)}`,
         // Cheap call: cap tokens tightly. The codebase has no
         // dedicated small-model config, so we reuse the active model
         // and rely on max_tokens for cost containment.
         maxTokens: 80,
       });
       if (verdict.ok === 'NO') {
-        logger.info(
-          { domain: domainSkill.domain, reason: verdict.reason },
-          'Skill validation skipped playbook',
-        );
+        logger.info({ domain: domainSkill.domain, reason: verdict.reason }, 'Skill validation skipped playbook');
         emit('skill_skipped', {
           domain: domainSkill.domain,
           reason: verdict.reason,

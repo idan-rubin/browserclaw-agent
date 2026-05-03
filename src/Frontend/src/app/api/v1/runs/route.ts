@@ -26,7 +26,8 @@ function sanitizeUpstreamMessage(input: unknown): string | undefined {
 async function buildErrorBody(res: Response): Promise<ApiErrorBody> {
   try {
     const data = (await res.json()) as Record<string, unknown>;
-    const code = typeof data.error_code === 'string' ? data.error_code : typeof data.code === 'string' ? data.code : undefined;
+    const code =
+      typeof data.error_code === 'string' ? data.error_code : typeof data.code === 'string' ? data.code : undefined;
     const message = sanitizeUpstreamMessage(data.message ?? data.error);
     return {
       error: code ?? 'upstream_error',

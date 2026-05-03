@@ -72,10 +72,7 @@ export function parseJsonResponse(text: string): unknown {
           try {
             return JSON.parse(jsonStr.slice(start, i + 1)) as unknown;
           } catch (err) {
-            throw new JsonResponseParseError(
-              err instanceof Error ? err.message : 'JSON.parse failed',
-              text,
-            );
+            throw new JsonResponseParseError(err instanceof Error ? err.message : 'JSON.parse failed', text);
           }
         }
       }
