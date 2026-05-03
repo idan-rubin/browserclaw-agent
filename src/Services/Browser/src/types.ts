@@ -21,20 +21,10 @@ export interface LlmConfig {
   api_key: string;
 }
 
-export interface CreateSessionRequest {
-  prompt: string;
-  url?: string;
-  headless?: boolean;
-  skip_moderation?: boolean;
-  /**
-   * When true, skip post-run work that exists on this service but not on
-   * bare OSS agents (skill generation, judge, domain-skill aggregation).
-   * Used by apples-to-apples comparison runs so token totals reflect only
-   * the agent loop itself.
-   */
-  skip_postprocessing?: boolean;
-  llm_config?: LlmConfig;
-}
+// CreateSessionRequest moved to ./api-types.ts as the canonical wire shape
+// shared with the Frontend mirror. Re-exported here to preserve the public
+// surface of the npm package (`browserclaw-agent`'s top-level index.ts).
+export type { CreateSessionRequest } from './api-types.js';
 
 export type AgentActionType =
   | 'click'

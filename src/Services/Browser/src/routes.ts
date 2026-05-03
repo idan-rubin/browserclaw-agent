@@ -13,7 +13,8 @@ import { loadTrajectory } from './trajectory-store.js';
 import { INTERJECTION_MAX_CHARS } from './config.js';
 import { BYOK_PROVIDERS, extractProviderMessage } from './llm.js';
 import { HttpError } from './types.js';
-import type { CreateSessionRequest, LlmConfig } from './types.js';
+import type { LlmConfig } from './types.js';
+import type { CreateSessionRequest, CreateSessionResponse } from './api-types.js';
 
 const MAX_BODY_BYTES = 100 * 1024; // 100KB
 
@@ -145,11 +146,12 @@ const routes: Route[] = [
         skipPostprocessing,
       );
 
-      json(res, 201, {
+      const response: CreateSessionResponse = {
         session_id: session.id,
         status: session.status,
         created_at: session.created_at,
-      });
+      };
+      json(res, 201, response);
     },
   },
 
