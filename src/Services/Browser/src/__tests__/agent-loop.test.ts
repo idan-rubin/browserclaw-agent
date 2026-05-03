@@ -12,6 +12,24 @@ vi.mock('../llm.js', () => ({
   getLLMCallCount: vi.fn(() => 0),
   resetLLMCallCount: vi.fn(),
   runWithLlmConfig: <T>(_config: unknown, fn: () => Promise<T>) => fn(),
+  isFailFastError: (err: unknown): boolean => {
+    if (!(err instanceof Error)) return false;
+    if (/insufficient_quota/i.test(err.message)) return true;
+    if (/^(401|403)\s/.test(err.message)) return true;
+    return /token_expired|invalid_api_key/i.test(err.message);
+  },
+  extractProviderMessage: (err: unknown): string | null => {
+    if (!(err instanceof Error)) return null;
+    const bodyStart = err.message.indexOf('{');
+    if (bodyStart === -1) return null;
+    try {
+      const parsed = JSON.parse(err.message.slice(bodyStart)) as { error?: { message?: unknown } };
+      const msg = parsed.error?.message;
+      return typeof msg === 'string' && msg.trim() !== '' ? msg : null;
+    } catch {
+      return null;
+    }
+  },
 }));
 
 vi.mock('../skills/press-and-hold.js', () => ({
@@ -390,10 +408,14 @@ describe('runAgentLoop', () => {
     expect(result.error).toContain('Unable to reach the AI service');
   });
 
-  it('fails fast on auth errors without retrying', async () => {
+  it('fails fast on auth errors and surfaces the provider message verbatim', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Try something' })
-      .mockRejectedValueOnce(new Error('401 {"error":{"code":"token_expired"}}'));
+      .mockRejectedValueOnce(
+        new Error(
+          '401 {"error":{"message":"Could not parse your authentication token. Please try signing in again.","code":"token_expired"}}',
+        ),
+      );
 
     const { page } = mockPage();
     const emit = vi.fn();
@@ -402,14 +424,16 @@ describe('runAgentLoop', () => {
     const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('rejected your credentials');
+    expect(result.error).toBe('Could not parse your authentication token. Please try signing in again.');
     expect(mockedLlmJson).toHaveBeenCalledTimes(2);
   });
 
-  it('fails fast on insufficient_quota without retrying', async () => {
+  it('fails fast on insufficient_quota and surfaces the provider message verbatim', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Try something' })
-      .mockRejectedValueOnce(new Error('429 {"error":{"code":"insufficient_quota"}}'));
+      .mockRejectedValueOnce(
+        new Error('429 {"error":{"message":"You exceeded your current quota.","code":"insufficient_quota"}}'),
+      );
 
     const { page } = mockPage();
     const emit = vi.fn();
@@ -418,7 +442,7 @@ describe('runAgentLoop', () => {
     const result: AgentLoopResult = await runAgentLoop('Do something', page, emit, controller.signal);
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('quota exhausted');
+    expect(result.error).toBe('You exceeded your current quota.');
     expect(mockedLlmJson).toHaveBeenCalledTimes(2);
   });
 
