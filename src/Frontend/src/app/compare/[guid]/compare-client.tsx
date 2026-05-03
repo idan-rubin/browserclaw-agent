@@ -109,32 +109,41 @@ export function CompareClient() {
     winnerDeclared.current = false;
     setStates(emptyBoth);
 
-    const trimmed = prompt.trim();
-    const llmConfig = await llm.getConfig();
-    if (llmConfig === undefined) {
-      setLaunchError('Add your API key above to run.');
-      return;
-    }
+    try {
+      const trimmed = prompt.trim();
+      let llmConfig: LlmConfig | undefined;
+      try {
+        llmConfig = await llm.getConfig();
+      } catch (err) {
+        setLaunchError(err instanceof Error ? err.message : 'Failed to prepare credentials');
+        return;
+      }
+      if (llmConfig === undefined) {
+        setLaunchError('Add your API key above to run.');
+        return;
+      }
 
-    const [bcRes, buRes] = await Promise.allSettled([
-      startRun('/api/v1/runs', trimmed, llmConfig),
-      startRun('/api/v1/bu-runs', trimmed, llmConfig),
-    ]);
+      const [bcRes, buRes] = await Promise.allSettled([
+        startRun('/api/v1/runs', trimmed, llmConfig),
+        startRun('/api/v1/bu-runs', trimmed, llmConfig),
+      ]);
 
-    const toState = (res: PromiseSettledResult<string>): SideState =>
-      res.status === 'fulfilled'
-        ? { sessionId: res.value, terminal: null, error: null }
-        : {
-            sessionId: null,
-            terminal: 'failed',
-            error: res.reason instanceof Error ? res.reason.message : 'failed to start',
-          };
+      const toState = (res: PromiseSettledResult<string>): SideState =>
+        res.status === 'fulfilled'
+          ? { sessionId: res.value, terminal: null, error: null }
+          : {
+              sessionId: null,
+              terminal: 'failed',
+              error: res.reason instanceof Error ? res.reason.message : 'failed to start',
+            };
 
-    setStates({ browserclaw: toState(bcRes), 'browser-use': toState(buRes) });
-    setLaunching(false);
+      setStates({ browserclaw: toState(bcRes), 'browser-use': toState(buRes) });
 
-    if (bcRes.status === 'rejected' && buRes.status === 'rejected') {
-      setLaunchError('Both services are unavailable');
+      if (bcRes.status === 'rejected' && buRes.status === 'rejected') {
+        setLaunchError('Both services are unavailable');
+      }
+    } finally {
+      setLaunching(false);
     }
   }
 
