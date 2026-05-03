@@ -28,7 +28,7 @@ import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig, sanitizeErrorText
 import { extractDomain, getSkillForDomain, getSkillsForDomains, saveSkill } from './skill-store.js';
 import { saveLesson, extractDomainLessons, getLesson } from './lesson-store.js';
 import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
-import { API_VERSION } from './api-types.js';
+import { stampSSEPayload } from './sse-stamp.js';
 import { logger } from './logger.js';
 
 interface ManagedSession {
@@ -102,14 +102,7 @@ function getManagedSession(sessionId: string): ManagedSession {
 export function emitSSE(sessionId: string, event: string, data: unknown): void {
   const managed = sessions.get(sessionId);
   if (!managed) return;
-  // Stamp every SSE event with apiVersion so clients can detect a future
-  // protocol bump without needing to rename type tags. See
-  // ./api-types.ts (and its Frontend mirror) for the canonical SSEEvent
-  // union — `type` and `apiVersion` together identify every event shape.
-  const stamped =
-    data !== null && typeof data === 'object'
-      ? { apiVersion: API_VERSION, type: event, ...(data as Record<string, unknown>) }
-      : { apiVersion: API_VERSION, type: event, value: data };
+  const stamped = stampSSEPayload(event, data);
   const payload = `event: ${event}\ndata: ${JSON.stringify(stamped)}\n\n`;
   for (const client of managed.sseClients) {
     client.write(payload);

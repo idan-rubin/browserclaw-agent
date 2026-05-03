@@ -68,7 +68,15 @@ export type SSEEvent =
   | (BaseSSEEvent & { type: 'thinking'; step: number; message: string })
   | (BaseSSEEvent & { type: 'completed'; answer?: string; duration_ms?: number })
   | (BaseSSEEvent & { type: 'failed'; step?: number; error: string })
-  | (BaseSSEEvent & { type: 'step_error'; step: number; action?: string; error: string })
+  | (BaseSSEEvent & {
+      type: 'step_error';
+      step: number;
+      action?: string;
+      error: string;
+      // Optional inner classifier (e.g. 'parse_error' | 'api_error'). The SSE
+      // channel type stays 'step_error'; this discriminates the cause.
+      error_kind?: string;
+    })
   | (BaseSSEEvent & {
       type: 'context_compressed';
       step: number;

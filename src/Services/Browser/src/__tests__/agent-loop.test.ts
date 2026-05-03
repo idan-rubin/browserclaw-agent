@@ -231,7 +231,7 @@ describe('runAgentLoop', () => {
         c[0] === 'step_error' &&
         typeof c[1] === 'object' &&
         c[1] !== null &&
-        (c[1] as { type?: string }).type === 'parse_error',
+        (c[1] as { error_kind?: string }).error_kind === 'parse_error',
     );
     expect(parseErrors.length).toBe(0);
     expect(mock.click.mock.calls.filter((c) => c[0] === '99').length).toBeLessThanOrEqual(2);

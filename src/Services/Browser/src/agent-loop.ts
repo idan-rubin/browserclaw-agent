@@ -1831,7 +1831,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('step_error', {
           step,
           error: 'LLM response was not valid JSON',
-          type: 'parse_error',
+          error_kind: 'parse_error',
           ...(process.env.DEBUG !== undefined && { rawText: err.responseSnippet }),
         });
 
@@ -1877,7 +1877,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           },
           'LLM fail-fast error',
         );
-        emit('step_error', { step, error: userMessage, type: errorType });
+        emit('step_error', { step, error: userMessage, error_kind: errorType });
         return {
           success: false,
           steps: history,
@@ -1895,7 +1895,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         },
         'LLM API error',
       );
-      emit('step_error', { step, error: 'AI service temporarily unavailable', type: 'api_error' });
+      emit('step_error', { step, error: 'AI service temporarily unavailable', error_kind: 'api_error' });
       if (consecutiveApiFailures >= MAX_API_FAILURES) {
         return {
           success: false,
