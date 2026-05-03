@@ -11,7 +11,7 @@ export interface LlmConfig {
 export const PROVIDERS = [
   { value: 'anthropic' as const, label: 'Anthropic' },
   { value: 'openai' as const, label: 'OpenAI' },
-  { value: 'openai-oauth' as const, label: 'OpenAI (Subscription)' },
+  { value: 'openai-oauth' as const, label: 'OpenAI (Codex)' },
   { value: 'gemini' as const, label: 'Google Gemini' },
 ];
 
