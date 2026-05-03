@@ -170,7 +170,10 @@ const routes: Route[] = [
         'X-Accel-Buffering': 'no',
       });
 
-      res.write(`event: connected\ndata: ${JSON.stringify({ session_id: sessionId })}\n\n`);
+      // Stamped to match the SSEEvent union in ./api-types.ts.
+      res.write(
+        `event: connected\ndata: ${JSON.stringify({ apiVersion: 1, type: 'connected', session_id: sessionId })}\n\n`,
+      );
       addSSEClient(sessionId, res);
 
       const heartbeat = setInterval(() => {
