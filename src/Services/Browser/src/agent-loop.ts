@@ -1967,7 +1967,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'ask_user') {
-        emit('ask_user', { step, question: action.text ?? action.reasoning });
+        const question = action.text ?? action.reasoning;
+        emit('ask_user', { step, question });
 
         if (waitForUser === undefined) {
           agentStep.action.error_feedback =
@@ -1982,6 +1983,22 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           emit('user_response', { step, text: userResponse });
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to get user response';
+          // Silent continuation is the worse failure mode: if the user never
+          // answered, we should NOT just push on as if the question were
+          // ignored. Emit a distinct timeout event so the UI can render it
+          // clearly, then cancel the run with status='canceled-timeout'.
+          const isTimeout = message.toLowerCase().includes('timed out') || message.toLowerCase().includes('timeout');
+          if (isTimeout) {
+            emit('user_interjection_timeout', { step, question });
+            return {
+              success: false,
+              status: 'canceled-timeout',
+              steps: history,
+              error: `User did not respond to question: "${question}"`,
+              duration_ms: Date.now() - startTime,
+              final_url: history.length > 0 ? history[history.length - 1].url : undefined,
+            };
+          }
           emit('step_error', { step, error: message });
           return {
             success: false,

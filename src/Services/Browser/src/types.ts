@@ -135,6 +135,11 @@ export interface SkillMetadata {
 
 export interface AgentLoopResult {
   success: boolean;
+  /**
+   * Optional terminal status for failures that need to be distinguished from
+   * a generic error. Currently only emitted for user-interjection timeouts.
+   */
+  status?: 'canceled-timeout';
   steps: AgentStep[];
   answer?: string;
   error?: string;
