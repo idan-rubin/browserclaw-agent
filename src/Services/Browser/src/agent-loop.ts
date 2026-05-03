@@ -1948,7 +1948,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             { step, pahDomain, pahFailureCount: priorFailures },
             'press_and_hold short-circuited — bail limit reached',
           );
-          if (pahDomain !== '') walledDomains.add(pahDomain);
+          if (pahDomain !== '' && !walledDomains.has(pahDomain)) {
+            walledDomains.add(pahDomain);
+            emit('domain_blocked', {
+              domain: pahDomain,
+              reason: 'press_and_hold_bail_limit',
+              attempt: priorFailures,
+            });
+          }
           agentStep.action.error_feedback = PAH_BAIL_FEEDBACK;
           step++;
           break;
@@ -1957,7 +1964,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         if (!solved) {
           const newFailures = priorFailures + 1;
           pahFailuresByDomain.set(pahDomain, newFailures);
-          if (pahDomain !== '' && newFailures >= PAH_MAX_FAILURES) walledDomains.add(pahDomain);
+          if (pahDomain !== '' && newFailures >= PAH_MAX_FAILURES && !walledDomains.has(pahDomain)) {
+            walledDomains.add(pahDomain);
+            emit('domain_blocked', {
+              domain: pahDomain,
+              reason: 'press_and_hold_failed',
+              attempt: newFailures,
+            });
+          }
           const intermittent = await isIntermittentError(holder.page);
           logger.info(
             { step, pahDomain, intermittent, pahFailureCount: newFailures },
