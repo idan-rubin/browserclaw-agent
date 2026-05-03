@@ -1,4 +1,3 @@
-import { getAvailableProviders, getActiveProvider, getModel } from './llm.js';
 import { logger } from './logger.js';
 
 export function requireEnv(name: string): string {
@@ -99,17 +98,6 @@ interface ServerConfig {
 }
 
 export function validateConfig(): ServerConfig {
-  const available = getAvailableProviders();
-  if (available.length === 0) {
-    logger.fatal('No AI providers available — set at least one provider API key');
-    process.exit(1);
-  }
-  logger.info({ providers: available.map((p) => p.provider) }, 'Available providers');
-
-  // Validate LLM_PROVIDER + API key at startup so we fail fast
-  const active = getActiveProvider();
-  logger.info({ provider: active.provider, model: getModel() }, 'Active provider');
-
   return {
     port: requireEnvInt('PORT'),
     rateLimitMax: requireEnvInt('RATE_LIMIT_MAX'),

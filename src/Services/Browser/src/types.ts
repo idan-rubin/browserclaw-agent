@@ -19,7 +19,6 @@ export interface LlmConfig {
   provider: LlmProvider;
   model: string;
   api_key: string;
-  refresh_token?: string;
 }
 
 export interface CreateSessionRequest {

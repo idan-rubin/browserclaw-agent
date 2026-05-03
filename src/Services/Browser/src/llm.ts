@@ -25,8 +25,14 @@ interface SessionLlmContext {
   inputTokens: number;
   outputTokens: number;
   byokClient?: OpenAI;
-  byokOauthToken?: string;
-  byokRefreshToken?: string;
+}
+
+function requireCtx(): SessionLlmContext {
+  const ctx = sessionLlmStore.getStore();
+  if (ctx === undefined) {
+    throw new Error('LLM call outside of runWithLlmConfig — BYOK config is required');
+  }
+  return ctx;
 }
 
 export interface TokenUsage {
@@ -47,14 +53,9 @@ export function runWithLlmConfig<T>(config: LlmConfig, fn: () => Promise<T>): Pr
 }
 
 function recordUsage(input: number, output: number): void {
-  const ctx = sessionLlmStore.getStore();
-  if (ctx) {
-    ctx.inputTokens += input;
-    ctx.outputTokens += output;
-  } else {
-    _fallbackInputTokens += input;
-    _fallbackOutputTokens += output;
-  }
+  const ctx = requireCtx();
+  ctx.inputTokens += input;
+  ctx.outputTokens += output;
 }
 
 export const BYOK_PROVIDERS: Partial<Record<string, { baseURL: string; useMaxCompletionTokens: boolean }>> = {
@@ -64,170 +65,10 @@ export const BYOK_PROVIDERS: Partial<Record<string, { baseURL: string; useMaxCom
   gemini: { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', useMaxCompletionTokens: false },
 };
 
-export interface ProviderConfig {
+interface ProviderConfig {
   provider: string;
-  label: string;
   baseURL: string;
-  envVar: string;
   useMaxCompletionTokens: boolean;
-}
-
-const PROVIDERS: ProviderConfig[] = [
-  {
-    provider: 'groq',
-    label: 'Groq',
-    baseURL: 'https://api.groq.com/openai/v1',
-    envVar: 'GROQ_API_KEY',
-    useMaxCompletionTokens: false,
-  },
-  {
-    provider: 'gemini',
-    label: 'Gemini',
-    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-    envVar: 'GEMINI_API_KEY',
-    useMaxCompletionTokens: false,
-  },
-  {
-    provider: 'openai',
-    label: 'OpenAI',
-    baseURL: 'https://api.openai.com/v1',
-    envVar: 'OPENAI_API_KEY',
-    useMaxCompletionTokens: true,
-  },
-  {
-    provider: 'openai-oauth',
-    label: 'OpenAI (Subscription)',
-    baseURL: 'https://chatgpt.com/backend-api',
-    envVar: 'OPENAI_OAUTH_TOKEN',
-    useMaxCompletionTokens: true,
-  },
-  {
-    provider: 'anthropic',
-    label: 'Anthropic',
-    baseURL: 'https://api.anthropic.com/v1/',
-    envVar: 'ANTHROPIC_API_KEY',
-    useMaxCompletionTokens: false,
-  },
-];
-
-const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
-const TOKEN_URL = 'https://auth.openai.com/oauth/token';
-const REFRESH_LIFETIME_FRACTION = 0.8;
-
-const clientCache = new Map<string, OpenAI>();
-// Concurrent callers share a single in-flight refresh so we don't race on process.env.
-let oauthRefreshInFlight: Promise<void> | null = null;
-
-interface OAuthTokens {
-  access_token: string;
-  refresh_token?: string;
-}
-
-async function exchangeRefreshToken(refreshToken: string): Promise<OAuthTokens> {
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: CLIENT_ID,
-      refresh_token: refreshToken,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OAuth token refresh failed (${String(res.status)}): ${sanitizeErrorText(text)}`);
-  }
-  return (await res.json()) as OAuthTokens;
-}
-
-async function refreshOAuthToken(): Promise<void> {
-  if (oauthRefreshInFlight !== null) return oauthRefreshInFlight;
-  oauthRefreshInFlight = (async () => {
-    const refreshToken = process.env.OPENAI_REFRESH_TOKEN;
-    if (refreshToken === undefined || refreshToken === '')
-      throw new Error('OPENAI_REFRESH_TOKEN is required to refresh the access token');
-
-    logger.info('Refreshing OpenAI OAuth token');
-    const tokens = await exchangeRefreshToken(refreshToken);
-    process.env.OPENAI_OAUTH_TOKEN = tokens.access_token;
-    if (tokens.refresh_token !== undefined) {
-      process.env.OPENAI_REFRESH_TOKEN = tokens.refresh_token;
-    }
-    clientCache.delete('openai-oauth');
-    logger.info('OpenAI OAuth token refreshed successfully');
-  })();
-  try {
-    await oauthRefreshInFlight;
-  } finally {
-    oauthRefreshInFlight = null;
-  }
-}
-
-function parseJwtTimes(jwt: string): { iat: number; exp: number } | null {
-  try {
-    const parts = jwt.split('.');
-    if (parts.length !== 3) return null;
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString()) as {
-      iat?: number;
-      exp?: number;
-    };
-    if (typeof payload.iat === 'number' && typeof payload.exp === 'number') {
-      return { iat: payload.iat * 1000, exp: payload.exp * 1000 };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function shouldRefreshOAuthToken(): boolean {
-  const token = process.env.OPENAI_OAUTH_TOKEN;
-  if (token === undefined || token === '') return false;
-  const times = parseJwtTimes(token);
-  if (times === null) return false;
-  const lifetime = times.exp - times.iat;
-  const elapsed = Date.now() - times.iat;
-  return elapsed > lifetime * REFRESH_LIFETIME_FRACTION;
-}
-
-function resolveProvider(name: string): ProviderConfig {
-  const found = PROVIDERS.find((p) => p.provider === name);
-  if (!found) throw new Error(`Unknown provider: ${name}. Valid: ${PROVIDERS.map((p) => p.provider).join(', ')}`);
-  const apiKey = process.env[found.envVar];
-  if (apiKey === undefined || apiKey === '') throw new Error(`${found.envVar} is required for provider "${name}"`);
-  return found;
-}
-
-function getClient(config: ProviderConfig): OpenAI {
-  const cached = clientCache.get(config.provider);
-  if (cached) return cached;
-
-  const client = new OpenAI({
-    apiKey: process.env[config.envVar],
-    baseURL: config.baseURL,
-  });
-  clientCache.set(config.provider, client);
-  return client;
-}
-
-export function getAvailableProviders(): ProviderConfig[] {
-  return PROVIDERS.filter((p) => Boolean(process.env[p.envVar]));
-}
-
-export function getActiveProvider(): ProviderConfig {
-  const name = process.env.LLM_PROVIDER;
-  if (name === undefined || name === '')
-    throw new Error(`LLM_PROVIDER is required. Valid: ${PROVIDERS.map((p) => p.provider).join(', ')}`);
-  return resolveProvider(name);
-}
-
-export function getModel(): string {
-  const model = process.env.LLM_MODEL;
-  if (model === undefined || model === '') {
-    logger.fatal('LLM_MODEL is required but not set');
-    process.exit(1);
-  }
-  return model;
 }
 
 export interface LLMRequest {
@@ -244,9 +85,8 @@ async function callCodexResponsesAPI(
   provider: ProviderConfig,
   model: string,
   req: LLMRequest,
-  apiKeyOverride?: string,
+  apiKey: string,
 ): Promise<LLMResponse> {
-  const apiKey = apiKeyOverride ?? process.env[provider.envVar] ?? '';
   const url = `${provider.baseURL}/codex/responses`;
 
   const res = await fetch(url, {
@@ -307,9 +147,8 @@ async function callChatCompletions(
   provider: ProviderConfig,
   model: string,
   req: LLMRequest,
-  clientOverride?: OpenAI,
+  client: OpenAI,
 ): Promise<LLMResponse> {
-  const client = clientOverride ?? getClient(provider);
   const response = await client.chat.completions.create({
     model,
     ...(provider.useMaxCompletionTokens ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens }),
@@ -327,44 +166,20 @@ async function callChatCompletions(
   return { text: content };
 }
 
-async function callLLM(provider: ProviderConfig, model: string, req: LLMRequest): Promise<LLMResponse> {
-  if (provider.provider === 'openai-oauth') {
-    // Raw fetch — no SDK retries, so we add our own
-    return retryTransient(() => callCodexResponsesAPI(provider, model, req), 'Codex API');
-  }
-  // OpenAI SDK handles its own retries for chat completions
-  return callChatCompletions(provider, model, req);
-}
-
-// Per-session LLM call counter backed by AsyncLocalStorage.
-// Falls back to a module-level counter for calls outside a session context.
-let _fallbackLlmCallCount = 0;
-let _fallbackInputTokens = 0;
-let _fallbackOutputTokens = 0;
-
 export function getLLMCallCount(): number {
-  const ctx = sessionLlmStore.getStore();
-  return ctx ? ctx.llmCallCount : _fallbackLlmCallCount;
+  return requireCtx().llmCallCount;
 }
 
 export function getTokenUsage(): TokenUsage {
-  const ctx = sessionLlmStore.getStore();
-  const input = ctx ? ctx.inputTokens : _fallbackInputTokens;
-  const output = ctx ? ctx.outputTokens : _fallbackOutputTokens;
-  return { input, output, total: input + output };
+  const ctx = requireCtx();
+  return { input: ctx.inputTokens, output: ctx.outputTokens, total: ctx.inputTokens + ctx.outputTokens };
 }
 
 export function resetLLMCallCount(): void {
-  const ctx = sessionLlmStore.getStore();
-  if (ctx) {
-    ctx.llmCallCount = 0;
-    ctx.inputTokens = 0;
-    ctx.outputTokens = 0;
-  } else {
-    _fallbackLlmCallCount = 0;
-    _fallbackInputTokens = 0;
-    _fallbackOutputTokens = 0;
-  }
+  const ctx = requireCtx();
+  ctx.llmCallCount = 0;
+  ctx.inputTokens = 0;
+  ctx.outputTokens = 0;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -437,84 +252,41 @@ async function retryTransient<T>(fn: () => Promise<T>, label: string): Promise<T
   throw lastErr;
 }
 
-function resolveByokProvider(config: LlmConfig): ProviderConfig {
+function resolveProvider(config: LlmConfig): ProviderConfig {
   const byok = BYOK_PROVIDERS[config.provider];
-  if (!byok) throw new Error(`Unsupported BYOK provider: ${config.provider}`);
+  if (!byok) throw new Error(`Unsupported provider: ${config.provider}`);
   return {
     provider: config.provider,
-    label: config.provider,
     baseURL: byok.baseURL,
-    envVar: '', // not used for BYOK
     useMaxCompletionTokens: byok.useMaxCompletionTokens,
   };
 }
 
-function getByokClient(config: LlmConfig, providerConfig: ProviderConfig): OpenAI {
-  return new OpenAI({
-    apiKey: config.api_key,
-    baseURL: providerConfig.baseURL,
-  });
+function getClient(ctx: SessionLlmContext, provider: ProviderConfig): OpenAI {
+  ctx.byokClient ??= new OpenAI({ apiKey: ctx.llmConfig.api_key, baseURL: provider.baseURL });
+  return ctx.byokClient;
 }
 
 export async function llm(req: LLMRequest): Promise<LLMResponse> {
-  const ctx = sessionLlmStore.getStore();
-  if (ctx) {
-    ctx.llmCallCount++;
-  } else {
-    _fallbackLlmCallCount++;
-  }
+  const ctx = requireCtx();
+  ctx.llmCallCount++;
 
-  if (ctx) {
-    const byokConfig = ctx.llmConfig;
-    const providerConfig = resolveByokProvider(byokConfig);
-    if (byokConfig.provider === 'openai-oauth') {
-      const callOnce = (token: string): Promise<LLMResponse> =>
-        withTimeout(
-          retryTransient(() => callCodexResponsesAPI(providerConfig, byokConfig.model, req, token), 'BYOK Codex API'),
-          LLM_CODEX_TIMEOUT_MS,
-          'LLM call (BYOK OAuth)',
-        );
-      try {
-        return await callOnce(ctx.byokOauthToken ?? byokConfig.api_key);
-      } catch (err) {
-        const refreshToken = ctx.byokRefreshToken ?? byokConfig.refresh_token;
-        if (err instanceof Error && /^401\s/.test(err.message) && refreshToken !== undefined) {
-          logger.info('Refreshing BYOK OAuth token after 401');
-          const tokens = await exchangeRefreshToken(refreshToken);
-          ctx.byokOauthToken = tokens.access_token;
-          if (tokens.refresh_token !== undefined) ctx.byokRefreshToken = tokens.refresh_token;
-          return await callOnce(tokens.access_token);
-        }
-        throw err;
-      }
-    }
-    // Cache the BYOK client in the session context to avoid creating a new one per call
-    ctx.byokClient ??= getByokClient(byokConfig, providerConfig);
+  const config = ctx.llmConfig;
+  const provider = resolveProvider(config);
+
+  if (config.provider === 'openai-oauth') {
     return await withTimeout(
-      callChatCompletions(providerConfig, byokConfig.model, req, ctx.byokClient),
-      LLM_TIMEOUT_MS,
-      'LLM call (BYOK)',
+      retryTransient(() => callCodexResponsesAPI(provider, config.model, req, config.api_key), 'BYOK Codex API'),
+      LLM_CODEX_TIMEOUT_MS,
+      'LLM call (BYOK OAuth)',
     );
   }
 
-  // Fall back to server-configured provider
-  const provider = getActiveProvider();
-  const model = getModel();
-  const isSubscription = provider.provider === 'openai-oauth';
-
-  if (isSubscription && shouldRefreshOAuthToken()) {
-    await refreshOAuthToken();
-  }
-
-  try {
-    return await withTimeout(callLLM(provider, model, req), LLM_TIMEOUT_MS, 'LLM call');
-  } catch (err) {
-    if (isSubscription && err instanceof Error && err.message.includes('401')) {
-      await refreshOAuthToken();
-      return withTimeout(callLLM(provider, model, req), LLM_TIMEOUT_MS, 'LLM call (retry)');
-    }
-    throw err;
-  }
+  return await withTimeout(
+    callChatCompletions(provider, config.model, req, getClient(ctx, provider)),
+    LLM_TIMEOUT_MS,
+    'LLM call (BYOK)',
+  );
 }
 
 export async function llmJson<T>(req: LLMRequest): Promise<T> {
@@ -533,33 +305,18 @@ export async function llmJson<T>(req: LLMRequest): Promise<T> {
  * Call the LLM with a screenshot image for visual extraction.
  */
 export async function llmVision(system: string, message: string, imageBase64: string): Promise<string> {
-  const ctx = sessionLlmStore.getStore();
-  if (ctx) {
-    ctx.llmCallCount++;
-  } else {
-    _fallbackLlmCallCount++;
-  }
+  const ctx = requireCtx();
+  ctx.llmCallCount++;
 
-  let provider: ProviderConfig;
-  let model: string;
-  let client: OpenAI;
-
-  if (ctx) {
-    provider = resolveByokProvider(ctx.llmConfig);
-    model = ctx.llmConfig.model;
-    ctx.byokClient ??= getByokClient(ctx.llmConfig, provider);
-    client = ctx.byokClient;
-  } else {
-    provider = getActiveProvider();
-    model = getModel();
-    client = getClient(provider);
-  }
+  const config = ctx.llmConfig;
+  const provider = resolveProvider(config);
+  const client = getClient(ctx, provider);
 
   const response = await retryTransient(
     () =>
       withTimeout(
         client.chat.completions.create({
-          model,
+          model: config.model,
           max_tokens: 2048,
           messages: [
             { role: 'system', content: system },

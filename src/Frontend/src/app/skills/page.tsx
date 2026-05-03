@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { PageShell } from '@/components/page-shell';
+import { LlmConfigPanel, useLlmConfig } from '@/components/llm-config';
 
 interface Skill {
   title: string;
@@ -89,18 +90,32 @@ export default function SkillsPage() {
   const [filter, setFilter] = useState('All');
   const [runningSkill, setRunningSkill] = useState<string | null>(null);
   const router = useRouter();
+  const llm = useLlmConfig();
 
   const filtered = filter === 'All' ? SKILLS : SKILLS.filter((s) => s.category === filter);
 
   async function runSkill(skill: Skill) {
     if (runningSkill != null && runningSkill !== '') return;
+
+    let llmConfig;
+    try {
+      llmConfig = await llm.getConfig();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to prepare credentials');
+      return;
+    }
+    if (llmConfig === undefined) {
+      toast.error('Add your API key above to run a skill.');
+      return;
+    }
+
     setRunningSkill(skill.title);
 
     try {
       const res = await fetch('/api/v1/runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: skill.description }),
+        body: JSON.stringify({ prompt: skill.description, llm_config: llmConfig }),
       });
 
       const data = (await res.json()) as Record<string, unknown>;
@@ -127,6 +142,20 @@ export default function SkillsPage() {
           <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
             Every successful run generates a reusable skill. Browse community skills or create your own.
           </p>
+
+          {/* BYOK config */}
+          <div className="mt-6 max-w-2xl">
+            <LlmConfigPanel
+              provider={llm.provider}
+              setProvider={llm.setProvider}
+              model={llm.model}
+              setModel={llm.setModel}
+              apiKey={llm.apiKey}
+              setApiKey={llm.setApiKey}
+              refreshToken={llm.refreshToken}
+              setRefreshToken={llm.setRefreshToken}
+            />
+          </div>
 
           {/* Category filter */}
           <div className="mt-8 flex flex-wrap gap-2">
