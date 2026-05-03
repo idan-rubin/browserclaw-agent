@@ -67,15 +67,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json<ApiErrorBody>({ error: 'bad_request', code: 'INVALID_JSON' }, { status: 400 });
   }
   const clientIp = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? '127.0.0.1';
+  // Forward Idempotency-Key opaquely; backend dedups within 5min and echoes
+  // Idempotency-Replayed: true on a hit. Letting clients (mobile, flaky
+  // wifi) safely retry POST /sessions is the whole point.
+  const idempotencyKey = request.headers.get('idempotency-key');
+  const upstreamHeaders: Record<string, string> = {
+    ...backendHeaders(),
+    'Content-Type': 'application/json',
+    'X-Forwarded-For': clientIp,
+  };
+  if (idempotencyKey !== null && idempotencyKey.trim() !== '') {
+    upstreamHeaders['Idempotency-Key'] = idempotencyKey;
+  }
   let res: Response;
   try {
     res = await fetch(`${backendUrl}/api/v1/sessions`, {
       method: 'POST',
-      headers: {
-        ...backendHeaders(),
-        'Content-Type': 'application/json',
-        'X-Forwarded-For': clientIp,
-      },
+      headers: upstreamHeaders,
       body: JSON.stringify(body),
       signal: request.signal,
     });
@@ -90,5 +98,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(errBody, { status: res.status });
   }
   const data = (await res.json()) as CreateSessionResponse;
-  return NextResponse.json(data, { status: res.status });
+  // Echo Idempotency-Replayed so clients can tell a replay from a
+  // freshly-created session without inspecting payload identity.
+  const replayed = res.headers.get('idempotency-replayed');
+  const responseHeaders: Record<string, string> = {};
+  if (replayed !== null) {
+    responseHeaders['Idempotency-Replayed'] = replayed;
+  }
+  return NextResponse.json(data, { status: res.status, headers: responseHeaders });
 }

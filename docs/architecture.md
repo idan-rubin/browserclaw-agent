@@ -104,6 +104,10 @@ POST   /api/auth/[...nextauth]       — NextAuth handlers
 
 ```
 POST   /api/v1/sessions              — Create browser session + start agent loop
+                                       (optional `Idempotency-Key` header:
+                                        retries within 5min replay the
+                                        original session_id and add
+                                        `Idempotency-Replayed: true`)
 GET    /api/v1/sessions/:id/stream   — SSE stream of agent progress
 DELETE /api/v1/sessions/:id          — Close session
 GET    /health                       — Health check
