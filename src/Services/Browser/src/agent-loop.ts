@@ -1245,6 +1245,39 @@ export async function runAgentLoop(
   };
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
+
+  // Skill validation gate: before replaying a loaded skill, ask the LLM
+  // whether it plausibly solves the user's task. Off by default
+  // (SKILL_VALIDATION_ENABLED=1 to opt in). A skipped skill is replaced with
+  // null so the agent learns fresh; we emit `skill_skipped` for the UI.
+  if (domainSkill !== null && process.env.SKILL_VALIDATION_ENABLED === '1') {
+    try {
+      const verdict = await llmJson<{ ok: 'YES' | 'NO'; reason: string }>({
+        system:
+          'You validate whether a saved playbook plausibly solves the user task. Reply with JSON {"ok": "YES"|"NO", "reason": "<one short line>"}. Be permissive — only say NO when the playbook is clearly for a different goal.',
+        message: `Task: ${prompt}\n\nDomain: ${domainSkill.domain}\nTags: ${domainSkill.tags.join(', ')}\n\nPlaybook:\n${domainSkill.skill}`,
+        // Cheap call: cap tokens tightly. The codebase has no
+        // dedicated small-model config, so we reuse the active model
+        // and rely on max_tokens for cost containment.
+        maxTokens: 80,
+      });
+      if (verdict.ok === 'NO') {
+        logger.info(
+          { domain: domainSkill.domain, reason: verdict.reason },
+          'Skill validation skipped playbook',
+        );
+        emit('skill_skipped', {
+          domain: domainSkill.domain,
+          reason: verdict.reason,
+        });
+        domainSkill = null;
+      }
+    } catch (err) {
+      // Validation is best-effort — never block the run on a failed gate.
+      logger.warn({ err }, 'Skill validation gate errored — keeping skill');
+    }
+  }
+
   const antiBotHitsByDomain = new Map<string, number>();
   const walledDomains = new Set<string>();
 
