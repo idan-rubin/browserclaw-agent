@@ -957,6 +957,27 @@ function isRefFailure(action: AgentAction, err: unknown): boolean {
   return REF_FAILURE_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
+// Errors that are typically about the network/page-load taking too long, not
+// about the element itself. We deliberately skip ref-banning on these so a
+// flaky-network retry can succeed.
+const TRANSIENT_ERROR_KEYWORDS = [
+  'timeout',
+  'timed out',
+  'net::',
+  'network',
+  'navigation failed',
+  'econnreset',
+  'econnrefused',
+  'etimedout',
+  'socket hang up',
+];
+
+function isTransientError(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : '';
+  const lower = raw.toLowerCase();
+  return TRANSIENT_ERROR_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 /**
  * Action types that are NOT safe to retry on the same ref after a failure.
  * Even if the failure was transient, repeating a click/type/select can
@@ -2275,7 +2296,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         } else if (
           action.ref !== undefined &&
           action.ref !== '' &&
-          isNonIdempotentAction(action)
+          isNonIdempotentAction(action) &&
+          !isTransientError(err)
         ) {
           // Stricter rule: any non-idempotent action that fails gets its ref
           // banned immediately, even when the error message doesn't match
@@ -2284,6 +2306,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           // says "never repeat a failed action" so the LLM should comply,
           // but enforcing it here closes the gap. Idempotent actions
           // (scroll/extract/wait/snapshot) stay free to retry.
+          //
+          // Exception: transient network/timeout failures don't ban — the
+          // element is fine, the network blipped. A retry should succeed and
+          // banning would just force the agent to give up on a page that is
+          // about to recover.
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
           entry.failures += 1;
           entry.action = action.action;

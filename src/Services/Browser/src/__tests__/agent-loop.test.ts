@@ -55,6 +55,7 @@ vi.mock('../skills/tab-manager.js', () => ({
 
 vi.mock('../config.js', () => ({
   INTERJECTION_INJECTION_MAX_CHARS: 2000,
+  MAX_STEPS_HARD_CEILING: 100,
   defaultAgentConfig: (overrides?: Record<string, unknown>) => ({
     waitAfterTypeMs: 100,
     waitAfterClickMs: 100,
