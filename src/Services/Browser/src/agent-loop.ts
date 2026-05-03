@@ -957,6 +957,27 @@ function isRefFailure(action: AgentAction, err: unknown): boolean {
   return REF_FAILURE_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
+/**
+ * Action types that are NOT safe to retry on the same ref after a failure.
+ * Even if the failure was transient, repeating a click/type/select can
+ * double-submit a form, charge a card twice, or post a duplicate message.
+ *
+ * Idempotent actions (scroll, wait, snapshot, extract, web_search, etc.)
+ * intentionally stay un-banned — repeating them is harmless and they
+ * frequently fail for transient reasons (slow page, partial DOM).
+ */
+function isNonIdempotentAction(action: AgentAction): boolean {
+  return (
+    action.action === 'click' ||
+    action.action === 'type' ||
+    action.action === 'select' ||
+    action.action === 'keyboard' ||
+    action.action === 'navigate' ||
+    action.action === 'press_and_hold' ||
+    action.action === 'click_cloudflare'
+  );
+}
+
 function describeActionError(action: AgentAction, err: unknown): string {
   const raw = err instanceof Error ? err.message : 'Action execution failed';
   const lower = raw.toLowerCase();
@@ -2230,6 +2251,22 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         agentStep.action.error_feedback = feedback;
         recentFailureCount++;
         if (action.ref !== undefined && action.ref !== '' && isRefFailure(action, err)) {
+          const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
+          entry.failures += 1;
+          entry.action = action.action;
+          bannedRefs.set(action.ref, entry);
+        } else if (
+          action.ref !== undefined &&
+          action.ref !== '' &&
+          isNonIdempotentAction(action)
+        ) {
+          // Stricter rule: any non-idempotent action that fails gets its ref
+          // banned immediately, even when the error message doesn't match
+          // REF_FAILURE_KEYWORDS. Re-clicking a submit button or re-typing
+          // into a posted form risks double-submit; the system prompt already
+          // says "never repeat a failed action" so the LLM should comply,
+          // but enforcing it here closes the gap. Idempotent actions
+          // (scroll/extract/wait/snapshot) stay free to retry.
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
           entry.failures += 1;
           entry.action = action.action;
