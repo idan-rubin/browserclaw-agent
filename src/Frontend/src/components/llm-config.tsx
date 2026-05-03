@@ -96,24 +96,40 @@ function shouldRefresh(accessToken: string): boolean {
   return Date.now() - times.iat > lifetime * REFRESH_AT_LIFETIME_FRACTION;
 }
 
+// Serialize concurrent refreshes against the same refresh token: rotated tokens
+// would invalidate parallel calls (`invalid_grant`).
+const refreshInFlight = new Map<string, Promise<{ access_token: string; refresh_token: string }>>();
+
 async function refreshOpenAIOAuthTokens(
   refreshToken: string,
 ): Promise<{ access_token: string; refresh_token: string }> {
-  const res = await fetch(OPENAI_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: OPENAI_OAUTH_CLIENT_ID,
-      refresh_token: refreshToken,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OAuth token refresh failed (${String(res.status)}): ${text.slice(0, 200)}`);
+  const existing = refreshInFlight.get(refreshToken);
+  if (existing !== undefined) return existing;
+
+  const promise = (async () => {
+    const res = await fetch(OPENAI_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: OPENAI_OAUTH_CLIENT_ID,
+        refresh_token: refreshToken,
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`OAuth token refresh failed (${String(res.status)}): ${text.slice(0, 200)}`);
+    }
+    const tokens = (await res.json()) as { access_token: string; refresh_token?: string };
+    return { access_token: tokens.access_token, refresh_token: tokens.refresh_token ?? refreshToken };
+  })();
+
+  refreshInFlight.set(refreshToken, promise);
+  try {
+    return await promise;
+  } finally {
+    refreshInFlight.delete(refreshToken);
   }
-  const tokens = (await res.json()) as { access_token: string; refresh_token?: string };
-  return { access_token: tokens.access_token, refresh_token: tokens.refresh_token ?? refreshToken };
 }
 
 export function useLlmConfig() {
