@@ -18,6 +18,27 @@ export function sanitizeErrorText(text: string): string {
   return text.replace(SENSITIVE_PATTERN, '[REDACTED]').slice(0, 500);
 }
 
+export function extractProviderMessage(err: unknown): string | null {
+  if (!(err instanceof Error)) return null;
+  const bodyStart = err.message.indexOf('{');
+  if (bodyStart === -1) return null;
+  try {
+    const parsed = JSON.parse(err.message.slice(bodyStart)) as { error?: { message?: unknown } };
+    const msg = parsed.error?.message;
+    return typeof msg === 'string' && msg.trim() !== '' ? msg : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isFailFastError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const m = err.message;
+  if (/insufficient_quota/i.test(m)) return true;
+  if (/^(401|403)\s/.test(m)) return true;
+  return /token_expired|invalid_api_key|invalid_grant|invalid_client|unauthorized/i.test(m);
+}
+
 // ── Per-session context via AsyncLocalStorage ──────────────────────────────
 interface SessionLlmContext {
   llmConfig: LlmConfig;

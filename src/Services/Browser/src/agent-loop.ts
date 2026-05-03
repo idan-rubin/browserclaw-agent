@@ -18,27 +18,19 @@ import { extractDomain } from './skill-store.js';
 import { extractSchema, validateAnswer, type AnswerSchema } from './answer-validator.js';
 import { webSearch } from './web-search.js';
 import type { UserMessage } from './types.js';
-import { llmJson, llmVision, sanitizeErrorText, getTokenUsage } from './llm.js';
+import {
+  llmJson,
+  llmVision,
+  sanitizeErrorText,
+  getTokenUsage,
+  isFailFastError,
+  extractProviderMessage,
+} from './llm.js';
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
 import type { AgentConfig } from './config.js';
 import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS } from './config.js';
 import { logger } from './logger.js';
-
-function classifyFailFast(err: unknown): { reason: string; message: string } | null {
-  if (!(err instanceof Error)) return null;
-  const m = err.message;
-  if (/insufficient_quota/i.test(m)) {
-    return { reason: 'quota_exhausted', message: 'AI service quota exhausted. Check your billing and try again.' };
-  }
-  if (/^(401|403)\s/.test(m) || /token_expired|invalid_api_key|invalid_grant|invalid_client/i.test(m)) {
-    return {
-      reason: 'auth_failed',
-      message: 'AI service rejected your credentials. Check your API key and try again.',
-    };
-  }
-  return null;
-}
 
 function formatLessonForPrompt(lesson: TaskLesson): string {
   const worked = lesson.domains.filter((d) => d.status === 'worked');
@@ -1773,21 +1765,17 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       // API/network error — don't burn a step, the agent never got to act
-      const failFast = classifyFailFast(err);
-      if (failFast !== null) {
+      if (isFailFastError(err)) {
+        const userMessage = extractProviderMessage(err) ?? (err instanceof Error ? err.message : 'Unknown error');
         logger.error(
-          {
-            step,
-            reason: failFast.reason,
-            errorMessage: err instanceof Error ? sanitizeErrorText(err.message).slice(0, 300) : 'unknown',
-          },
+          { step, errorMessage: err instanceof Error ? sanitizeErrorText(err.message).slice(0, 300) : 'unknown' },
           'LLM fail-fast error',
         );
-        emit('step_error', { step, error: failFast.message, type: failFast.reason });
+        emit('step_error', { step, error: userMessage, type: 'auth_error' });
         return {
           success: false,
           steps: history,
-          error: failFast.message,
+          error: userMessage,
           duration_ms: Date.now() - startTime,
         };
       }

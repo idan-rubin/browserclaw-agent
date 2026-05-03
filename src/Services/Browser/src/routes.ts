@@ -11,7 +11,7 @@ import {
 } from './session-manager.js';
 import { loadTrajectory } from './trajectory-store.js';
 import { INTERJECTION_MAX_CHARS } from './config.js';
-import { BYOK_PROVIDERS } from './llm.js';
+import { BYOK_PROVIDERS, extractProviderMessage } from './llm.js';
 import { HttpError } from './types.js';
 import type { CreateSessionRequest, LlmConfig } from './types.js';
 
@@ -274,11 +274,18 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse, c
     try {
       await route.handler({ req, res, params, clientIp });
     } catch (err: unknown) {
-      const isHttpError = err instanceof HttpError;
-      const status = isHttpError ? err.statusCode : 500;
       const internal = err instanceof Error ? err.message : 'Internal server error';
       logger.error({ method, path, error: internal }, 'Request handler error');
-      sendError(res, status, isHttpError ? internal : 'Internal server error');
+      if (err instanceof HttpError) {
+        sendError(res, err.statusCode, internal);
+        return;
+      }
+      const providerMessage = extractProviderMessage(err);
+      if (providerMessage !== null) {
+        sendError(res, 422, providerMessage);
+        return;
+      }
+      sendError(res, 500, 'Internal server error');
     }
     return;
   }
