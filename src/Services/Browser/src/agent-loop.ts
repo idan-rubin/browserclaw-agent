@@ -1025,11 +1025,15 @@ function validateAction(
   }
 }
 
+type CompressContextResult =
+  | { ok: true; summary: string }
+  | { ok: false; error: string };
+
 async function compressContext(
   prompt: string,
   history: AgentStep[],
   currentProgress: AgentProgress | null,
-): Promise<string> {
+): Promise<CompressContextResult> {
   try {
     const stepSummaries = history
       .map(
@@ -1053,10 +1057,11 @@ Be concise but preserve all important data points. Respond with JSON: {"summary"
       message: `Task: ${prompt}${progressStr}\n\nFull history (${String(history.length)} steps):\n${stepSummaries}`,
       maxTokens: 1024,
     });
-    return result.summary;
-  } catch {
-    logger.warn('Context compression failed — falling back to simple truncation');
-    return '';
+    return { ok: true, summary: result.summary };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn({ err: message }, 'Context compression failed — keeping existing context');
+    return { ok: false, error: message };
   }
 }
 
@@ -1406,10 +1411,29 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     emit('thinking', { step, message: `Analyzing page: ${title}` });
 
     if (step > 0 && step % CONTEXT_COMPRESS_INTERVAL === 0) {
-      contextSummary = await compressContext(refinedPrompt, history, lastProgress);
-      if (contextSummary !== '') {
-        logger.info({ step }, 'Context compressed');
-        emit('context_compressed', { step, summary_length: contextSummary.length });
+      const compressResult = await compressContext(refinedPrompt, history, lastProgress);
+      if (compressResult.ok) {
+        // history is never dropped — `contextSummary` is additive, prepended to
+        // the formatted-actions block. Emit a typed event so the UI can show
+        // that compression happened, and persist the summary to the prompt log
+        // (pino stream picked up by prompt-log.ts).
+        const droppedSteps = Math.max(0, history.length - HISTORY_RECENT_WINDOW);
+        contextSummary = compressResult.summary;
+        logger.info(
+          { type: 'prompt_log', event: 'context_compressed', step, droppedSteps, summary: contextSummary },
+          'Context compressed',
+        );
+        emit('context_compressed', {
+          step,
+          droppedSteps,
+          summary: contextSummary,
+          summary_length: contextSummary.length,
+        });
+      } else {
+        // Compression LLM call failed — keep existing contextSummary and
+        // history. The next interval will retry. Surface the failure so the
+        // UI/user knows compression skipped.
+        emit('context_compress_failed', { step, error: compressResult.error });
       }
     }
 
