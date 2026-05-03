@@ -59,9 +59,16 @@ export function buildRequestFingerprint(input: FingerprintInput): string {
  * two different IPs with the same Idempotency-Key now hit different cache
  * entries. (When a real auth/user identity is wired in, prefer that over
  * IP — until then, IP is the strongest stable caller signal we have.)
+ *
+ * Encoded via JSON.stringify of a 2-tuple instead of a `:`-joined string —
+ * a naive `${ip}:${key}` is ambiguous when either side contains a colon
+ * (IPv6 addresses always do, and the idempotency key is opaque input).
+ * `JSON.stringify(["1.2.3.4", "5:abc"])` and `JSON.stringify(["1.2.3.4:5", "abc"])`
+ * produce distinct strings, so distinct (ip, key) tuples can never
+ * collapse to the same Map entry. (codex review on PR #139)
  */
 export function getIdempotencyCacheKey(clientIp: string, idempotencyKey: string): string {
-  return `${clientIp}:${idempotencyKey}`;
+  return JSON.stringify([clientIp, idempotencyKey]);
 }
 
 /** Validate and normalize an Idempotency-Key header value. */

@@ -69,6 +69,21 @@ describe('getIdempotencyCacheKey', () => {
   it('produces the same key for the same caller + key', () => {
     expect(getIdempotencyCacheKey('10.0.0.1', 'abc')).toBe(getIdempotencyCacheKey('10.0.0.1', 'abc'));
   });
+
+  it('does NOT collide when colons appear in either input (codex review fix)', () => {
+    // Naive `${ip}:${key}` makes these collide. They must not.
+    expect(getIdempotencyCacheKey('1.2.3.4', '5:abc')).not.toBe(getIdempotencyCacheKey('1.2.3.4:5', 'abc'));
+    expect(getIdempotencyCacheKey('1.2.3.4', ':abc')).not.toBe(getIdempotencyCacheKey('1.2.3.4:', 'abc'));
+  });
+
+  it('handles IPv6 addresses without ambiguity', () => {
+    // IPv6 always contains colons. Two distinct IPv6 callers with adversarial
+    // keys must never share a cache entry.
+    expect(getIdempotencyCacheKey('::1', '')).not.toBe(getIdempotencyCacheKey(':', '1'));
+    expect(getIdempotencyCacheKey('2001:db8::1', 'abc')).not.toBe(getIdempotencyCacheKey('2001:db8:', ':1abc'));
+    // Same IPv6 caller + same key still produces same cache key.
+    expect(getIdempotencyCacheKey('2001:db8::1', 'abc')).toBe(getIdempotencyCacheKey('2001:db8::1', 'abc'));
+  });
 });
 
 describe('normalizeIdempotencyKey', () => {
