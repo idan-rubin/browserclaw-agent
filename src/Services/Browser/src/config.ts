@@ -67,6 +67,12 @@ export const USER_RESPONSE_TIMEOUT_MS = parseInt(process.env.USER_RESPONSE_TIMEO
 export const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? '50', 10);
 export const LLM_MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS ?? '1024', 10);
 
+// Hard ceiling on agent step count. A misconfigured MAX_STEPS (or a caller
+// passing an absurd value) should never produce thousand-step runs — the cost
+// and safety blast radius is too large. Any configured value above this is
+// clamped at agent loop entry, with a warning logged.
+export const MAX_STEPS_HARD_CEILING = 100;
+
 // User-interjection limits (always-on user chat feature).
 export const USER_INTERJECTION_ENABLED = process.env.ENABLE_USER_INTERJECTION === 'true';
 export const MAX_INTERJECTIONS_PER_RUN = 20;

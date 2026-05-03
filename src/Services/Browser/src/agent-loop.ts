@@ -29,7 +29,7 @@ import {
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
 import type { AgentConfig } from './config.js';
-import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS } from './config.js';
+import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS, MAX_STEPS_HARD_CEILING } from './config.js';
 import { logger } from './logger.js';
 
 function formatLessonForPrompt(lesson: TaskLesson): string {
@@ -1180,6 +1180,15 @@ export async function runAgentLoop(
 ): Promise<AgentLoopResult> {
   const cfg = defaultAgentConfig(options?.config);
   maxSteps ??= cfg.maxSteps;
+  // Hard cap: a misconfigured MAX_STEPS (or rogue caller) must never produce
+  // thousand-step runs. Clamp here at loop entry and warn loudly if we did so.
+  if (maxSteps > MAX_STEPS_HARD_CEILING) {
+    logger.warn(
+      { configured: maxSteps, ceiling: MAX_STEPS_HARD_CEILING },
+      'maxSteps exceeded hard ceiling — clamping',
+    );
+    maxSteps = MAX_STEPS_HARD_CEILING;
+  }
   // Accept either a bare CrawlPage or a PageHolder. When a PageHolder is
   // provided the caller's reference is updated on tab switches.
   const holder: PageHolder =
