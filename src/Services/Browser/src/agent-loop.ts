@@ -1767,11 +1767,17 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       // API/network error — don't burn a step, the agent never got to act
       if (isFailFastError(err)) {
         const userMessage = extractProviderMessage(err) ?? (err instanceof Error ? err.message : 'Unknown error');
+        const errorType =
+          err instanceof Error && /insufficient_quota/i.test(err.message) ? 'quota_exhausted' : 'auth_error';
         logger.error(
-          { step, errorMessage: err instanceof Error ? sanitizeErrorText(err.message).slice(0, 300) : 'unknown' },
+          {
+            step,
+            type: errorType,
+            errorMessage: err instanceof Error ? sanitizeErrorText(err.message).slice(0, 300) : 'unknown',
+          },
           'LLM fail-fast error',
         );
-        emit('step_error', { step, error: userMessage, type: 'auth_error' });
+        emit('step_error', { step, error: userMessage, type: errorType });
         return {
           success: false,
           steps: history,
