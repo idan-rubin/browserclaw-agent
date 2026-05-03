@@ -51,9 +51,41 @@ function validateUrl(url: string): string {
   return parsed.href;
 }
 
-function json(res: ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+function json(res: ServerResponse, status: number, data: unknown, headers?: Record<string, string>): void {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
   res.end(JSON.stringify(data));
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Idempotency-Key cache for session creation. RFC-style: a client sends
+// `Idempotency-Key: <opaque>` and a replay within IDEMPOTENCY_TTL_MS
+// returns the same session_id with `Idempotency-Replayed: true`.
+//
+// In-memory only — Redis isn't in scope for this slice. The cleanup
+// interval is unref'd so it doesn't keep the process alive on shutdown.
+// ────────────────────────────────────────────────────────────────────────
+
+const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
+const IDEMPOTENCY_MAX_KEY_LENGTH = 256;
+const idempotencyCache = new Map<string, { sessionId: string; createdAt: number }>();
+
+const idempotencyCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of idempotencyCache) {
+    if (now - entry.createdAt > IDEMPOTENCY_TTL_MS) {
+      idempotencyCache.delete(key);
+    }
+  }
+}, IDEMPOTENCY_TTL_MS);
+idempotencyCleanup.unref();
+
+function getIdempotencyKey(req: IncomingMessage): string | undefined {
+  const raw = req.headers['idempotency-key'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed.length > IDEMPOTENCY_MAX_KEY_LENGTH) return undefined;
+  return trimmed;
 }
 
 function sendError(res: ServerResponse, status: number, message: string): void {
@@ -96,6 +128,36 @@ const routes: Route[] = [
     pattern: /^\/api\/v1\/sessions$/,
     paramNames: [],
     handler: async ({ req, res, clientIp }) => {
+      // Idempotency-Key: replay an existing session if the client retries
+      // with the same key within IDEMPOTENCY_TTL_MS. Avoids the common
+      // double-submit failure mode (network blip + retry creating two
+      // sessions and burning two LLM credentials).
+      const idempotencyKey = getIdempotencyKey(req);
+      if (idempotencyKey !== undefined) {
+        const cached = idempotencyCache.get(idempotencyKey);
+        if (cached !== undefined && Date.now() - cached.createdAt <= IDEMPOTENCY_TTL_MS) {
+          const cachedSession = (() => {
+            try {
+              return getSession(cached.sessionId);
+            } catch {
+              return null;
+            }
+          })();
+          if (cachedSession !== null) {
+            const replayResponse: CreateSessionResponse = {
+              session_id: cachedSession.id,
+              status: cachedSession.status,
+              created_at: cachedSession.created_at,
+            };
+            json(res, 200, replayResponse, { 'Idempotency-Replayed': 'true' });
+            return;
+          }
+          // Session was evicted/closed — fall through to fresh creation
+          // and the cache entry will be overwritten below.
+          idempotencyCache.delete(idempotencyKey);
+        }
+      }
+
       const body = await parseBody<CreateSessionRequest>(req);
 
       if (typeof body.prompt !== 'string' || body.prompt.trim().length === 0) {
@@ -151,6 +213,9 @@ const routes: Route[] = [
         status: session.status,
         created_at: session.created_at,
       };
+      if (idempotencyKey !== undefined) {
+        idempotencyCache.set(idempotencyKey, { sessionId: session.id, createdAt: Date.now() });
+      }
       json(res, 201, response);
     },
   },
