@@ -135,14 +135,18 @@ export default function TryPage() {
     setModal({ type: 'processing', step: isLocalBrowserMode() ? 'launching' : 'checking' });
 
     try {
-      const llmConfig = llm.getConfig();
+      const llmConfig = await llm.getConfig();
+      if (llmConfig === undefined) {
+        setModal({ type: 'blocked', reason: 'Add your API key above to run.' });
+        return;
+      }
       const res = await fetch('/api/v1/runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: trimmed,
           skip_moderation: isLocalBrowserMode() || skipModeration,
-          ...(llmConfig ? { llm_config: llmConfig } : {}),
+          llm_config: llmConfig,
         }),
         signal: abort.signal,
       });

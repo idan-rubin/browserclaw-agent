@@ -6,7 +6,6 @@ export interface LlmConfig {
   provider: 'anthropic' | 'openai' | 'openai-oauth' | 'gemini';
   model: string;
   api_key: string;
-  refresh_token?: string;
 }
 
 export const PROVIDERS = [
@@ -37,35 +36,92 @@ const MODELS: Record<string, { value: string; label: string }[]> = {
 
 const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
 const STORAGE_KEY = 'browserclaw_llm_config';
+const OPENAI_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const OPENAI_TOKEN_URL = 'https://auth.openai.com/oauth/token';
+const REFRESH_AT_LIFETIME_FRACTION = 0.8;
 
-function loadPrefs(): { provider: LlmConfig['provider']; model: string } {
-  const fallback = { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value };
-  if (typeof window === 'undefined') return fallback;
+interface StoredConfig {
+  provider: LlmConfig['provider'];
+  model: string;
+  api_key: string;
+  refresh_token: string;
+}
+
+function emptyConfig(): StoredConfig {
+  return { provider: DEFAULT_PROVIDER, model: MODELS[DEFAULT_PROVIDER][0].value, api_key: '', refresh_token: '' };
+}
+
+function loadStoredConfig(): StoredConfig {
+  if (typeof window === 'undefined') return emptyConfig();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return fallback;
-    const parsed = JSON.parse(raw) as Partial<Pick<LlmConfig, 'provider' | 'model'>>;
+    if (raw === null) return emptyConfig();
+    const parsed = JSON.parse(raw) as Partial<StoredConfig>;
     const provider = parsed.provider ?? DEFAULT_PROVIDER;
     const models = MODELS[provider] ?? [];
     const model =
       parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
         ? parsed.model
         : (models[0]?.value ?? '');
-    return { provider, model };
+    return { provider, model, api_key: parsed.api_key ?? '', refresh_token: parsed.refresh_token ?? '' };
   } catch {
-    return fallback;
+    return emptyConfig();
   }
 }
 
-function savePrefs(provider: LlmConfig['provider'], model: string) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, model }));
+function saveStoredConfig(c: StoredConfig) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(c));
+}
+
+function parseJwtTimes(jwt: string): { iat: number; exp: number } | null {
+  try {
+    const parts = jwt.split('.');
+    if (parts.length !== 3) return null;
+    const payloadJson = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(payloadJson) as { iat?: number; exp?: number };
+    if (typeof payload.iat === 'number' && typeof payload.exp === 'number') {
+      return { iat: payload.iat * 1000, exp: payload.exp * 1000 };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function shouldRefresh(accessToken: string): boolean {
+  const times = parseJwtTimes(accessToken);
+  if (times === null) return false;
+  const lifetime = times.exp - times.iat;
+  if (lifetime <= 0) return false;
+  return Date.now() - times.iat > lifetime * REFRESH_AT_LIFETIME_FRACTION;
+}
+
+async function refreshOpenAIOAuthTokens(
+  refreshToken: string,
+): Promise<{ access_token: string; refresh_token: string }> {
+  const res = await fetch(OPENAI_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: OPENAI_OAUTH_CLIENT_ID,
+      refresh_token: refreshToken,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OAuth token refresh failed (${String(res.status)}): ${text.slice(0, 200)}`);
+  }
+  const tokens = (await res.json()) as { access_token: string; refresh_token?: string };
+  return { access_token: tokens.access_token, refresh_token: tokens.refresh_token ?? refreshToken };
 }
 
 export function useLlmConfig() {
-  const [provider, setProvider] = useState<LlmConfig['provider']>(() => loadPrefs().provider);
-  const [model, setModel] = useState(() => loadPrefs().model);
-  const [apiKey, setApiKey] = useState('');
-  const [refreshToken, setRefreshToken] = useState('');
+  const initial = loadStoredConfig();
+  const [provider, setProvider] = useState<LlmConfig['provider']>(initial.provider);
+  const [model, setModel] = useState(initial.model);
+  const [apiKey, setApiKey] = useState(initial.api_key);
+  const [refreshToken, setRefreshToken] = useState(initial.refresh_token);
 
   // Resolve model when provider changes
   const resolvedModel = useMemo(() => {
@@ -75,8 +131,8 @@ export function useLlmConfig() {
   }, [provider, model]);
 
   useEffect(() => {
-    savePrefs(provider, resolvedModel);
-  }, [provider, resolvedModel]);
+    saveStoredConfig({ provider, model: resolvedModel, api_key: apiKey, refresh_token: refreshToken });
+  }, [provider, resolvedModel, apiKey, refreshToken]);
 
   const handleSetProvider = useCallback((p: LlmConfig['provider']) => {
     setProvider(p);
@@ -84,13 +140,17 @@ export function useLlmConfig() {
     setModel(models[0]?.value ?? '');
   }, []);
 
-  const getConfig = useCallback((): LlmConfig | undefined => {
-    if (apiKey.trim() === '') return undefined;
-    const config: LlmConfig = { provider, model: resolvedModel, api_key: apiKey.trim() };
-    if (provider === 'openai-oauth' && refreshToken.trim() !== '') {
-      config.refresh_token = refreshToken.trim();
+  const getConfig = useCallback(async (): Promise<LlmConfig | undefined> => {
+    const trimmedKey = apiKey.trim();
+    if (trimmedKey === '') return undefined;
+    let accessToken = trimmedKey;
+    if (provider === 'openai-oauth' && refreshToken.trim() !== '' && shouldRefresh(accessToken)) {
+      const fresh = await refreshOpenAIOAuthTokens(refreshToken.trim());
+      accessToken = fresh.access_token;
+      setApiKey(fresh.access_token);
+      setRefreshToken(fresh.refresh_token);
     }
-    return config;
+    return { provider, model: resolvedModel, api_key: accessToken };
   }, [provider, resolvedModel, apiKey, refreshToken]);
 
   return {
@@ -186,7 +246,7 @@ export function LlmConfigPanel({
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
-            Your key is held in memory for this page only — never stored, never sent to our servers
+            Stored only in your browser. Refreshed against the provider directly — never on our servers.
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <select
@@ -247,8 +307,8 @@ export function LlmConfigPanel({
           )}
 
           <p className="text-[11px] leading-relaxed text-muted-foreground/50">
-            Your key stays in this browser tab&apos;s session storage (cleared when you close the tab) and is never sent
-            to our servers except to make LLM calls during your run.
+            Saved in your browser&apos;s local storage. Only the current access token is sent to our server per request,
+            never the refresh token. We hold no credentials.
           </p>
         </div>
       )}

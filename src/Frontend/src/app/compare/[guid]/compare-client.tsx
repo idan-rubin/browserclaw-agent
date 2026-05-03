@@ -33,13 +33,13 @@ type SidesState = Record<Side['key'], SideState>;
 const emptySide: SideState = { sessionId: null, terminal: null, error: null };
 const emptyBoth: SidesState = { browserclaw: { ...emptySide }, 'browser-use': { ...emptySide } };
 
-async function startRun(apiBase: string, prompt: string, llmConfig: LlmConfig | undefined): Promise<string> {
-  const body: Record<string, unknown> = {
+async function startRun(apiBase: string, prompt: string, llmConfig: LlmConfig): Promise<string> {
+  const body = {
     prompt,
     skip_moderation: true,
     skip_postprocessing: true,
+    llm_config: llmConfig,
   };
-  if (llmConfig !== undefined) body.llm_config = llmConfig;
   const res = await fetch(apiBase, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -110,7 +110,11 @@ export function CompareClient() {
     setStates(emptyBoth);
 
     const trimmed = prompt.trim();
-    const llmConfig = llm.getConfig();
+    const llmConfig = await llm.getConfig();
+    if (llmConfig === undefined) {
+      setLaunchError('Add your API key above to run.');
+      return;
+    }
 
     const [bcRes, buRes] = await Promise.allSettled([
       startRun('/api/v1/runs', trimmed, llmConfig),

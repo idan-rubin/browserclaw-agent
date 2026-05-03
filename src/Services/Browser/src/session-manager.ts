@@ -152,8 +152,8 @@ export async function createSession(
   url: string | undefined,
   headless: boolean | undefined,
   ip: string,
-  skipModeration?: boolean,
-  llmConfig?: LlmConfig,
+  skipModeration: boolean | undefined,
+  llmConfig: LlmConfig,
   skipPostprocessing?: boolean,
 ): Promise<{ session: Session }> {
   if (sessions.size >= MAX_SESSIONS) {
