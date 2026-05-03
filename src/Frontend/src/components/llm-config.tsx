@@ -96,8 +96,6 @@ function shouldRefresh(accessToken: string): boolean {
   return Date.now() - times.iat > lifetime * REFRESH_AT_LIFETIME_FRACTION;
 }
 
-// Serialize concurrent refreshes against the same refresh token: rotated tokens
-// would invalidate parallel calls (`invalid_grant`).
 const refreshInFlight = new Map<string, Promise<{ access_token: string; refresh_token: string }>>();
 
 async function refreshOpenAIOAuthTokens(
