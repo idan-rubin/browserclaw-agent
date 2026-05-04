@@ -11,7 +11,7 @@ import {
 } from './session-manager.js';
 import { loadTrajectory } from './trajectory-store.js';
 import { INTERJECTION_MAX_CHARS } from './config.js';
-import { BYOK_PROVIDERS, extractProviderMessage } from './llm.js';
+import { BYOK_PROVIDERS, extractProviderError } from './llm.js';
 import { HttpError } from './types.js';
 import type { LlmConfig } from './types.js';
 import type { CreateSessionRequest, CreateSessionResponse } from './api-types.js';
@@ -91,6 +91,12 @@ function sendError(res: ServerResponse, status: number, message: string): void {
   json(res, status, { error_code: 'BROWSER_ERROR', message });
 }
 
+function mapProviderStatus(status: number | null): number {
+  if (status === null) return 422;
+  if (status >= 400 && status < 600) return status;
+  return 422;
+}
+
 interface RouteContext {
   req: IncomingMessage;
   res: ServerResponse;
@@ -167,9 +173,14 @@ const routes: Route[] = [
               json(res, err.statusCode, { error_code: 'BROWSER_ERROR', message: err.message }, replayHeaders);
               return;
             }
-            const providerMessage = extractProviderMessage(err);
-            if (providerMessage !== null) {
-              json(res, 422, { error_code: 'BROWSER_ERROR', message: providerMessage }, replayHeaders);
+            const providerError = extractProviderError(err);
+            if (providerError !== null) {
+              json(
+                res,
+                mapProviderStatus(providerError.status),
+                { error_code: 'BROWSER_ERROR', message: providerError.message },
+                replayHeaders,
+              );
               return;
             }
             json(res, 500, { error_code: 'BROWSER_ERROR', message: 'Internal server error' }, replayHeaders);
@@ -397,9 +408,9 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse, c
         sendError(res, err.statusCode, internal);
         return;
       }
-      const providerMessage = extractProviderMessage(err);
-      if (providerMessage !== null) {
-        sendError(res, 422, providerMessage);
+      const providerError = extractProviderError(err);
+      if (providerError !== null) {
+        sendError(res, mapProviderStatus(providerError.status), providerError.message);
         return;
       }
       sendError(res, 500, 'Internal server error');

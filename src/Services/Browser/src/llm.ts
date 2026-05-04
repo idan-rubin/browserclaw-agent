@@ -18,28 +18,64 @@ export function sanitizeErrorText(text: string): string {
   return text.replace(SENSITIVE_PATTERN, '[REDACTED]').slice(0, 500);
 }
 
-export function extractProviderMessage(err: unknown): string | null {
-  if (!(err instanceof Error)) return null;
-  const bodyStart = err.message.indexOf('{');
-  if (bodyStart === -1) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(err.message.slice(bodyStart));
-  } catch {
+export interface ProviderError {
+  status: number | null;
+  message: string;
+}
+
+export function extractProviderError(err: unknown): ProviderError | null {
+  if (err instanceof OpenAI.APIError) {
+    const status = typeof err.status === 'number' ? err.status : null;
+    const body = err.error as { message?: unknown } | undefined;
+    if (typeof body?.message === 'string' && body.message.trim() !== '') {
+      return { status, message: body.message.trim() };
+    }
+    if (typeof err.message === 'string' && err.message.trim() !== '') {
+      let msg = err.message.trim();
+      while (/^\d{3}\s+/.test(msg)) msg = msg.slice(msg.indexOf(' ') + 1).trim();
+      return { status, message: msg };
+    }
     return null;
   }
-  if (parsed === null || typeof parsed !== 'object') return null;
-  const obj = parsed as Record<string, unknown>;
-  const candidates: unknown[] = [
-    (obj.error as { message?: unknown } | undefined)?.message,
-    typeof obj.error === 'string' ? obj.error : undefined,
-    obj.message,
-    obj.detail,
-  ];
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.trim() !== '') return c;
+
+  if (!(err instanceof Error)) return null;
+  const raw = err.message;
+  const bodyStart = raw.indexOf('{');
+  if (bodyStart !== -1) {
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(raw.slice(bodyStart));
+    } catch (parseErr) {
+      logger.warn(
+        { err: parseErr instanceof Error ? parseErr.name : 'unknown' },
+        'extractProviderError: substring after { is not JSON',
+      );
+    }
+    if (parsed !== null && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const candidates: unknown[] = [
+        (obj.error as { message?: unknown } | undefined)?.message,
+        typeof obj.error === 'string' ? obj.error : undefined,
+        obj.message,
+        obj.detail,
+      ];
+      for (const c of candidates) {
+        if (typeof c === 'string' && c.trim() !== '') {
+          const statusMatch = /^(\d{3})\s/.exec(raw);
+          return { status: statusMatch ? parseInt(statusMatch[1], 10) : null, message: c };
+        }
+      }
+    }
   }
+
+  const m = /^(\d{3})\s+(.+)$/s.exec(raw);
+  if (m) return { status: parseInt(m[1], 10), message: m[2].trim() };
+
   return null;
+}
+
+export function extractProviderMessage(err: unknown): string | null {
+  return extractProviderError(err)?.message ?? null;
 }
 
 export function isFailFastError(err: unknown): boolean {
