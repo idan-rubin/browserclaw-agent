@@ -69,7 +69,12 @@ function json(res: ServerResponse, status: number, data: unknown, headers?: Reco
   res.end(JSON.stringify(data));
 }
 
-const idempotencyCache = new Map<string, IdempotencyCacheEntry<CreateSessionResponse>>();
+interface IdempotentReplay {
+  status: number;
+  body: CreateSessionResponse;
+}
+
+const idempotencyCache = new Map<string, IdempotencyCacheEntry<IdempotentReplay>>();
 
 const idempotencyCleanup = setInterval(() => {
   const now = Date.now();
@@ -149,13 +154,13 @@ const routes: Route[] = [
           return;
         }
         if (lookup.kind === 'completed_match') {
-          json(res, 200, lookup.response, { 'Idempotency-Replayed': 'true' });
+          json(res, lookup.response.status, lookup.response.body, { 'Idempotency-Replayed': 'true' });
           return;
         }
         if (lookup.kind === 'pending_match') {
           try {
             const replay = await lookup.promise;
-            json(res, 200, replay, { 'Idempotency-Replayed': 'true' });
+            json(res, replay.status, replay.body, { 'Idempotency-Replayed': 'true' });
           } catch (err) {
             const replayHeaders = { 'Idempotency-Replayed': 'true' };
             if (err instanceof HttpError) {
@@ -250,7 +255,13 @@ const routes: Route[] = [
       }
 
       if (idempotencyContext !== undefined && reservation !== undefined) {
-        completeIdempotency(idempotencyCache, idempotencyContext.cacheKey, reservation, response, Date.now());
+        completeIdempotency(
+          idempotencyCache,
+          idempotencyContext.cacheKey,
+          reservation,
+          { status: 201, body: response },
+          Date.now(),
+        );
       }
       json(res, 201, response);
     },

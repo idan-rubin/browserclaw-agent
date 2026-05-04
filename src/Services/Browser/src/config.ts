@@ -68,7 +68,7 @@ export const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? '50', 10);
 export const LLM_MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS ?? '1024', 10);
 
 // Optional opt-in flags. Defaults preserve pre-flag behavior (see .env.example).
-export const MAX_STEPS_HARD_CEILING = parseInt(process.env.MAX_STEPS_HARD_CEILING ?? '0', 10);
+export const MAX_STEPS_HARD_CEILING = parseInt(process.env.MAX_STEPS_HARD_CEILING ?? '100', 10);
 export const INTERJECTION_TIMEOUT_CANCEL = process.env.INTERJECTION_TIMEOUT_CANCEL === 'true';
 export const STRICT_NONIDEMPOTENT_BAN = process.env.STRICT_NONIDEMPOTENT_BAN === 'true';
 

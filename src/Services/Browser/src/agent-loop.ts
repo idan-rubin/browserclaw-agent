@@ -967,7 +967,9 @@ const TRANSIENT_ERROR_KEYWORDS = [
   'timeout',
   'timed out',
   'net::',
-  'network',
+  'network error',
+  'network timeout',
+  'network unreachable',
   'navigation failed',
   'econnreset',
   'econnrefused',
@@ -1275,7 +1277,7 @@ export async function runAgentLoop(
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
 
-  if (domainSkill !== null && process.env.SKILL_VALIDATION_ENABLED === '1') {
+  if (domainSkill !== null && process.env.SKILL_VALIDATION_ENABLED === 'true') {
     try {
       const verdict = await llmJson<{ ok: 'YES' | 'NO'; reason: string }>({
         system:

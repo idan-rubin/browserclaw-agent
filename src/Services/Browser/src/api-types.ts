@@ -1,4 +1,7 @@
-// Mirror lives at src/Frontend/src/lib/api-types.ts — keep in sync manually.
+// CONTRACT MIRROR — keep in sync with src/Frontend/src/lib/api-types.ts.
+// Separate tsconfig roots block a shared module; Frontend declares LlmConfig
+// inline + adds ApiErrorBody, Services imports LlmConfig from ./types.js.
+// Any SSEEvent / CreateSession* / API_VERSION change must be mirrored in both.
 
 import type { LlmConfig } from './types.js';
 

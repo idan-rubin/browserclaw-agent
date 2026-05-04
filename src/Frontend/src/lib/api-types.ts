@@ -1,4 +1,7 @@
-// Mirror of src/Services/Browser/src/api-types.ts — keep in sync manually.
+// CONTRACT MIRROR — keep in sync with src/Services/Browser/src/api-types.ts.
+// Separate tsconfig roots block a shared module; Services imports LlmConfig
+// from its ./types.js, Frontend declares it inline + adds ApiErrorBody.
+// Any SSEEvent / CreateSession* / API_VERSION change must be mirrored in both.
 
 export const API_VERSION = 1;
 export type ApiVersion = typeof API_VERSION;
