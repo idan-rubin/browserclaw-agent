@@ -93,7 +93,9 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, onTerminal }:
     const parse = (e: MessageEvent): Record<string, unknown> | undefined => {
       try {
         const data = JSON.parse(String(e.data)) as Record<string, unknown>;
-        if (data.apiVersion !== API_VERSION) {
+        // bu-runs (Python BrowserUseAgent) doesn't stamp apiVersion; tolerate missing,
+        // reject only when present-and-different. page.tsx stays strict (Node-only).
+        if (data.apiVersion !== undefined && data.apiVersion !== API_VERSION) {
           const got =
             typeof data.apiVersion === 'number' || typeof data.apiVersion === 'string' ? data.apiVersion : 'unknown';
           terminate('failed', `Incompatible SSE stream: apiVersion ${String(got)} (expected ${String(API_VERSION)})`);
