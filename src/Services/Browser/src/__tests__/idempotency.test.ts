@@ -186,6 +186,27 @@ describe('reserve / complete / fail lifecycle', () => {
     expect(lookupIdempotency(cache, 'k', 'fp-1', now + 2)).toEqual({ kind: 'miss' });
   });
 
+  it('forwards the original Error instance to waiters so the route can preserve its status', async () => {
+    class FakeHttpError extends Error {
+      constructor(
+        public statusCode: number,
+        message: string,
+      ) {
+        super(message);
+      }
+    }
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    const reservation = reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    const second = lookupIdempotency(cache, 'k', 'fp-1', now + 1);
+    if (second.kind !== 'pending_match') throw new Error('expected pending_match');
+    failIdempotency(cache, 'k', reservation, new FakeHttpError(422, 'Prompt blocked by content policy.'));
+    await expect(second.promise).rejects.toBeInstanceOf(FakeHttpError);
+    await expect(second.promise).rejects.toMatchObject({
+      statusCode: 422,
+      message: 'Prompt blocked by content policy.',
+    });
+  });
+
   it('completeIdempotency unblocks waiters and persists the response for replay', async () => {
     const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
     const reservation = reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);

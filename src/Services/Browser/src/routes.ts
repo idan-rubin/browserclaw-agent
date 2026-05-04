@@ -155,8 +155,25 @@ const routes: Route[] = [
           try {
             const replay = await lookup.promise;
             json(res, 200, replay, { 'Idempotency-Replayed': 'true' });
-          } catch {
-            sendError(res, 503, 'Original idempotent request failed; please retry with a new Idempotency-Key.');
+          } catch (err) {
+            if (err instanceof HttpError) {
+              json(
+                res,
+                err.statusCode,
+                { error_code: 'BROWSER_ERROR', message: err.message },
+                { 'Idempotency-Replayed': 'true' },
+              );
+            } else {
+              json(
+                res,
+                503,
+                {
+                  error_code: 'BROWSER_ERROR',
+                  message: 'Original idempotent request failed; please retry with a new Idempotency-Key.',
+                },
+                { 'Idempotency-Replayed': 'true' },
+              );
+            }
           }
           return;
         }
