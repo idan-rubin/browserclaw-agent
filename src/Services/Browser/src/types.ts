@@ -11,7 +11,7 @@ export interface UserMessage {
   receivedAt: Date;
 }
 
-export type SessionStatus = 'pending' | 'running' | 'waiting_for_user' | 'completed' | 'failed';
+export type SessionStatus = 'pending' | 'running' | 'waiting_for_user' | 'completed' | 'failed' | 'canceled-timeout';
 
 export type LlmProvider = 'anthropic' | 'openai' | 'openai-oauth' | 'gemini';
 

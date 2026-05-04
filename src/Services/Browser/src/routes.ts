@@ -313,6 +313,7 @@ const routes: Route[] = [
           result !== null
             ? {
                 success: result.success,
+                status: result.status,
                 steps_completed: result.steps.length,
                 duration_ms: result.duration_ms,
                 error: result.error,

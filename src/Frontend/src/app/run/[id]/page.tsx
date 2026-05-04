@@ -77,7 +77,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     function parseEventData(e: MessageEvent): Record<string, unknown> | undefined {
       try {
         const data = JSON.parse(String(e.data)) as Record<string, unknown>;
-        if (data.apiVersion !== undefined && data.apiVersion !== API_VERSION) {
+        if (data.apiVersion !== API_VERSION) {
           failVersionMismatch(data.apiVersion);
           return undefined;
         }
