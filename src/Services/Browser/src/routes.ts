@@ -93,8 +93,6 @@ function sendError(res: ServerResponse, status: number, message: string): void {
 
 function mapProviderStatus(status: number | null): number {
   if (status === null) return 422;
-  if (status === 429) return 429;
-  if (status === 401 || status === 403) return 401;
   if (status >= 400 && status < 600) return status;
   return 422;
 }
