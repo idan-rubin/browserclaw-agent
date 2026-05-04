@@ -18,13 +18,30 @@ export function sanitizeErrorText(text: string): string {
   return text.replace(SENSITIVE_PATTERN, '[REDACTED]').slice(0, 500);
 }
 
-export function extractProviderMessage(err: unknown): string | null {
-  if (!(err instanceof Error)) return null;
-  const bodyStart = err.message.indexOf('{');
+export interface ProviderError {
+  status: number | null;
+  message: string;
+}
+
+function stripStatusPrefix(s: string): string {
+  let out = s.trim();
+  while (/^\d{3}\s+/.test(out)) {
+    out = out.slice(out.indexOf(' ') + 1).trim();
+  }
+  return out;
+}
+
+function parseLeadingStatus(s: string): number | null {
+  const m = /^(\d{3})\s/.exec(s);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function extractFromJsonBody(raw: string): string | null {
+  const bodyStart = raw.indexOf('{');
   if (bodyStart === -1) return null;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(err.message.slice(bodyStart));
+    parsed = JSON.parse(raw.slice(bodyStart));
   } catch {
     return null;
   }
@@ -42,7 +59,49 @@ export function extractProviderMessage(err: unknown): string | null {
   return null;
 }
 
+export function extractProviderError(err: unknown): ProviderError | null {
+  if (err instanceof OpenAI.APIError) {
+    const status = typeof err.status === 'number' ? err.status : null;
+    const body = err.error as { message?: unknown } | undefined;
+    const bodyMessage = typeof body?.message === 'string' ? body.message.trim() : '';
+    if (bodyMessage !== '') return { status, message: bodyMessage };
+    if (typeof err.message === 'string' && err.message.trim() !== '') {
+      return { status, message: stripStatusPrefix(err.message) };
+    }
+    return null;
+  }
+
+  if (!(err instanceof Error)) return null;
+  const raw = err.message;
+
+  const jsonMessage = extractFromJsonBody(raw);
+  if (jsonMessage !== null) {
+    return { status: parseLeadingStatus(raw), message: jsonMessage };
+  }
+
+  const m = /^(\d{3})\s+(.+)$/s.exec(raw);
+  if (m) {
+    return { status: parseInt(m[1], 10), message: m[2].trim() };
+  }
+
+  return null;
+}
+
+export function extractProviderMessage(err: unknown): string | null {
+  return extractProviderError(err)?.message ?? null;
+}
+
 export function isFailFastError(err: unknown): boolean {
+  if (err instanceof OpenAI.APIError) {
+    if (err.status === 401 || err.status === 403) return true;
+    const body = err.error as { code?: unknown; type?: unknown } | undefined;
+    const code = typeof body?.code === 'string' ? body.code : '';
+    const type = typeof body?.type === 'string' ? body.type : '';
+    if (/insufficient_quota|invalid_api_key|invalid_grant|invalid_client/i.test(`${code} ${type}`)) return true;
+    return /insufficient_quota|invalid_api_key|invalid_grant|invalid_client|token_expired|unauthorized/i.test(
+      err.message,
+    );
+  }
   if (!(err instanceof Error)) return false;
   const m = err.message;
   if (/insufficient_quota/i.test(m)) return true;
