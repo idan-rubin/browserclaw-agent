@@ -1,12 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildRequestFingerprint,
+  completeIdempotency,
+  failIdempotency,
   getIdempotencyCacheKey,
   lookupIdempotency,
   normalizeIdempotencyKey,
+  reserveIdempotency,
   IDEMPOTENCY_TTL_MS,
   type IdempotencyCacheEntry,
 } from '../idempotency.js';
+
+interface TestResponse {
+  session_id: string;
+}
 
 describe('buildRequestFingerprint', () => {
   it('produces the same digest for equivalent shapes regardless of property order', () => {
@@ -17,7 +24,6 @@ describe('buildRequestFingerprint', () => {
       llm_config: { provider: 'openai', model: 'gpt-4o' },
     });
     const b = buildRequestFingerprint({
-      // different declaration order
       llm_config: { provider: 'openai', model: 'gpt-4o' },
       headless: true,
       url: 'https://streeteasy.com',
@@ -42,19 +48,9 @@ describe('buildRequestFingerprint', () => {
     );
   });
 
-  it('does NOT change when api_key changes (api_key intentionally excluded from fingerprint)', () => {
-    // Sensitive: we must not retain any digest derived from a secret in
-    // an in-memory cache. BYOK clients can rotate keys without losing
-    // their replay window.
-    const a = buildRequestFingerprint({
-      prompt: 'p',
-      llm_config: { provider: 'openai', model: 'gpt-4o' },
-    });
-    const b = buildRequestFingerprint({
-      prompt: 'p',
-      llm_config: { provider: 'openai', model: 'gpt-4o' },
-    });
-    // Same fingerprint regardless of any api_key the caller may pass alongside.
+  it('excludes api_key (do not retain secret digests; BYOK rotation must not break replay)', () => {
+    const a = buildRequestFingerprint({ prompt: 'p', llm_config: { provider: 'openai', model: 'gpt-4o' } });
+    const b = buildRequestFingerprint({ prompt: 'p', llm_config: { provider: 'openai', model: 'gpt-4o' } });
     expect(a).toBe(b);
   });
 });
@@ -70,18 +66,14 @@ describe('getIdempotencyCacheKey', () => {
     expect(getIdempotencyCacheKey('10.0.0.1', 'abc')).toBe(getIdempotencyCacheKey('10.0.0.1', 'abc'));
   });
 
-  it('does NOT collide when colons appear in either input (codex review fix)', () => {
-    // Naive `${ip}:${key}` makes these collide. They must not.
+  it('does not collide when colons appear in either input', () => {
     expect(getIdempotencyCacheKey('1.2.3.4', '5:abc')).not.toBe(getIdempotencyCacheKey('1.2.3.4:5', 'abc'));
     expect(getIdempotencyCacheKey('1.2.3.4', ':abc')).not.toBe(getIdempotencyCacheKey('1.2.3.4:', 'abc'));
   });
 
   it('handles IPv6 addresses without ambiguity', () => {
-    // IPv6 always contains colons. Two distinct IPv6 callers with adversarial
-    // keys must never share a cache entry.
     expect(getIdempotencyCacheKey('::1', '')).not.toBe(getIdempotencyCacheKey(':', '1'));
     expect(getIdempotencyCacheKey('2001:db8::1', 'abc')).not.toBe(getIdempotencyCacheKey('2001:db8:', ':1abc'));
-    // Same IPv6 caller + same key still produces same cache key.
     expect(getIdempotencyCacheKey('2001:db8::1', 'abc')).toBe(getIdempotencyCacheKey('2001:db8::1', 'abc'));
   });
 });
@@ -104,39 +96,105 @@ describe('normalizeIdempotencyKey', () => {
 
 describe('lookupIdempotency', () => {
   const now = 1_000_000;
-  function entry(overrides: Partial<IdempotencyCacheEntry> = {}): IdempotencyCacheEntry {
-    return { sessionId: 'sess-1', fingerprint: 'fp-1', createdAt: now, ...overrides };
+  function completed(
+    overrides: Partial<IdempotencyCacheEntry<TestResponse>> = {},
+  ): IdempotencyCacheEntry<TestResponse> {
+    return {
+      kind: 'completed',
+      fingerprint: 'fp-1',
+      createdAt: now,
+      response: { session_id: 'sess-1' },
+      ...overrides,
+    } as IdempotencyCacheEntry<TestResponse>;
   }
 
   it('returns miss when key not in cache', () => {
-    const cache = new Map<string, IdempotencyCacheEntry>();
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
     expect(lookupIdempotency(cache, 'k', 'fp-1', now)).toEqual({ kind: 'miss' });
   });
 
-  it('returns hit when key + fingerprint match within TTL', () => {
-    const cache = new Map<string, IdempotencyCacheEntry>();
-    cache.set('k', entry());
-    expect(lookupIdempotency(cache, 'k', 'fp-1', now + 1000)).toEqual({ kind: 'hit', sessionId: 'sess-1' });
+  it('returns completed_match when key + fingerprint match within TTL', () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    cache.set('k', completed());
+    expect(lookupIdempotency(cache, 'k', 'fp-1', now + 1000)).toEqual({
+      kind: 'completed_match',
+      response: { session_id: 'sess-1' },
+    });
   });
 
-  it('returns miss + evicts when entry has expired', () => {
-    const cache = new Map<string, IdempotencyCacheEntry>();
-    cache.set('k', entry());
+  it('returns miss + evicts when completed entry has expired', () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    cache.set('k', completed());
     const result = lookupIdempotency(cache, 'k', 'fp-1', now + IDEMPOTENCY_TTL_MS + 1);
     expect(result).toEqual({ kind: 'miss' });
     expect(cache.has('k')).toBe(false);
   });
 
-  it('returns fingerprint_mismatch when key matches but body differs (codex review fix)', () => {
-    // The bug: same-key + different-body silently replayed the prior session.
-    // The fix: lookup distinguishes mismatch from miss so the route can 409.
-    const cache = new Map<string, IdempotencyCacheEntry>();
-    cache.set('k', entry({ fingerprint: 'fp-1' }));
+  it('returns fingerprint_mismatch without evicting the entry', () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    cache.set('k', completed());
     expect(lookupIdempotency(cache, 'k', 'fp-DIFFERENT', now + 1000)).toEqual({
       kind: 'fingerprint_mismatch',
     });
-    // And does NOT evict the entry on mismatch — the original caller's
-    // replay window stays intact.
     expect(cache.has('k')).toBe(true);
+  });
+
+  it('returns pending_match while a request is in flight', async () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    const result = lookupIdempotency(cache, 'k', 'fp-1', now + 1000);
+    expect(result.kind).toBe('pending_match');
+    if (result.kind !== 'pending_match') throw new Error('unreachable');
+    const final = { session_id: 'sess-shared' };
+    completeIdempotency(cache, 'k', final, 'fp-1', now + 2000);
+    await expect(result.promise).resolves.toEqual(final);
+  });
+
+  it('does not expire pending entries past TTL', () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    const result = lookupIdempotency(cache, 'k', 'fp-1', now + IDEMPOTENCY_TTL_MS + 1);
+    expect(result.kind).toBe('pending_match');
+    expect(cache.has('k')).toBe(true);
+  });
+});
+
+describe('reserve / complete / fail lifecycle', () => {
+  const now = 2_000_000;
+
+  it('replays the cached response even when the live session is gone', () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    const original: TestResponse = { session_id: 'sess-original' };
+    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    completeIdempotency(cache, 'k', original, 'fp-1', now + 100);
+    expect(lookupIdempotency(cache, 'k', 'fp-1', now + 60_000)).toEqual({
+      kind: 'completed_match',
+      response: original,
+    });
+  });
+
+  it('failIdempotency rejects waiters and evicts so retries can succeed', async () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    const second = lookupIdempotency(cache, 'k', 'fp-1', now + 1);
+    if (second.kind !== 'pending_match') throw new Error('expected pending_match');
+    failIdempotency(cache, 'k', new Error('createSession failed'));
+    await expect(second.promise).rejects.toThrow(/createSession failed/);
+    expect(cache.has('k')).toBe(false);
+    expect(lookupIdempotency(cache, 'k', 'fp-1', now + 2)).toEqual({ kind: 'miss' });
+  });
+
+  it('completeIdempotency unblocks waiters and persists the response for replay', async () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    const second = lookupIdempotency(cache, 'k', 'fp-1', now + 1);
+    if (second.kind !== 'pending_match') throw new Error('expected pending_match');
+    const response: TestResponse = { session_id: 'sess-1' };
+    completeIdempotency(cache, 'k', response, 'fp-1', now + 100);
+    await expect(second.promise).resolves.toEqual(response);
+    expect(lookupIdempotency(cache, 'k', 'fp-1', now + 200)).toEqual({
+      kind: 'completed_match',
+      response,
+    });
   });
 });

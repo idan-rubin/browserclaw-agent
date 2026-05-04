@@ -18,9 +18,12 @@ import type { CreateSessionRequest, CreateSessionResponse } from './api-types.js
 import {
   IDEMPOTENCY_TTL_MS,
   buildRequestFingerprint,
+  completeIdempotency,
+  failIdempotency,
   getIdempotencyCacheKey,
   lookupIdempotency,
   normalizeIdempotencyKey,
+  reserveIdempotency,
   type IdempotencyCacheEntry,
 } from './idempotency.js';
 
@@ -64,25 +67,13 @@ function json(res: ServerResponse, status: number, data: unknown, headers?: Reco
   res.end(JSON.stringify(data));
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Idempotency-Key cache for session creation. RFC-style: a client sends
-// `Idempotency-Key: <opaque>` and a replay within IDEMPOTENCY_TTL_MS
-// returns the same session_id with `Idempotency-Replayed: true`.
-//
-// Helpers (fingerprinting, cache keying, lookup) live in ./idempotency.ts
-// so they're unit-testable in isolation. This module owns the actual cache
-// state and cleanup loop.
-//
-// In-memory only — Redis isn't in scope for this slice. The cleanup
-// interval is unref'd so it doesn't keep the process alive on shutdown.
-// ────────────────────────────────────────────────────────────────────────
-
-const idempotencyCache = new Map<string, IdempotencyCacheEntry>();
+// In-memory idempotency cache for POST /api/v1/sessions. Helpers in ./idempotency.ts.
+const idempotencyCache = new Map<string, IdempotencyCacheEntry<CreateSessionResponse>>();
 
 const idempotencyCleanup = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of idempotencyCache) {
-    if (now - entry.createdAt > IDEMPOTENCY_TTL_MS) {
+    if (entry.kind === 'completed' && now - entry.createdAt > IDEMPOTENCY_TTL_MS) {
       idempotencyCache.delete(key);
     }
   }
@@ -129,20 +120,25 @@ const routes: Route[] = [
     pattern: /^\/api\/v1\/sessions$/,
     paramNames: [],
     handler: async ({ req, res, clientIp }) => {
-      // Parse body BEFORE checking idempotency so we can fingerprint the
-      // request shape. The fingerprint detects "same key, different body"
-      // attacks/mistakes; per-clientIp scoping detects "same key, different
-      // caller" — both required for safe replay (codex review on PR #139).
       const body = await parseBody<CreateSessionRequest>(req);
 
       const idempotencyKey = normalizeIdempotencyKey(req.headers['idempotency-key']);
-      if (idempotencyKey !== undefined) {
-        const fingerprint = buildRequestFingerprint(body);
-        const cacheKey = getIdempotencyCacheKey(clientIp, idempotencyKey);
-        const lookup = lookupIdempotency(idempotencyCache, cacheKey, fingerprint, Date.now());
+      const idempotencyContext =
+        idempotencyKey !== undefined
+          ? {
+              cacheKey: getIdempotencyCacheKey(clientIp, idempotencyKey),
+              fingerprint: buildRequestFingerprint(body),
+            }
+          : undefined;
+
+      if (idempotencyContext !== undefined) {
+        const lookup = lookupIdempotency(
+          idempotencyCache,
+          idempotencyContext.cacheKey,
+          idempotencyContext.fingerprint,
+          Date.now(),
+        );
         if (lookup.kind === 'fingerprint_mismatch') {
-          // Same caller, same key, different body — RFC 7231 / Stripe-style
-          // semantics: 409 Conflict. Don't silently return the prior session.
           json(res, 409, {
             error_code: 'IDEMPOTENCY_KEY_REUSED',
             message:
@@ -150,26 +146,18 @@ const routes: Route[] = [
           });
           return;
         }
-        if (lookup.kind === 'hit') {
-          const cachedSession = (() => {
-            try {
-              return getSession(lookup.sessionId);
-            } catch {
-              return null;
-            }
-          })();
-          if (cachedSession !== null) {
-            const replayResponse: CreateSessionResponse = {
-              session_id: cachedSession.id,
-              status: cachedSession.status,
-              created_at: cachedSession.created_at,
-            };
-            json(res, 200, replayResponse, { 'Idempotency-Replayed': 'true' });
-            return;
+        if (lookup.kind === 'completed_match') {
+          json(res, 200, lookup.response, { 'Idempotency-Replayed': 'true' });
+          return;
+        }
+        if (lookup.kind === 'pending_match') {
+          try {
+            const replay = await lookup.promise;
+            json(res, 200, replay, { 'Idempotency-Replayed': 'true' });
+          } catch {
+            sendError(res, 503, 'Original idempotent request failed; please retry with a new Idempotency-Key.');
           }
-          // Session was evicted/closed — fall through to fresh creation
-          // and the cache entry will be overwritten below.
-          idempotencyCache.delete(cacheKey);
+          return;
         }
       }
 
@@ -211,29 +199,45 @@ const routes: Route[] = [
       }
       const llmConfig: LlmConfig = { provider, model: model.trim(), api_key: api_key.trim() };
 
-      const { session } = await createSession(
-        body.prompt,
-        url,
-        headless,
-        clientIp,
-        skipModeration,
-        llmConfig,
-        skipPostprocessing,
-      );
+      if (idempotencyContext !== undefined) {
+        reserveIdempotency(idempotencyCache, idempotencyContext.cacheKey, idempotencyContext.fingerprint, Date.now());
+      }
 
-      const response: CreateSessionResponse = {
-        session_id: session.id,
-        status: session.status,
-        created_at: session.created_at,
-      };
-      if (idempotencyKey !== undefined) {
-        const cacheKey = getIdempotencyCacheKey(clientIp, idempotencyKey);
-        const fingerprint = buildRequestFingerprint(body);
-        idempotencyCache.set(cacheKey, {
-          sessionId: session.id,
-          fingerprint,
-          createdAt: Date.now(),
-        });
+      let response: CreateSessionResponse;
+      try {
+        const { session } = await createSession(
+          body.prompt,
+          url,
+          headless,
+          clientIp,
+          skipModeration,
+          llmConfig,
+          skipPostprocessing,
+        );
+        response = {
+          session_id: session.id,
+          status: session.status,
+          created_at: session.created_at,
+        };
+      } catch (err) {
+        if (idempotencyContext !== undefined) {
+          failIdempotency(
+            idempotencyCache,
+            idempotencyContext.cacheKey,
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
+        throw err;
+      }
+
+      if (idempotencyContext !== undefined) {
+        completeIdempotency(
+          idempotencyCache,
+          idempotencyContext.cacheKey,
+          response,
+          idempotencyContext.fingerprint,
+          Date.now(),
+        );
       }
       json(res, 201, response);
     },
