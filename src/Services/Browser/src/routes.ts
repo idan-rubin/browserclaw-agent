@@ -15,6 +15,7 @@ import { BYOK_PROVIDERS, extractProviderMessage } from './llm.js';
 import { HttpError } from './types.js';
 import type { LlmConfig } from './types.js';
 import type { CreateSessionRequest, CreateSessionResponse } from './api-types.js';
+import { stampSSEPayload } from './sse-stamp.js';
 import {
   IDEMPOTENCY_TTL_MS,
   buildRequestFingerprint,
@@ -271,7 +272,7 @@ const routes: Route[] = [
       });
 
       res.write(
-        `event: connected\ndata: ${JSON.stringify({ apiVersion: 1, type: 'connected', session_id: sessionId })}\n\n`,
+        `event: connected\ndata: ${JSON.stringify(stampSSEPayload('connected', { session_id: sessionId }))}\n\n`,
       );
       addSSEClient(sessionId, res);
 

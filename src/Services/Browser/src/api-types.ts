@@ -20,19 +20,6 @@ export interface CreateSessionResponse {
   created_at: string;
 }
 
-export interface RunRequest {
-  prompt: string;
-  url?: string;
-  headless?: boolean;
-  llm_config?: LlmConfig;
-}
-
-export interface RunResponse {
-  session_id: string;
-  status: string;
-  created_at: string;
-}
-
 interface BaseSSEEvent {
   apiVersion: ApiVersion;
 }

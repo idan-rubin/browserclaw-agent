@@ -1974,7 +1974,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           emit('user_response', { step, text: userResponse });
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to get user response';
-          const isTimeout = message.toLowerCase().includes('timed out') || message.toLowerCase().includes('timeout');
+          const lowerMessage = message.toLowerCase();
+          const isTimeout = lowerMessage.includes('timed out') || lowerMessage.includes('timeout');
           if (isTimeout && INTERJECTION_TIMEOUT_CANCEL) {
             emit('user_interjection_timeout', { step, question });
             return {
