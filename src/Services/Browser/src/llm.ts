@@ -47,7 +47,7 @@ export function extractProviderError(err: unknown): ProviderError | null {
       parsed = JSON.parse(raw.slice(bodyStart));
     } catch (parseErr) {
       logger.warn(
-        { err: parseErr instanceof Error ? parseErr.message : 'unknown', raw: raw.slice(0, 200) },
+        { err: parseErr instanceof Error ? parseErr.name : 'unknown' },
         'extractProviderError: substring after { is not JSON',
       );
     }
