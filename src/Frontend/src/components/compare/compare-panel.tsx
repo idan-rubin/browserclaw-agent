@@ -35,18 +35,6 @@ interface ComparePanelProps {
 const PILL_LIFETIME_MS = 4000;
 const HANG_DETECT_MS = 60_000;
 
-function parse(e: MessageEvent): Record<string, unknown> | undefined {
-  try {
-    const data = JSON.parse(String(e.data)) as Record<string, unknown>;
-    if (data.apiVersion !== undefined && data.apiVersion !== API_VERSION) {
-      return undefined;
-    }
-    return data;
-  } catch {
-    return undefined;
-  }
-}
-
 const SKILL_ACTION_PILL: Record<string, string | undefined> = {
   click_cloudflare: 'cloudflare solved',
   press_and_hold: 'anti-bot solved',
@@ -100,6 +88,21 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, onTerminal }:
       if (detail !== undefined) setError(detail);
       es.close();
       onTerminalRef.current(finalStatus, detail);
+    };
+
+    const parse = (e: MessageEvent): Record<string, unknown> | undefined => {
+      try {
+        const data = JSON.parse(String(e.data)) as Record<string, unknown>;
+        if (data.apiVersion !== undefined && data.apiVersion !== API_VERSION) {
+          const got =
+            typeof data.apiVersion === 'number' || typeof data.apiVersion === 'string' ? data.apiVersion : 'unknown';
+          terminate('failed', `Incompatible SSE stream: apiVersion ${String(got)} (expected ${String(API_VERSION)})`);
+          return undefined;
+        }
+        return data;
+      } catch {
+        return undefined;
+      }
     };
 
     const touch = () => {
