@@ -225,8 +225,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       es.addEventListener('user_interjection_timeout', (e: MessageEvent) => {
         terminated = true;
         const data = parseEventData(e);
+        const question = typeof data?.question === 'string' ? data.question : 'question';
         setStatus('failed');
-        setError(`No response to "${String(data?.question ?? 'question')}" — run cancelled.`);
+        setError(`No response to "${question}" — run cancelled.`);
         es?.close();
       });
 
