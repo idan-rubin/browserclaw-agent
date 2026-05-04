@@ -1973,10 +1973,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           emit('user_response', { step, text: userResponse });
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to get user response';
-          // Silent continuation is the worse failure mode: if the user never
-          // answered, we should NOT just push on as if the question were
-          // ignored. Emit a distinct timeout event so the UI can render it
-          // clearly, then cancel the run with status='canceled-timeout'.
           const isTimeout = message.toLowerCase().includes('timed out') || message.toLowerCase().includes('timeout');
           if (isTimeout && INTERJECTION_TIMEOUT_CANCEL) {
             emit('user_interjection_timeout', { step, question });

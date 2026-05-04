@@ -327,10 +327,6 @@ export async function llmJson<T>(req: LLMRequest): Promise<T> {
     return parseJsonResponse(text) as T;
   } catch (err) {
     if (err instanceof SyntaxError) {
-      // The raw response is critical for diagnosing malformed LLM output.
-      // LlmParseError stores the first 500 chars on the error itself, and we
-      // also log it here so the diagnostic appears even if the caller only
-      // serializes the error message.
       logger.warn(
         {
           parseError: err.message,

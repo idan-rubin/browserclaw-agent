@@ -1,16 +1,8 @@
-/**
- * Truncate a string to a safe length for logging. Avoids the cost of slicing
- * a multi-megabyte response and clearly marks truncation.
- */
 function snippetFor(text: string, max = 500): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max)}…[truncated ${String(text.length - max)} chars]`;
 }
 
-/**
- * SyntaxError variant that carries a truncated snippet of the raw input so
- * callers can log what the LLM actually returned without re-running.
- */
 export class JsonResponseParseError extends SyntaxError {
   readonly snippet: string;
 
@@ -24,11 +16,6 @@ export class JsonResponseParseError extends SyntaxError {
 /**
  * Extracts and parses JSON from an LLM response that may be wrapped in
  * markdown code fences or followed by trailing text.
- *
- * On failure, throws a {@link JsonResponseParseError} whose message includes
- * a truncated snippet of the raw text so the original response is captured
- * in a single log line — without this, a malformed LLM reply is impossible
- * to diagnose without re-running.
  */
 export function parseJsonResponse(text: string): unknown {
   let jsonStr = text.trim();

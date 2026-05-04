@@ -21,9 +21,6 @@ export interface LlmConfig {
   api_key: string;
 }
 
-// CreateSessionRequest moved to ./api-types.ts as the canonical wire shape
-// shared with the Frontend mirror. Re-exported here to preserve the public
-// surface of the npm package (`browserclaw-agent`'s top-level index.ts).
 export type { CreateSessionRequest } from './api-types.js';
 
 export type AgentActionType =
@@ -125,10 +122,6 @@ export interface SkillMetadata {
 
 export interface AgentLoopResult {
   success: boolean;
-  /**
-   * Optional terminal status for failures that need to be distinguished from
-   * a generic error. Currently only emitted for user-interjection timeouts.
-   */
   status?: 'canceled-timeout';
   steps: AgentStep[];
   answer?: string;

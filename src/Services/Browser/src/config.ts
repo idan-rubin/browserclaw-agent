@@ -67,19 +67,9 @@ export const USER_RESPONSE_TIMEOUT_MS = parseInt(process.env.USER_RESPONSE_TIMEO
 export const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? '50', 10);
 export const LLM_MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS ?? '1024', 10);
 
-// Optional hard ceiling on agent step count. Off by default to preserve
-// backward compatibility — set MAX_STEPS_HARD_CEILING in the env to opt in.
-// 0 / unset means no clamp.
+// Optional opt-in flags. Defaults preserve pre-flag behavior (see .env.example).
 export const MAX_STEPS_HARD_CEILING = parseInt(process.env.MAX_STEPS_HARD_CEILING ?? '0', 10);
-
-// Cancel the run when the user fails to answer an interjection within
-// USER_RESPONSE_TIMEOUT_MS. Off by default — pre-PR-139 behavior was silent
-// continuation; set INTERJECTION_TIMEOUT_CANCEL=true to opt into the cancel.
 export const INTERJECTION_TIMEOUT_CANCEL = process.env.INTERJECTION_TIMEOUT_CANCEL === 'true';
-
-// Ban a non-idempotent ref on the very first failure (no free retry).
-// Off by default — pre-PR-139 behavior allowed one retry. Set
-// STRICT_NONIDEMPOTENT_BAN=true to opt into stricter banning.
 export const STRICT_NONIDEMPOTENT_BAN = process.env.STRICT_NONIDEMPOTENT_BAN === 'true';
 
 // User-interjection limits (always-on user chat feature).

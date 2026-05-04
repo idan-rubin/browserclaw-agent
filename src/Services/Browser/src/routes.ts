@@ -67,7 +67,6 @@ function json(res: ServerResponse, status: number, data: unknown, headers?: Reco
   res.end(JSON.stringify(data));
 }
 
-// In-memory idempotency cache for POST /api/v1/sessions. Helpers in ./idempotency.ts.
 const idempotencyCache = new Map<string, IdempotencyCacheEntry<CreateSessionResponse>>();
 
 const idempotencyCleanup = setInterval(() => {
@@ -258,7 +257,6 @@ const routes: Route[] = [
         'X-Accel-Buffering': 'no',
       });
 
-      // Stamped to match the SSEEvent union in ./api-types.ts.
       res.write(
         `event: connected\ndata: ${JSON.stringify({ apiVersion: 1, type: 'connected', session_id: sessionId })}\n\n`,
       );
