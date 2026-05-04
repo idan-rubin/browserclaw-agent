@@ -957,9 +957,6 @@ function isRefFailure(action: AgentAction, err: unknown): boolean {
   return REF_FAILURE_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-// Errors that are typically about the network/page-load taking too long, not
-// about the element itself. We deliberately skip ref-banning on these so a
-// flaky-network retry can succeed.
 const TRANSIENT_ERROR_KEYWORDS = [
   'timeout',
   'timed out',
@@ -978,15 +975,6 @@ function isTransientError(err: unknown): boolean {
   return TRANSIENT_ERROR_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-/**
- * Action types that are NOT safe to retry on the same ref after a failure.
- * Even if the failure was transient, repeating a click/type/select can
- * double-submit a form, charge a card twice, or post a duplicate message.
- *
- * Idempotent actions (scroll, wait, snapshot, extract, web_search, etc.)
- * intentionally stay un-banned — repeating them is harmless and they
- * frequently fail for transient reasons (slow page, partial DOM).
- */
 function isNonIdempotentAction(action: AgentAction): boolean {
   return (
     action.action === 'click' ||
@@ -1225,8 +1213,6 @@ export async function runAgentLoop(
 ): Promise<AgentLoopResult> {
   const cfg = defaultAgentConfig(options?.config);
   maxSteps ??= cfg.maxSteps;
-  // Hard cap: a misconfigured MAX_STEPS (or rogue caller) must never produce
-  // thousand-step runs. Clamp here at loop entry and warn loudly if we did so.
   if (maxSteps > MAX_STEPS_HARD_CEILING) {
     logger.warn({ configured: maxSteps, ceiling: MAX_STEPS_HARD_CEILING }, 'maxSteps exceeded hard ceiling — clamping');
     maxSteps = MAX_STEPS_HARD_CEILING;
@@ -1283,19 +1269,12 @@ export async function runAgentLoop(
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
 
-  // Skill validation gate: before replaying a loaded skill, ask the LLM
-  // whether it plausibly solves the user's task. Off by default
-  // (SKILL_VALIDATION_ENABLED=1 to opt in). A skipped skill is replaced with
-  // null so the agent learns fresh; we emit `skill_skipped` for the UI.
   if (domainSkill !== null && process.env.SKILL_VALIDATION_ENABLED === '1') {
     try {
       const verdict = await llmJson<{ ok: 'YES' | 'NO'; reason: string }>({
         system:
           'You validate whether a saved playbook plausibly solves the user task. Reply with JSON {"ok": "YES"|"NO", "reason": "<one short line>"}. Be permissive — only say NO when the playbook is clearly for a different goal.',
         message: `Task: ${prompt}\n\nDomain: ${domainSkill.domain}\nTags: ${domainSkill.tags.join(', ')}\n\nPlaybook:\n${JSON.stringify(domainSkill.skill, null, 2)}`,
-        // Cheap call: cap tokens tightly. The codebase has no
-        // dedicated small-model config, so we reuse the active model
-        // and rely on max_tokens for cost containment.
         maxTokens: 80,
       });
       if (verdict.ok === 'NO') {
@@ -1307,7 +1286,6 @@ export async function runAgentLoop(
         domainSkill = null;
       }
     } catch (err) {
-      // Validation is best-effort — never block the run on a failed gate.
       logger.warn({ err }, 'Skill validation gate errored — keeping skill');
     }
   }
@@ -1480,10 +1458,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     if (step > 0 && step % CONTEXT_COMPRESS_INTERVAL === 0) {
       const compressResult = await compressContext(refinedPrompt, history, lastProgress);
       if (compressResult.ok) {
-        // history is never dropped — `contextSummary` is additive, prepended to
-        // the formatted-actions block. Emit a typed event so the UI can show
-        // that compression happened, and persist the summary to the prompt log
-        // (pino stream picked up by prompt-log.ts).
         const droppedSteps = Math.max(0, history.length - HISTORY_RECENT_WINDOW);
         contextSummary = compressResult.summary;
         logger.info(
@@ -1497,9 +1471,6 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
           summary_length: contextSummary.length,
         });
       } else {
-        // Compression LLM call failed — keep existing contextSummary and
-        // history. The next interval will retry. Surface the failure so the
-        // UI/user knows compression skipped.
         emit('context_compress_failed', { step, error: compressResult.error });
       }
     }
@@ -2291,10 +2262,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           isNonIdempotentAction(action) &&
           !isTransientError(err)
         ) {
-          // Non-idempotent failure (e.g. submit click): ban immediately, do NOT
-          // give a free retry. Set count to BAN_THRESHOLD so the next-iteration
-          // reuse check at line ~1744 already trips. Transient errors fall
-          // through (network blip — element is fine, retry can succeed).
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
           entry.failures = Math.max(entry.failures + 1, BAN_THRESHOLD);
           entry.action = action.action;

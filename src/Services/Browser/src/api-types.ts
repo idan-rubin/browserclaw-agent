@@ -1,22 +1,9 @@
-/**
- * Shared API contract between the Browser backend service and the Next.js
- * Frontend. The Frontend keeps a mirror at
- * `src/Frontend/src/lib/api-types.ts` whose declarations match this file
- * verbatim (kept in sync manually — separate tsconfigs prevent a single
- * canonical import without restructuring the build).
- *
- * Whenever you touch this file, update the mirror in the same commit.
- */
+// Mirror lives at src/Frontend/src/lib/api-types.ts — keep in sync manually.
 
 import type { LlmConfig } from './types.js';
 
-/** Marker version for SSE events and API payload shapes. Bump on breaking changes. */
 export const API_VERSION = 1;
 export type ApiVersion = typeof API_VERSION;
-
-// ────────────────────────────────────────────────────────────────────────
-// Sessions
-// ────────────────────────────────────────────────────────────────────────
 
 export interface CreateSessionRequest {
   prompt: string;
@@ -33,10 +20,6 @@ export interface CreateSessionResponse {
   created_at: string;
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Runs
-// ────────────────────────────────────────────────────────────────────────
-
 export interface RunRequest {
   prompt: string;
   url?: string;
@@ -49,14 +32,6 @@ export interface RunResponse {
   status: string;
   created_at: string;
 }
-
-// ────────────────────────────────────────────────────────────────────────
-// SSE event union
-//
-// Every event carries `apiVersion: 1` so a future v2 stream can be detected
-// by clients without renaming the type tags. Add new event types as a new
-// member of the union — never reuse a `type` value with a different shape.
-// ────────────────────────────────────────────────────────────────────────
 
 interface BaseSSEEvent {
   apiVersion: ApiVersion;
@@ -73,8 +48,6 @@ export type SSEEvent =
       step: number;
       action?: string;
       error: string;
-      // Optional inner classifier (e.g. 'parse_error' | 'api_error'). The SSE
-      // channel type stays 'step_error'; this discriminates the cause.
       error_kind?: string;
     })
   | (BaseSSEEvent & {

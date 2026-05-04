@@ -2,11 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { stampSSEPayload } from '../sse-stamp.js';
 
 describe('stampSSEPayload', () => {
-  it('preserves the SSE channel type even when payload carries its own `type` field (codex review regression)', () => {
-    // Regression for the bug caught by codex review on PR #139:
-    // `{ type: event, ...data }` let a payload's inner `type` clobber the
-    // channel name. The contract is that the SSE channel `type` always
-    // matches the event tag.
+  it('payload `type` cannot clobber the SSE channel type', () => {
     const stamped = stampSSEPayload('step_error', {
       step: 3,
       error: 'bad',
@@ -23,7 +19,7 @@ describe('stampSSEPayload', () => {
     expect(stamped.type).toBe('thinking');
   });
 
-  it('payload `apiVersion` cannot clobber the canonical version either', () => {
+  it('payload `apiVersion` cannot clobber the canonical version', () => {
     const stamped = stampSSEPayload('step', { step: 1, apiVersion: 999 });
     expect(stamped.apiVersion).toBe(1);
   });

@@ -12,10 +12,6 @@ function compareEnabled(): boolean {
   return process.env.COMPARE_ENABLED === 'true';
 }
 
-/**
- * Trim and sanitize an upstream error string for client consumption.
- * Drops obvious filesystem paths, stack traces, and over-long bodies.
- */
 function sanitizeUpstreamMessage(input: unknown): string | undefined {
   if (typeof input !== 'string') return undefined;
   const firstLine = input.split('\n', 1)[0].trim();
@@ -50,7 +46,6 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json<ApiErrorBody>({ error: 'bad_request', code: 'INVALID_JSON' }, { status: 400 });
   }
-  // Forward Idempotency-Key opaquely so retries don't burn duplicate sessions.
   const idempotencyKey = request.headers.get('idempotency-key');
   const upstreamHeaders: Record<string, string> = {
     ...backendHeaders(),

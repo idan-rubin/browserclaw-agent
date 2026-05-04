@@ -5,24 +5,13 @@ import type { CreateSessionRequest, CreateSessionResponse, ApiErrorBody } from '
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * Trim and sanitize an upstream error string for client consumption.
- * Drops obvious filesystem paths, stack traces, and over-long bodies.
- */
 function sanitizeUpstreamMessage(input: unknown): string | undefined {
   if (typeof input !== 'string') return undefined;
-  // Drop everything from the first newline (typical stack-trace frame) and
-  // any absolute paths.
   const firstLine = input.split('\n', 1)[0].trim();
   const noPaths = firstLine.replace(/(\s|^)(\/[\w./-]+)+/g, ' [path]');
   return noPaths.slice(0, 240);
 }
 
-/**
- * Read the upstream response body once and try to extract a structured
- * error payload. Falls back to `{ error: 'upstream_error' }` if the body
- * isn't JSON.
- */
 async function buildErrorBody(res: Response): Promise<ApiErrorBody> {
   try {
     const data = (await res.json()) as Record<string, unknown>;
@@ -48,7 +37,6 @@ export async function GET(request: NextRequest) {
       signal: request.signal,
     });
   } catch {
-    // Network-level failure (DNS, refused, abort) — backend is unreachable.
     return NextResponse.json<ApiErrorBody>({ error: 'upstream_unreachable' }, { status: 503 });
   }
   if (!res.ok) {
@@ -68,9 +56,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json<ApiErrorBody>({ error: 'bad_request', code: 'INVALID_JSON' }, { status: 400 });
   }
   const clientIp = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? '127.0.0.1';
-  // Forward Idempotency-Key opaquely; backend dedups within 5min and echoes
-  // Idempotency-Replayed: true on a hit. Letting clients (mobile, flaky
-  // wifi) safely retry POST /sessions is the whole point.
   const idempotencyKey = request.headers.get('idempotency-key');
   const upstreamHeaders: Record<string, string> = {
     ...backendHeaders(),
@@ -92,15 +77,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json<ApiErrorBody>({ error: 'upstream_unreachable' }, { status: 503 });
   }
   if (!res.ok) {
-    // Forward upstream status (4xx from validation, 401 unauth, 429 rate
-    // limit, 5xx backend errors) along with a sanitized code/message so
-    // the UI can show something more useful than a generic 503.
     const errBody = await buildErrorBody(res);
     return NextResponse.json(errBody, { status: res.status });
   }
   const data = (await res.json()) as CreateSessionResponse;
-  // Echo Idempotency-Replayed so clients can tell a replay from a
-  // freshly-created session without inspecting payload identity.
   const replayed = res.headers.get('idempotency-replayed');
   const responseHeaders: Record<string, string> = {};
   if (replayed !== null) {

@@ -1,15 +1,4 @@
-/**
- * Mirror of `src/Services/Browser/src/api-types.ts`.
- *
- * The two files are kept in sync manually — separate tsconfigs and module
- * resolution settings (rootDir on the backend, bundler resolution on the
- * frontend) prevent a single canonical import without restructuring the
- * build. When you touch one file, update the other in the same commit.
- *
- * Treat this file as the contract the Frontend code can rely on — the
- * `typecheck` script on each side validates each half independently, and
- * any drift will surface here as a type error in callers.
- */
+// Mirror of src/Services/Browser/src/api-types.ts — keep in sync manually.
 
 export const API_VERSION = 1;
 export type ApiVersion = typeof API_VERSION;
@@ -63,8 +52,6 @@ export type SSEEvent =
       step: number;
       action?: string;
       error: string;
-      // Optional inner classifier (e.g. 'parse_error' | 'api_error'). The SSE
-      // channel type stays 'step_error'; this discriminates the cause.
       error_kind?: string;
     })
   | (BaseSSEEvent & {
