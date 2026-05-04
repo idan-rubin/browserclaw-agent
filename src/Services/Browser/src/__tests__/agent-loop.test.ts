@@ -21,17 +21,14 @@ vi.mock('../llm.js', () => ({
   extractProviderMessage: (err: unknown): string | null => {
     if (!(err instanceof Error)) return null;
     const bodyStart = err.message.indexOf('{');
-    if (bodyStart !== -1) {
-      try {
-        const parsed = JSON.parse(err.message.slice(bodyStart)) as { error?: { message?: unknown } };
-        const msg = parsed.error?.message;
-        if (typeof msg === 'string' && msg.trim() !== '') return msg;
-      } catch {
-        // fall through
-      }
+    if (bodyStart === -1) return null;
+    try {
+      const parsed = JSON.parse(err.message.slice(bodyStart)) as { error?: { message?: unknown } };
+      const msg = parsed.error?.message;
+      return typeof msg === 'string' && msg.trim() !== '' ? msg : null;
+    } catch {
+      return null;
     }
-    const m = /^(\d{3})\s+(.+)$/s.exec(err.message);
-    return m ? m[2].trim() : null;
   },
 }));
 

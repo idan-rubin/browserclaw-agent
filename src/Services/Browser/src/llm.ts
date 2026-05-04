@@ -23,66 +23,53 @@ export interface ProviderError {
   message: string;
 }
 
-function stripStatusPrefix(s: string): string {
-  let out = s.trim();
-  while (/^\d{3}\s+/.test(out)) {
-    out = out.slice(out.indexOf(' ') + 1).trim();
-  }
-  return out;
-}
-
-function parseLeadingStatus(s: string): number | null {
-  const m = /^(\d{3})\s/.exec(s);
-  return m ? parseInt(m[1], 10) : null;
-}
-
-function extractFromJsonBody(raw: string): string | null {
-  const bodyStart = raw.indexOf('{');
-  if (bodyStart === -1) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw.slice(bodyStart));
-  } catch {
-    return null;
-  }
-  if (parsed === null || typeof parsed !== 'object') return null;
-  const obj = parsed as Record<string, unknown>;
-  const candidates: unknown[] = [
-    (obj.error as { message?: unknown } | undefined)?.message,
-    typeof obj.error === 'string' ? obj.error : undefined,
-    obj.message,
-    obj.detail,
-  ];
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.trim() !== '') return c;
-  }
-  return null;
-}
-
 export function extractProviderError(err: unknown): ProviderError | null {
   if (err instanceof OpenAI.APIError) {
     const status = typeof err.status === 'number' ? err.status : null;
     const body = err.error as { message?: unknown } | undefined;
-    const bodyMessage = typeof body?.message === 'string' ? body.message.trim() : '';
-    if (bodyMessage !== '') return { status, message: bodyMessage };
+    if (typeof body?.message === 'string' && body.message.trim() !== '') {
+      return { status, message: body.message.trim() };
+    }
     if (typeof err.message === 'string' && err.message.trim() !== '') {
-      return { status, message: stripStatusPrefix(err.message) };
+      let msg = err.message.trim();
+      while (/^\d{3}\s+/.test(msg)) msg = msg.slice(msg.indexOf(' ') + 1).trim();
+      return { status, message: msg };
     }
     return null;
   }
 
   if (!(err instanceof Error)) return null;
   const raw = err.message;
-
-  const jsonMessage = extractFromJsonBody(raw);
-  if (jsonMessage !== null) {
-    return { status: parseLeadingStatus(raw), message: jsonMessage };
+  const bodyStart = raw.indexOf('{');
+  if (bodyStart !== -1) {
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(raw.slice(bodyStart));
+    } catch (parseErr) {
+      logger.debug(
+        { err: parseErr instanceof Error ? parseErr.message : 'unknown', raw: raw.slice(0, 200) },
+        'extractProviderError: substring after { is not JSON',
+      );
+    }
+    if (parsed !== null && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const candidates: unknown[] = [
+        (obj.error as { message?: unknown } | undefined)?.message,
+        typeof obj.error === 'string' ? obj.error : undefined,
+        obj.message,
+        obj.detail,
+      ];
+      for (const c of candidates) {
+        if (typeof c === 'string' && c.trim() !== '') {
+          const statusMatch = /^(\d{3})\s/.exec(raw);
+          return { status: statusMatch ? parseInt(statusMatch[1], 10) : null, message: c };
+        }
+      }
+    }
   }
 
   const m = /^(\d{3})\s+(.+)$/s.exec(raw);
-  if (m) {
-    return { status: parseInt(m[1], 10), message: m[2].trim() };
-  }
+  if (m) return { status: parseInt(m[1], 10), message: m[2].trim() };
 
   return null;
 }
