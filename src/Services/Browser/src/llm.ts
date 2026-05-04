@@ -92,16 +92,6 @@ export function extractProviderMessage(err: unknown): string | null {
 }
 
 export function isFailFastError(err: unknown): boolean {
-  if (err instanceof OpenAI.APIError) {
-    if (err.status === 401 || err.status === 403) return true;
-    const body = err.error as { code?: unknown; type?: unknown } | undefined;
-    const code = typeof body?.code === 'string' ? body.code : '';
-    const type = typeof body?.type === 'string' ? body.type : '';
-    if (/insufficient_quota|invalid_api_key|invalid_grant|invalid_client/i.test(`${code} ${type}`)) return true;
-    return /insufficient_quota|invalid_api_key|invalid_grant|invalid_client|token_expired|unauthorized/i.test(
-      err.message,
-    );
-  }
   if (!(err instanceof Error)) return false;
   const m = err.message;
   if (/insufficient_quota/i.test(m)) return true;

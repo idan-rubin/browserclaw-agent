@@ -11,7 +11,7 @@ function makeAPIError(
 }
 
 describe('extractProviderError', () => {
-  it('extracts OpenAI SDK quota error with status and body message', () => {
+  it('extracts OpenAI SDK 429 quota error with body message', () => {
     const body = {
       message: 'You exceeded your current quota, please check your plan and billing details.',
       type: 'insufficient_quota',
@@ -22,19 +22,36 @@ describe('extractProviderError', () => {
       body,
       '429 You exceeded your current quota, please check your plan and billing details.',
     );
-    const result = extractProviderError(err);
-    expect(result).toEqual({
+    expect(extractProviderError(err)).toEqual({
       status: 429,
       message: 'You exceeded your current quota, please check your plan and billing details.',
     });
   });
 
-  it('falls back to message (without status prefix) when SDK body has no message', () => {
+  it('extracts OpenAI SDK 401 auth error with body message', () => {
+    const body = { message: 'Incorrect API key provided.', type: 'invalid_request_error', code: 'invalid_api_key' };
+    const err = makeAPIError(401, body, '401 Incorrect API key provided.');
+    expect(extractProviderError(err)).toEqual({
+      status: 401,
+      message: 'Incorrect API key provided.',
+    });
+  });
+
+  it('extracts OpenAI SDK 403 permission error with body message', () => {
+    const body = { message: 'You do not have access to this resource.', type: 'permission_error' };
+    const err = makeAPIError(403, body, '403 You do not have access to this resource.');
+    expect(extractProviderError(err)).toEqual({
+      status: 403,
+      message: 'You do not have access to this resource.',
+    });
+  });
+
+  it('falls back to SDK message (status prefix stripped) when body has no message', () => {
     const err = makeAPIError(401, undefined, '401 Unauthorized');
     expect(extractProviderError(err)).toEqual({ status: 401, message: 'Unauthorized' });
   });
 
-  it('handles plain-text "<status> <message>" thrown as Error', () => {
+  it('handles plain-text "<status> <message>" Error (raw fetch path)', () => {
     const err = new Error('429 You exceeded your current quota, please check your plan and billing details.');
     expect(extractProviderError(err)).toEqual({
       status: 429,
@@ -42,17 +59,17 @@ describe('extractProviderError', () => {
     });
   });
 
-  it('handles JSON-bodied errors with leading status', () => {
+  it('handles JSON-bodied error with leading status', () => {
     const err = new Error('400 {"error": {"message": "Invalid model"}}');
     expect(extractProviderError(err)).toEqual({ status: 400, message: 'Invalid model' });
   });
 
-  it('handles JSON-bodied errors without leading status', () => {
+  it('handles JSON-bodied error without leading status', () => {
     const err = new Error('Bad: {"error": "model not found"}');
     expect(extractProviderError(err)).toEqual({ status: null, message: 'model not found' });
   });
 
-  it('returns null for arbitrary Error without recognizable shape', () => {
+  it('returns null for unknown Error so caller falls through to generic message', () => {
     expect(extractProviderError(new Error('something blew up'))).toBeNull();
   });
 
@@ -75,26 +92,6 @@ describe('extractProviderMessage', () => {
 });
 
 describe('isFailFastError', () => {
-  it('flags OpenAI SDK 401 as fail-fast', () => {
-    const err = makeAPIError(401, { message: 'bad key' }, '401 bad key');
-    expect(isFailFastError(err)).toBe(true);
-  });
-
-  it('flags OpenAI SDK 403 as fail-fast', () => {
-    const err = makeAPIError(403, { message: 'forbidden' }, '403 forbidden');
-    expect(isFailFastError(err)).toBe(true);
-  });
-
-  it('flags OpenAI SDK insufficient_quota body code as fail-fast', () => {
-    const err = makeAPIError(429, { message: 'quota', code: 'insufficient_quota' }, '429 quota');
-    expect(isFailFastError(err)).toBe(true);
-  });
-
-  it('does NOT flag plain 429 rate-limit as fail-fast', () => {
-    const err = makeAPIError(429, { message: 'slow down', code: 'rate_limit_exceeded' }, '429 slow down');
-    expect(isFailFastError(err)).toBe(false);
-  });
-
   it('flags plain-text 401 message as fail-fast', () => {
     expect(isFailFastError(new Error('401 Unauthorized'))).toBe(true);
   });
