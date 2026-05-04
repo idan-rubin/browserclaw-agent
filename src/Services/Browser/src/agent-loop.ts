@@ -1094,7 +1094,7 @@ Be concise but preserve all important data points. Respond with JSON: {"summary"
     return { ok: true, summary: result.summary };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.warn({ err: message }, 'Context compression failed — keeping existing context');
+    logger.warn({ err: message }, 'Context compression failed — falling back to simple truncation');
     return { ok: false, error: message };
   }
 }
@@ -1477,6 +1477,7 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
           summary_length: contextSummary.length,
         });
       } else {
+        contextSummary = '';
         emit('context_compress_failed', { step, error: compressResult.error });
       }
     }
