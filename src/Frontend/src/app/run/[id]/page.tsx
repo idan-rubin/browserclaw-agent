@@ -10,23 +10,10 @@ import { isLocalBrowserMode } from '@/lib/env';
 import { RunSummary } from '@/components/run/run-summary';
 import { RunConsole } from '@/components/run/run-console';
 import type { ConsoleEntry, SkillOutput, DomainSkillEntry, RunStatus } from '@/components/run/types';
+import { API_VERSION } from '@/lib/api-types';
 
 const VNC_BASE = process.env.NEXT_PUBLIC_VNC_URL ?? '/vnc';
 const vncUrl = `${VNC_BASE}/vnc.html?autoconnect=true&resize=scale&view_only=true${VNC_BASE === '/vnc' ? '&path=vnc/websockify' : ''}`;
-
-import { API_VERSION } from '@/lib/api-types';
-
-function parseEventData(e: MessageEvent): Record<string, unknown> | undefined {
-  try {
-    const data = JSON.parse(String(e.data)) as Record<string, unknown>;
-    if (data.apiVersion !== undefined && data.apiVersion !== API_VERSION) {
-      return undefined;
-    }
-    return data;
-  } catch {
-    return undefined;
-  }
-}
 
 export default function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -78,6 +65,27 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     const MAX_RECONNECTS = 10;
     let reconnects = 0;
+
+    function failVersionMismatch(got: unknown) {
+      if (terminated) return;
+      terminated = true;
+      setStatus('failed');
+      setError(`Incompatible SSE stream: apiVersion ${String(got)} (expected ${String(API_VERSION)})`);
+      es?.close();
+    }
+
+    function parseEventData(e: MessageEvent): Record<string, unknown> | undefined {
+      try {
+        const data = JSON.parse(String(e.data)) as Record<string, unknown>;
+        if (data.apiVersion !== undefined && data.apiVersion !== API_VERSION) {
+          failVersionMismatch(data.apiVersion);
+          return undefined;
+        }
+        return data;
+      } catch {
+        return undefined;
+      }
+    }
 
     function connect() {
       es = new EventSource(`/api/v1/runs/${id}/stream`);
