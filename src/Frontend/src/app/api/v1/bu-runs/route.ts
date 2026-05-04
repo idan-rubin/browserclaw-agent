@@ -69,7 +69,12 @@ export async function POST(request: NextRequest) {
     const errBody = await buildErrorBody(res);
     return NextResponse.json(errBody, { status: res.status });
   }
-  const data = (await res.json()) as unknown;
+  let data: unknown;
+  try {
+    data = await res.json();
+  } catch {
+    return NextResponse.json<ApiErrorBody>({ error: 'upstream_error', code: 'INVALID_JSON' }, { status: 502 });
+  }
   const replayed = res.headers.get('idempotency-replayed');
   const responseHeaders: Record<string, string> = {};
   if (replayed !== null) {

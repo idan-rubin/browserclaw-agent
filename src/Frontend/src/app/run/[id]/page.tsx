@@ -126,9 +126,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       });
 
       es.addEventListener('completed', (e: MessageEvent) => {
-        terminated = true;
         const data = parseEventData(e);
         if (!data) return;
+        terminated = true;
         if (typeof data.answer === 'string' && data.answer !== '') setAnswer(data.answer);
         setSkillStats({
           llm_calls: Number(data.llm_calls),
@@ -140,9 +140,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       });
 
       es.addEventListener('failed', (e: MessageEvent) => {
-        terminated = true;
         const data = parseEventData(e);
         if (!data) return;
+        terminated = true;
         setStatus('failed');
         setError(String(data.error));
         es?.close();
@@ -237,9 +237,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       });
 
       es.addEventListener('user_interjection_timeout', (e: MessageEvent) => {
-        terminated = true;
         const data = parseEventData(e);
-        const question = typeof data?.question === 'string' ? data.question : 'question';
+        if (!data) return;
+        terminated = true;
+        const question = typeof data.question === 'string' ? data.question : 'question';
         setStatus('failed');
         setError(`No response to "${question}" — run cancelled.`);
         es?.close();
