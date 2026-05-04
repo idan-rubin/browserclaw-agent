@@ -327,6 +327,14 @@ export async function llmJson<T>(req: LLMRequest): Promise<T> {
     return parseJsonResponse(text) as T;
   } catch (err) {
     if (err instanceof SyntaxError) {
+      logger.warn(
+        {
+          parseError: err.message,
+          rawSnippet: text.length > 500 ? `${text.slice(0, 500)}…[truncated ${String(text.length - 500)} chars]` : text,
+          rawLength: text.length,
+        },
+        'LLM JSON parse failed',
+      );
       throw new LlmParseError(err.message, text);
     }
     throw err;

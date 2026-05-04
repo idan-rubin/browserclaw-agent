@@ -55,6 +55,9 @@ vi.mock('../skills/tab-manager.js', () => ({
 
 vi.mock('../config.js', () => ({
   INTERJECTION_INJECTION_MAX_CHARS: 2000,
+  MAX_STEPS_HARD_CEILING: 0,
+  STRICT_NONIDEMPOTENT_BAN: false,
+  INTERJECTION_TIMEOUT_CANCEL: false,
   defaultAgentConfig: (overrides?: Record<string, unknown>) => ({
     waitAfterTypeMs: 100,
     waitAfterClickMs: 100,
@@ -189,6 +192,23 @@ describe('runAgentLoop', () => {
     expect(mock.click.mock.calls.filter((c) => c[0] === '77').length).toBeLessThanOrEqual(2);
   });
 
+  it('flow-BC: a non-idempotent ref failure does NOT immediately ban (preserves pre-flag retry behavior)', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Click submit' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Submit', ref: 'submit-1' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Try again', ref: 'submit-1' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Give up', answer: 'no' });
+
+    const { page, mock } = mockPage();
+    mock.click.mockRejectedValue(new Error('Submit handler returned an unexpected status.'));
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    await runAgentLoop('Submit form', page, emit, controller.signal);
+
+    expect(mock.click.mock.calls.filter((c) => c[0] === 'submit-1').length).toBe(2);
+  });
+
   it('does not ban a ref on transient network/timeout errors', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Click' })
@@ -230,7 +250,7 @@ describe('runAgentLoop', () => {
         c[0] === 'step_error' &&
         typeof c[1] === 'object' &&
         c[1] !== null &&
-        (c[1] as { type?: string }).type === 'parse_error',
+        (c[1] as { error_kind?: string }).error_kind === 'parse_error',
     );
     expect(parseErrors.length).toBe(0);
     expect(mock.click.mock.calls.filter((c) => c[0] === '99').length).toBeLessThanOrEqual(2);

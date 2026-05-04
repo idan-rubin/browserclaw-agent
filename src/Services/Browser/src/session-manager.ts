@@ -28,6 +28,7 @@ import { getLLMCallCount, resetLLMCallCount, runWithLlmConfig, sanitizeErrorText
 import { extractDomain, getSkillForDomain, getSkillsForDomains, saveSkill } from './skill-store.js';
 import { saveLesson, extractDomainLessons, getLesson } from './lesson-store.js';
 import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
+import { stampSSEPayload } from './sse-stamp.js';
 import { logger } from './logger.js';
 
 interface ManagedSession {
@@ -101,7 +102,8 @@ function getManagedSession(sessionId: string): ManagedSession {
 export function emitSSE(sessionId: string, event: string, data: unknown): void {
   const managed = sessions.get(sessionId);
   if (!managed) return;
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  const stamped = stampSSEPayload(event, data);
+  const payload = `event: ${event}\ndata: ${JSON.stringify(stamped)}\n\n`;
   for (const client of managed.sseClients) {
     client.write(payload);
   }
@@ -351,7 +353,11 @@ async function startAgentLoop(sessionId: string): Promise<void> {
       // Sync back the page reference in case the agent switched tabs
       managed.page = pageHolder.page;
       managed.result = result;
-      managed.status = result.success ? 'completed' : 'failed';
+      managed.status = result.success
+        ? 'completed'
+        : result.status === 'canceled-timeout'
+          ? 'canceled-timeout'
+          : 'failed';
 
       // Capture domain from first navigate action if not set
       if (managed.domain === null) {
@@ -368,7 +374,11 @@ async function startAgentLoop(sessionId: string): Promise<void> {
       await saveTrajectory({
         session_id: sessionId,
         prompt: managed.prompt,
-        status: result.success ? TRAJECTORY_STATUS.completed : TRAJECTORY_STATUS.failed,
+        status: result.success
+          ? TRAJECTORY_STATUS.completed
+          : result.status === 'canceled-timeout'
+            ? TRAJECTORY_STATUS.canceledTimeout
+            : TRAJECTORY_STATUS.failed,
         steps: result.steps,
         answer: result.answer,
         error: result.error,
@@ -413,6 +423,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
           step: result.steps.length,
           error: result.error,
           llm_calls: llmCalls,
+          terminal_status: managed.status,
         });
       }
 
@@ -422,7 +433,7 @@ async function startAgentLoop(sessionId: string): Promise<void> {
         ip: managed.ip,
         prompt: managed.prompt,
         url: result.final_url ?? '',
-        status: result.success ? 'completed' : 'failed',
+        status: managed.status,
         steps: result.steps.length,
         duration_ms: result.duration_ms,
         error: result.error,

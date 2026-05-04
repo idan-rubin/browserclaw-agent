@@ -11,7 +11,7 @@ interface PromptLogEntry {
   ip: string;
   prompt: string;
   url?: string;
-  status: 'started' | 'completed' | 'failed';
+  status: 'started' | 'completed' | 'failed' | 'canceled-timeout';
   steps?: number;
   duration_ms?: number;
   error?: string;

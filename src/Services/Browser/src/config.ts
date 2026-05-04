@@ -67,6 +67,11 @@ export const USER_RESPONSE_TIMEOUT_MS = parseInt(process.env.USER_RESPONSE_TIMEO
 export const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? '50', 10);
 export const LLM_MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS ?? '1024', 10);
 
+// Optional opt-in flags. Defaults preserve pre-flag behavior (see .env.example).
+export const MAX_STEPS_HARD_CEILING = parseInt(process.env.MAX_STEPS_HARD_CEILING ?? '100', 10);
+export const INTERJECTION_TIMEOUT_CANCEL = process.env.INTERJECTION_TIMEOUT_CANCEL === 'true';
+export const STRICT_NONIDEMPOTENT_BAN = process.env.STRICT_NONIDEMPOTENT_BAN === 'true';
+
 // User-interjection limits (always-on user chat feature).
 export const USER_INTERJECTION_ENABLED = process.env.ENABLE_USER_INTERJECTION === 'true';
 export const MAX_INTERJECTIONS_PER_RUN = 20;

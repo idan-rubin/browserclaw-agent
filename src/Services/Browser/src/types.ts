@@ -11,7 +11,7 @@ export interface UserMessage {
   receivedAt: Date;
 }
 
-export type SessionStatus = 'pending' | 'running' | 'waiting_for_user' | 'completed' | 'failed';
+export type SessionStatus = 'pending' | 'running' | 'waiting_for_user' | 'completed' | 'failed' | 'canceled-timeout';
 
 export type LlmProvider = 'anthropic' | 'openai' | 'openai-oauth' | 'gemini';
 
@@ -21,20 +21,7 @@ export interface LlmConfig {
   api_key: string;
 }
 
-export interface CreateSessionRequest {
-  prompt: string;
-  url?: string;
-  headless?: boolean;
-  skip_moderation?: boolean;
-  /**
-   * When true, skip post-run work that exists on this service but not on
-   * bare OSS agents (skill generation, judge, domain-skill aggregation).
-   * Used by apples-to-apples comparison runs so token totals reflect only
-   * the agent loop itself.
-   */
-  skip_postprocessing?: boolean;
-  llm_config?: LlmConfig;
-}
+export type { CreateSessionRequest } from './api-types.js';
 
 export type AgentActionType =
   | 'click'
@@ -135,6 +122,7 @@ export interface SkillMetadata {
 
 export interface AgentLoopResult {
   success: boolean;
+  status?: 'canceled-timeout';
   steps: AgentStep[];
   answer?: string;
   error?: string;

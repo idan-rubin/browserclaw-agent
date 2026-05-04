@@ -9,6 +9,7 @@ const CONTENT_TYPE = 'application/json';
 export const TRAJECTORY_STATUS = {
   completed: 'completed',
   failed: 'failed',
+  canceledTimeout: 'canceled-timeout',
 } as const;
 export type TrajectoryStatus = (typeof TRAJECTORY_STATUS)[keyof typeof TRAJECTORY_STATUS];
 

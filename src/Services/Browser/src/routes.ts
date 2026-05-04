@@ -13,7 +13,21 @@ import { loadTrajectory } from './trajectory-store.js';
 import { INTERJECTION_MAX_CHARS } from './config.js';
 import { BYOK_PROVIDERS, extractProviderMessage } from './llm.js';
 import { HttpError } from './types.js';
-import type { CreateSessionRequest, LlmConfig } from './types.js';
+import type { LlmConfig } from './types.js';
+import type { CreateSessionRequest, CreateSessionResponse } from './api-types.js';
+import { stampSSEPayload } from './sse-stamp.js';
+import {
+  IDEMPOTENCY_TTL_MS,
+  buildRequestFingerprint,
+  completeIdempotency,
+  expirePendingIdempotency,
+  failIdempotency,
+  getIdempotencyCacheKey,
+  lookupIdempotency,
+  normalizeIdempotencyKey,
+  reserveIdempotency,
+  type IdempotencyCacheEntry,
+} from './idempotency.js';
 
 const MAX_BODY_BYTES = 100 * 1024; // 100KB
 
@@ -50,10 +64,28 @@ function validateUrl(url: string): string {
   return parsed.href;
 }
 
-function json(res: ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+function json(res: ServerResponse, status: number, data: unknown, headers?: Record<string, string>): void {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
   res.end(JSON.stringify(data));
 }
+
+interface IdempotentReplay {
+  status: number;
+  body: CreateSessionResponse;
+}
+
+const idempotencyCache = new Map<string, IdempotencyCacheEntry<IdempotentReplay>>();
+
+const idempotencyCleanup = setInterval(() => {
+  const now = Date.now();
+  expirePendingIdempotency(idempotencyCache, now);
+  for (const [key, entry] of idempotencyCache) {
+    if (entry.kind === 'completed' && now - entry.createdAt > IDEMPOTENCY_TTL_MS) {
+      idempotencyCache.delete(key);
+    }
+  }
+}, IDEMPOTENCY_TTL_MS);
+idempotencyCleanup.unref();
 
 function sendError(res: ServerResponse, status: number, message: string): void {
   json(res, status, { error_code: 'BROWSER_ERROR', message });
@@ -97,6 +129,55 @@ const routes: Route[] = [
     handler: async ({ req, res, clientIp }) => {
       const body = await parseBody<CreateSessionRequest>(req);
 
+      const idempotencyKey = normalizeIdempotencyKey(req.headers['idempotency-key']);
+      const idempotencyContext =
+        idempotencyKey !== undefined
+          ? {
+              cacheKey: getIdempotencyCacheKey(clientIp, idempotencyKey),
+              fingerprint: buildRequestFingerprint(body),
+            }
+          : undefined;
+
+      if (idempotencyContext !== undefined) {
+        const lookup = lookupIdempotency(
+          idempotencyCache,
+          idempotencyContext.cacheKey,
+          idempotencyContext.fingerprint,
+          Date.now(),
+        );
+        if (lookup.kind === 'fingerprint_mismatch') {
+          json(res, 409, {
+            error_code: 'IDEMPOTENCY_KEY_REUSED',
+            message:
+              'Idempotency-Key was previously used with a different request body. Use a fresh key or send the original body.',
+          });
+          return;
+        }
+        if (lookup.kind === 'completed_match') {
+          json(res, lookup.response.status, lookup.response.body, { 'Idempotency-Replayed': 'true' });
+          return;
+        }
+        if (lookup.kind === 'pending_match') {
+          try {
+            const replay = await lookup.promise;
+            json(res, replay.status, replay.body, { 'Idempotency-Replayed': 'true' });
+          } catch (err) {
+            const replayHeaders = { 'Idempotency-Replayed': 'true' };
+            if (err instanceof HttpError) {
+              json(res, err.statusCode, { error_code: 'BROWSER_ERROR', message: err.message }, replayHeaders);
+              return;
+            }
+            const providerMessage = extractProviderMessage(err);
+            if (providerMessage !== null) {
+              json(res, 422, { error_code: 'BROWSER_ERROR', message: providerMessage }, replayHeaders);
+              return;
+            }
+            json(res, 500, { error_code: 'BROWSER_ERROR', message: 'Internal server error' }, replayHeaders);
+          }
+          return;
+        }
+      }
+
       if (typeof body.prompt !== 'string' || body.prompt.trim().length === 0) {
         sendError(res, 400, 'prompt is required and must be a non-empty string');
         return;
@@ -135,21 +216,54 @@ const routes: Route[] = [
       }
       const llmConfig: LlmConfig = { provider, model: model.trim(), api_key: api_key.trim() };
 
-      const { session } = await createSession(
-        body.prompt,
-        url,
-        headless,
-        clientIp,
-        skipModeration,
-        llmConfig,
-        skipPostprocessing,
-      );
+      const reservation =
+        idempotencyContext !== undefined
+          ? reserveIdempotency(
+              idempotencyCache,
+              idempotencyContext.cacheKey,
+              idempotencyContext.fingerprint,
+              Date.now(),
+            )
+          : undefined;
 
-      json(res, 201, {
-        session_id: session.id,
-        status: session.status,
-        created_at: session.created_at,
-      });
+      let response: CreateSessionResponse;
+      try {
+        const { session } = await createSession(
+          body.prompt,
+          url,
+          headless,
+          clientIp,
+          skipModeration,
+          llmConfig,
+          skipPostprocessing,
+        );
+        response = {
+          session_id: session.id,
+          status: session.status,
+          created_at: session.created_at,
+        };
+      } catch (err) {
+        if (idempotencyContext !== undefined && reservation !== undefined) {
+          failIdempotency(
+            idempotencyCache,
+            idempotencyContext.cacheKey,
+            reservation,
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
+        throw err;
+      }
+
+      if (idempotencyContext !== undefined && reservation !== undefined) {
+        completeIdempotency(
+          idempotencyCache,
+          idempotencyContext.cacheKey,
+          reservation,
+          { status: 201, body: response },
+          Date.now(),
+        );
+      }
+      json(res, 201, response);
     },
   },
 
@@ -168,7 +282,9 @@ const routes: Route[] = [
         'X-Accel-Buffering': 'no',
       });
 
-      res.write(`event: connected\ndata: ${JSON.stringify({ session_id: sessionId })}\n\n`);
+      res.write(
+        `event: connected\ndata: ${JSON.stringify(stampSSEPayload('connected', { session_id: sessionId }))}\n\n`,
+      );
       addSSEClient(sessionId, res);
 
       const heartbeat = setInterval(() => {
@@ -197,6 +313,7 @@ const routes: Route[] = [
           result !== null
             ? {
                 success: result.success,
+                status: result.status,
                 steps_completed: result.steps.length,
                 duration_ms: result.duration_ms,
                 error: result.error,

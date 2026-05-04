@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { API_VERSION } from '@/lib/api-types';
 
 export type TerminalStatus = 'completed' | 'failed';
 
@@ -33,14 +34,6 @@ interface ComparePanelProps {
 
 const PILL_LIFETIME_MS = 4000;
 const HANG_DETECT_MS = 60_000;
-
-function parse(e: MessageEvent): Record<string, unknown> | undefined {
-  try {
-    return JSON.parse(String(e.data)) as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-}
 
 const SKILL_ACTION_PILL: Record<string, string | undefined> = {
   click_cloudflare: 'cloudflare solved',
@@ -97,6 +90,23 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, onTerminal }:
       onTerminalRef.current(finalStatus, detail);
     };
 
+    const parse = (e: MessageEvent): Record<string, unknown> | undefined => {
+      try {
+        const data = JSON.parse(String(e.data)) as Record<string, unknown>;
+        // bu-runs (Python BrowserUseAgent) doesn't stamp apiVersion; tolerate missing,
+        // reject only when present-and-different. page.tsx stays strict (Node-only).
+        if (data.apiVersion !== undefined && data.apiVersion !== API_VERSION) {
+          const got =
+            typeof data.apiVersion === 'number' || typeof data.apiVersion === 'string' ? data.apiVersion : 'unknown';
+          terminate('failed', `Incompatible SSE stream: apiVersion ${String(got)} (expected ${String(API_VERSION)})`);
+          return undefined;
+        }
+        return data;
+      } catch {
+        return undefined;
+      }
+    };
+
     const touch = () => {
       if (terminated) return;
       lastEventAt = Date.now();
@@ -146,6 +156,32 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, onTerminal }:
     es.addEventListener('skill_improved', () => {
       touch();
       addPill('skill improved');
+    });
+
+    es.addEventListener('context_compressed', (e) => {
+      touch();
+      const data = parse(e);
+      if (!data) return;
+      addPill(`compressed @ ${String(data.step)}`);
+    });
+
+    es.addEventListener('domain_blocked', (e) => {
+      touch();
+      const data = parse(e);
+      if (!data) return;
+      addPill(`blocked: ${String(data.domain)}`);
+    });
+
+    es.addEventListener('skill_skipped', () => {
+      touch();
+      addPill('skill skipped');
+    });
+
+    es.addEventListener('user_interjection_timeout', (e) => {
+      touch();
+      const data = parse(e);
+      const q = data !== undefined && typeof data.question === 'string' ? data.question : '';
+      terminate('failed', `interjection timeout${q !== '' ? `: ${q}` : ''}`);
     });
 
     es.addEventListener('completed', (e) => {

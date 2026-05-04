@@ -10,17 +10,10 @@ import { isLocalBrowserMode } from '@/lib/env';
 import { RunSummary } from '@/components/run/run-summary';
 import { RunConsole } from '@/components/run/run-console';
 import type { ConsoleEntry, SkillOutput, DomainSkillEntry, RunStatus } from '@/components/run/types';
+import { API_VERSION } from '@/lib/api-types';
 
 const VNC_BASE = process.env.NEXT_PUBLIC_VNC_URL ?? '/vnc';
 const vncUrl = `${VNC_BASE}/vnc.html?autoconnect=true&resize=scale&view_only=true${VNC_BASE === '/vnc' ? '&path=vnc/websockify' : ''}`;
-
-function parseEventData(e: MessageEvent): Record<string, unknown> | undefined {
-  try {
-    return JSON.parse(String(e.data)) as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-}
 
 export default function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -73,6 +66,27 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     const MAX_RECONNECTS = 10;
     let reconnects = 0;
 
+    function failVersionMismatch(got: unknown) {
+      if (terminated) return;
+      terminated = true;
+      setStatus('failed');
+      setError(`Incompatible SSE stream: apiVersion ${String(got)} (expected ${String(API_VERSION)})`);
+      es?.close();
+    }
+
+    function parseEventData(e: MessageEvent): Record<string, unknown> | undefined {
+      try {
+        const data = JSON.parse(String(e.data)) as Record<string, unknown>;
+        if (data.apiVersion !== API_VERSION) {
+          failVersionMismatch(data.apiVersion);
+          return undefined;
+        }
+        return data;
+      } catch {
+        return undefined;
+      }
+    }
+
     function connect() {
       es = new EventSource(`/api/v1/runs/${id}/stream`);
 
@@ -112,9 +126,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       });
 
       es.addEventListener('completed', (e: MessageEvent) => {
-        terminated = true;
         const data = parseEventData(e);
         if (!data) return;
+        terminated = true;
         if (typeof data.answer === 'string' && data.answer !== '') setAnswer(data.answer);
         setSkillStats({
           llm_calls: Number(data.llm_calls),
@@ -126,9 +140,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       });
 
       es.addEventListener('failed', (e: MessageEvent) => {
-        terminated = true;
         const data = parseEventData(e);
         if (!data) return;
+        terminated = true;
         setStatus('failed');
         setError(String(data.error));
         es?.close();
@@ -196,6 +210,40 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           ...prev,
           { id: prev.length, type: 'user_response', message: String(data.text), elapsed: sec },
         ]);
+      });
+
+      es.addEventListener('context_compressed', (e: MessageEvent) => {
+        const data = parseEventData(e);
+        if (!data) return;
+        addSkillEvent(`Context compressed at step ${String(data.step)} (${String(data.droppedSteps)} dropped)`);
+      });
+
+      es.addEventListener('context_compress_failed', (e: MessageEvent) => {
+        const data = parseEventData(e);
+        if (!data) return;
+        addSkillEvent(`Context compression failed at step ${String(data.step)} — continuing with full history`);
+      });
+
+      es.addEventListener('domain_blocked', (e: MessageEvent) => {
+        const data = parseEventData(e);
+        if (!data) return;
+        addSkillEvent(`Domain blocked: ${String(data.domain)} (${String(data.reason)})`);
+      });
+
+      es.addEventListener('skill_skipped', (e: MessageEvent) => {
+        const data = parseEventData(e);
+        if (!data) return;
+        addSkillEvent(`Skill skipped: ${String(data.reason)}`);
+      });
+
+      es.addEventListener('user_interjection_timeout', (e: MessageEvent) => {
+        const data = parseEventData(e);
+        if (!data) return;
+        terminated = true;
+        const question = typeof data.question === 'string' ? data.question : 'question';
+        setStatus('failed');
+        setError(`No response to "${question}" — run cancelled.`);
+        es?.close();
       });
 
       es.addEventListener('connected', () => {

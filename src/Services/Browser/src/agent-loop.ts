@@ -29,7 +29,13 @@ import {
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
 import type { AgentConfig } from './config.js';
-import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS } from './config.js';
+import {
+  defaultAgentConfig,
+  INTERJECTION_INJECTION_MAX_CHARS,
+  INTERJECTION_TIMEOUT_CANCEL,
+  MAX_STEPS_HARD_CEILING,
+  STRICT_NONIDEMPOTENT_BAN,
+} from './config.js';
 import { logger } from './logger.js';
 
 function formatLessonForPrompt(lesson: TaskLesson): string {
@@ -957,6 +963,38 @@ function isRefFailure(action: AgentAction, err: unknown): boolean {
   return REF_FAILURE_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
+const TRANSIENT_ERROR_KEYWORDS = [
+  'timeout',
+  'timed out',
+  'net::',
+  'network error',
+  'network timeout',
+  'network unreachable',
+  'navigation failed',
+  'econnreset',
+  'econnrefused',
+  'etimedout',
+  'socket hang up',
+];
+
+function isTransientError(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : '';
+  const lower = raw.toLowerCase();
+  return TRANSIENT_ERROR_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+function isNonIdempotentAction(action: AgentAction): boolean {
+  return (
+    action.action === 'click' ||
+    action.action === 'type' ||
+    action.action === 'select' ||
+    action.action === 'keyboard' ||
+    action.action === 'navigate' ||
+    action.action === 'press_and_hold' ||
+    action.action === 'click_cloudflare'
+  );
+}
+
 function describeActionError(action: AgentAction, err: unknown): string {
   const raw = err instanceof Error ? err.message : 'Action execution failed';
   const lower = raw.toLowerCase();
@@ -1025,11 +1063,13 @@ function validateAction(
   }
 }
 
+type CompressContextResult = { ok: true; summary: string } | { ok: false; error: string };
+
 async function compressContext(
   prompt: string,
   history: AgentStep[],
   currentProgress: AgentProgress | null,
-): Promise<string> {
+): Promise<CompressContextResult> {
   try {
     const stepSummaries = history
       .map(
@@ -1053,10 +1093,11 @@ Be concise but preserve all important data points. Respond with JSON: {"summary"
       message: `Task: ${prompt}${progressStr}\n\nFull history (${String(history.length)} steps):\n${stepSummaries}`,
       maxTokens: 1024,
     });
-    return result.summary;
-  } catch {
-    logger.warn('Context compression failed — falling back to simple truncation');
-    return '';
+    return { ok: true, summary: result.summary };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn({ err: message }, 'Context compression failed — falling back to simple truncation');
+    return { ok: false, error: message };
   }
 }
 
@@ -1180,6 +1221,10 @@ export async function runAgentLoop(
 ): Promise<AgentLoopResult> {
   const cfg = defaultAgentConfig(options?.config);
   maxSteps ??= cfg.maxSteps;
+  if (MAX_STEPS_HARD_CEILING > 0 && maxSteps > MAX_STEPS_HARD_CEILING) {
+    logger.warn({ configured: maxSteps, ceiling: MAX_STEPS_HARD_CEILING }, 'maxSteps exceeded hard ceiling — clamping');
+    maxSteps = MAX_STEPS_HARD_CEILING;
+  }
   // Accept either a bare CrawlPage or a PageHolder. When a PageHolder is
   // provided the caller's reference is updated on tab switches.
   const holder: PageHolder =
@@ -1231,6 +1276,28 @@ export async function runAgentLoop(
   };
 
   let domainSkill: CatalogSkill | null = initialDomainSkill ?? null;
+
+  if (domainSkill !== null && process.env.SKILL_VALIDATION_ENABLED === 'true') {
+    try {
+      const verdict = await llmJson<{ ok: 'YES' | 'NO'; reason: string }>({
+        system:
+          'You validate whether a saved playbook plausibly solves the user task. Reply with JSON {"ok": "YES"|"NO", "reason": "<one short line>"}. Be permissive — only say NO when the playbook is clearly for a different goal.',
+        message: `Task: ${prompt}\n\nDomain: ${domainSkill.domain}\nTags: ${domainSkill.tags.join(', ')}\n\nPlaybook:\n${JSON.stringify(domainSkill.skill, null, 2)}`,
+        maxTokens: 80,
+      });
+      if (verdict.ok === 'NO') {
+        logger.info({ domain: domainSkill.domain, reason: verdict.reason }, 'Skill validation skipped playbook');
+        emit('skill_skipped', {
+          domain: domainSkill.domain,
+          reason: verdict.reason,
+        });
+        domainSkill = null;
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Skill validation gate errored — keeping skill');
+    }
+  }
+
   const antiBotHitsByDomain = new Map<string, number>();
   const walledDomains = new Set<string>();
 
@@ -1397,10 +1464,23 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     emit('thinking', { step, message: `Analyzing page: ${title}` });
 
     if (step > 0 && step % CONTEXT_COMPRESS_INTERVAL === 0) {
-      contextSummary = await compressContext(refinedPrompt, history, lastProgress);
-      if (contextSummary !== '') {
-        logger.info({ step }, 'Context compressed');
-        emit('context_compressed', { step, summary_length: contextSummary.length });
+      const compressResult = await compressContext(refinedPrompt, history, lastProgress);
+      if (compressResult.ok) {
+        const droppedSteps = Math.max(0, history.length - HISTORY_RECENT_WINDOW);
+        contextSummary = compressResult.summary;
+        logger.info(
+          { type: 'prompt_log', event: 'context_compressed', step, droppedSteps, summary: contextSummary },
+          'Context compressed',
+        );
+        emit('context_compressed', {
+          step,
+          droppedSteps,
+          summary: contextSummary,
+          summary_length: contextSummary.length,
+        });
+      } else {
+        contextSummary = '';
+        emit('context_compress_failed', { step, error: compressResult.error });
       }
     }
 
@@ -1731,7 +1811,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         emit('step_error', {
           step,
           error: 'LLM response was not valid JSON',
-          type: 'parse_error',
+          error_kind: 'parse_error',
           ...(process.env.DEBUG !== undefined && { rawText: err.responseSnippet }),
         });
 
@@ -1777,7 +1857,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           },
           'LLM fail-fast error',
         );
-        emit('step_error', { step, error: userMessage, type: errorType });
+        emit('step_error', { step, error: userMessage, error_kind: errorType });
         return {
           success: false,
           steps: history,
@@ -1795,7 +1875,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         },
         'LLM API error',
       );
-      emit('step_error', { step, error: 'AI service temporarily unavailable', type: 'api_error' });
+      emit('step_error', { step, error: 'AI service temporarily unavailable', error_kind: 'api_error' });
       if (consecutiveApiFailures >= MAX_API_FAILURES) {
         return {
           success: false,
@@ -1880,7 +1960,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'ask_user') {
-        emit('ask_user', { step, question: action.text ?? action.reasoning });
+        const question = action.text ?? action.reasoning;
+        emit('ask_user', { step, question });
 
         if (waitForUser === undefined) {
           agentStep.action.error_feedback =
@@ -1895,6 +1976,19 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           emit('user_response', { step, text: userResponse });
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to get user response';
+          const lowerMessage = message.toLowerCase();
+          const isTimeout = lowerMessage.includes('timed out') || lowerMessage.includes('timeout');
+          if (isTimeout && INTERJECTION_TIMEOUT_CANCEL) {
+            emit('user_interjection_timeout', { step, question });
+            return {
+              success: false,
+              status: 'canceled-timeout',
+              steps: history,
+              error: `User did not respond to question: "${question}"`,
+              duration_ms: Date.now() - startTime,
+              final_url: history.length > 0 ? history[history.length - 1].url : undefined,
+            };
+          }
           emit('step_error', { step, error: message });
           return {
             success: false,
@@ -1915,7 +2009,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             { step, pahDomain, pahFailureCount: priorFailures },
             'press_and_hold short-circuited — bail limit reached',
           );
-          if (pahDomain !== '') walledDomains.add(pahDomain);
+          if (pahDomain !== '' && !walledDomains.has(pahDomain)) {
+            walledDomains.add(pahDomain);
+            emit('domain_blocked', {
+              domain: pahDomain,
+              reason: 'press_and_hold_bail_limit',
+              attempt: priorFailures,
+            });
+          }
           agentStep.action.error_feedback = PAH_BAIL_FEEDBACK;
           step++;
           break;
@@ -1924,7 +2025,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         if (!solved) {
           const newFailures = priorFailures + 1;
           pahFailuresByDomain.set(pahDomain, newFailures);
-          if (pahDomain !== '' && newFailures >= PAH_MAX_FAILURES) walledDomains.add(pahDomain);
+          if (pahDomain !== '' && newFailures >= PAH_MAX_FAILURES && !walledDomains.has(pahDomain)) {
+            walledDomains.add(pahDomain);
+            emit('domain_blocked', {
+              domain: pahDomain,
+              reason: 'press_and_hold_failed',
+              attempt: newFailures,
+            });
+          }
           const intermittent = await isIntermittentError(holder.page);
           logger.info(
             { step, pahDomain, intermittent, pahFailureCount: newFailures },
@@ -2152,6 +2260,17 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         if (action.ref !== undefined && action.ref !== '' && isRefFailure(action, err)) {
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
           entry.failures += 1;
+          entry.action = action.action;
+          bannedRefs.set(action.ref, entry);
+        } else if (
+          STRICT_NONIDEMPOTENT_BAN &&
+          action.ref !== undefined &&
+          action.ref !== '' &&
+          isNonIdempotentAction(action) &&
+          !isTransientError(err)
+        ) {
+          const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
+          entry.failures = Math.max(entry.failures + 1, BAN_THRESHOLD);
           entry.action = action.action;
           bannedRefs.set(action.ref, entry);
         }
