@@ -156,24 +156,17 @@ const routes: Route[] = [
             const replay = await lookup.promise;
             json(res, 200, replay, { 'Idempotency-Replayed': 'true' });
           } catch (err) {
+            const replayHeaders = { 'Idempotency-Replayed': 'true' };
             if (err instanceof HttpError) {
-              json(
-                res,
-                err.statusCode,
-                { error_code: 'BROWSER_ERROR', message: err.message },
-                { 'Idempotency-Replayed': 'true' },
-              );
-            } else {
-              json(
-                res,
-                503,
-                {
-                  error_code: 'BROWSER_ERROR',
-                  message: 'Original idempotent request failed; please retry with a new Idempotency-Key.',
-                },
-                { 'Idempotency-Replayed': 'true' },
-              );
+              json(res, err.statusCode, { error_code: 'BROWSER_ERROR', message: err.message }, replayHeaders);
+              return;
             }
+            const providerMessage = extractProviderMessage(err);
+            if (providerMessage !== null) {
+              json(res, 422, { error_code: 'BROWSER_ERROR', message: providerMessage }, replayHeaders);
+              return;
+            }
+            json(res, 500, { error_code: 'BROWSER_ERROR', message: 'Internal server error' }, replayHeaders);
           }
           return;
         }
