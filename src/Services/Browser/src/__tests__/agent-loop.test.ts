@@ -190,6 +190,29 @@ describe('runAgentLoop', () => {
     expect(mock.click.mock.calls.filter((c) => c[0] === '77').length).toBeLessThanOrEqual(2);
   });
 
+  it('bans a non-idempotent ref on the first failure (no free retry)', async () => {
+    // Regression: prior code incremented failures by 1 with BAN_THRESHOLD=2,
+    // so a fresh non-idempotent failure still allowed exactly one retry —
+    // double-submit risk on click[type=submit] etc. Now the first such
+    // failure should already block reuse on the next iteration.
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Click submit' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Submit', ref: 'submit-1' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Try the same submit again', ref: 'submit-1' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Give up', answer: 'no' });
+
+    const { page, mock } = mockPage();
+    // Non-keyword, non-transient error so we hit the new "ban immediately"
+    // branch rather than the existing REF_FAILURE_KEYWORDS path.
+    mock.click.mockRejectedValue(new Error('Submit handler returned an unexpected status.'));
+    const emit = vi.fn();
+    const controller = new AbortController();
+
+    await runAgentLoop('Submit form', page, emit, controller.signal);
+
+    expect(mock.click.mock.calls.filter((c) => c[0] === 'submit-1').length).toBe(1);
+  });
+
   it('does not ban a ref on transient network/timeout errors', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Click' })

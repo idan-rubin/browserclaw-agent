@@ -2291,20 +2291,12 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           isNonIdempotentAction(action) &&
           !isTransientError(err)
         ) {
-          // Stricter rule: any non-idempotent action that fails gets its ref
-          // banned immediately, even when the error message doesn't match
-          // REF_FAILURE_KEYWORDS. Re-clicking a submit button or re-typing
-          // into a posted form risks double-submit; the system prompt already
-          // says "never repeat a failed action" so the LLM should comply,
-          // but enforcing it here closes the gap. Idempotent actions
-          // (scroll/extract/wait/snapshot) stay free to retry.
-          //
-          // Exception: transient network/timeout failures don't ban — the
-          // element is fine, the network blipped. A retry should succeed and
-          // banning would just force the agent to give up on a page that is
-          // about to recover.
+          // Non-idempotent failure (e.g. submit click): ban immediately, do NOT
+          // give a free retry. Set count to BAN_THRESHOLD so the next-iteration
+          // reuse check at line ~1744 already trips. Transient errors fall
+          // through (network blip — element is fine, retry can succeed).
           const entry = bannedRefs.get(action.ref) ?? { action: action.action, failures: 0 };
-          entry.failures += 1;
+          entry.failures = Math.max(entry.failures + 1, BAN_THRESHOLD);
           entry.action = action.action;
           bannedRefs.set(action.ref, entry);
         }

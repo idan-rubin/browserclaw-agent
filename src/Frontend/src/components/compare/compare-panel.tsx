@@ -148,6 +148,32 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, onTerminal }:
       addPill('skill improved');
     });
 
+    es.addEventListener('context_compressed', (e) => {
+      touch();
+      const data = parse(e);
+      if (!data) return;
+      addPill(`compressed @ ${String(data.step)}`);
+    });
+
+    es.addEventListener('domain_blocked', (e) => {
+      touch();
+      const data = parse(e);
+      if (!data) return;
+      addPill(`blocked: ${String(data.domain)}`);
+    });
+
+    es.addEventListener('skill_skipped', () => {
+      touch();
+      addPill('skill skipped');
+    });
+
+    es.addEventListener('user_interjection_timeout', (e) => {
+      touch();
+      const data = parse(e);
+      const q = data !== undefined && typeof data.question === 'string' ? data.question : '';
+      terminate('failed', `interjection timeout${q !== '' ? `: ${q}` : ''}`);
+    });
+
     es.addEventListener('completed', (e) => {
       touch();
       const data = parse(e);

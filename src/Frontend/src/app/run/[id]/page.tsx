@@ -198,6 +198,38 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         ]);
       });
 
+      es.addEventListener('context_compressed', (e: MessageEvent) => {
+        const data = parseEventData(e);
+        if (!data) return;
+        addSkillEvent(`Context compressed at step ${String(data.step)} (${String(data.droppedSteps)} dropped)`);
+      });
+
+      es.addEventListener('context_compress_failed', (e: MessageEvent) => {
+        const data = parseEventData(e);
+        if (!data) return;
+        addSkillEvent(`Context compression failed at step ${String(data.step)} — continuing with full history`);
+      });
+
+      es.addEventListener('domain_blocked', (e: MessageEvent) => {
+        const data = parseEventData(e);
+        if (!data) return;
+        addSkillEvent(`Domain blocked: ${String(data.domain)} (${String(data.reason)})`);
+      });
+
+      es.addEventListener('skill_skipped', (e: MessageEvent) => {
+        const data = parseEventData(e);
+        if (!data) return;
+        addSkillEvent(`Skill skipped: ${String(data.reason)}`);
+      });
+
+      es.addEventListener('user_interjection_timeout', (e: MessageEvent) => {
+        terminated = true;
+        const data = parseEventData(e);
+        setStatus('failed');
+        setError(`No response to "${String(data?.question ?? 'question')}" — run cancelled.`);
+        es?.close();
+      });
+
       es.addEventListener('connected', () => {
         reconnects = 0;
       });
