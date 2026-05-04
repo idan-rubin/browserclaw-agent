@@ -14,9 +14,15 @@ import type { ConsoleEntry, SkillOutput, DomainSkillEntry, RunStatus } from '@/c
 const VNC_BASE = process.env.NEXT_PUBLIC_VNC_URL ?? '/vnc';
 const vncUrl = `${VNC_BASE}/vnc.html?autoconnect=true&resize=scale&view_only=true${VNC_BASE === '/vnc' ? '&path=vnc/websockify' : ''}`;
 
+import { API_VERSION } from '@/lib/api-types';
+
 function parseEventData(e: MessageEvent): Record<string, unknown> | undefined {
   try {
-    return JSON.parse(String(e.data)) as Record<string, unknown>;
+    const data = JSON.parse(String(e.data)) as Record<string, unknown>;
+    if (data.apiVersion !== undefined && data.apiVersion !== API_VERSION) {
+      return undefined;
+    }
+    return data;
   } catch {
     return undefined;
   }

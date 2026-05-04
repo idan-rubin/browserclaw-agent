@@ -19,6 +19,7 @@ import {
   IDEMPOTENCY_TTL_MS,
   buildRequestFingerprint,
   completeIdempotency,
+  expirePendingIdempotency,
   failIdempotency,
   getIdempotencyCacheKey,
   lookupIdempotency,
@@ -71,6 +72,7 @@ const idempotencyCache = new Map<string, IdempotencyCacheEntry<CreateSessionResp
 
 const idempotencyCleanup = setInterval(() => {
   const now = Date.now();
+  expirePendingIdempotency(idempotencyCache, now);
   for (const [key, entry] of idempotencyCache) {
     if (entry.kind === 'completed' && now - entry.createdAt > IDEMPOTENCY_TTL_MS) {
       idempotencyCache.delete(key);
@@ -198,9 +200,15 @@ const routes: Route[] = [
       }
       const llmConfig: LlmConfig = { provider, model: model.trim(), api_key: api_key.trim() };
 
-      if (idempotencyContext !== undefined) {
-        reserveIdempotency(idempotencyCache, idempotencyContext.cacheKey, idempotencyContext.fingerprint, Date.now());
-      }
+      const reservation =
+        idempotencyContext !== undefined
+          ? reserveIdempotency(
+              idempotencyCache,
+              idempotencyContext.cacheKey,
+              idempotencyContext.fingerprint,
+              Date.now(),
+            )
+          : undefined;
 
       let response: CreateSessionResponse;
       try {
@@ -219,24 +227,19 @@ const routes: Route[] = [
           created_at: session.created_at,
         };
       } catch (err) {
-        if (idempotencyContext !== undefined) {
+        if (idempotencyContext !== undefined && reservation !== undefined) {
           failIdempotency(
             idempotencyCache,
             idempotencyContext.cacheKey,
+            reservation,
             err instanceof Error ? err : new Error(String(err)),
           );
         }
         throw err;
       }
 
-      if (idempotencyContext !== undefined) {
-        completeIdempotency(
-          idempotencyCache,
-          idempotencyContext.cacheKey,
-          response,
-          idempotencyContext.fingerprint,
-          Date.now(),
-        );
+      if (idempotencyContext !== undefined && reservation !== undefined) {
+        completeIdempotency(idempotencyCache, idempotencyContext.cacheKey, reservation, response, Date.now());
       }
       json(res, 201, response);
     },

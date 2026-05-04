@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildRequestFingerprint,
   completeIdempotency,
+  expirePendingIdempotency,
   failIdempotency,
   getIdempotencyCacheKey,
   lookupIdempotency,
@@ -141,21 +142,22 @@ describe('lookupIdempotency', () => {
 
   it('returns pending_match while a request is in flight', async () => {
     const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
-    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    const reservation = reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
     const result = lookupIdempotency(cache, 'k', 'fp-1', now + 1000);
     expect(result.kind).toBe('pending_match');
     if (result.kind !== 'pending_match') throw new Error('unreachable');
     const final = { session_id: 'sess-shared' };
-    completeIdempotency(cache, 'k', final, 'fp-1', now + 2000);
+    completeIdempotency(cache, 'k', reservation, final, now + 2000);
     await expect(result.promise).resolves.toEqual(final);
   });
 
-  it('does not expire pending entries past TTL', () => {
+  it('rejects + evicts a pending entry that has gone past TTL via lookup (anti-wedge)', async () => {
     const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
-    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    const reservation = reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
     const result = lookupIdempotency(cache, 'k', 'fp-1', now + IDEMPOTENCY_TTL_MS + 1);
-    expect(result.kind).toBe('pending_match');
-    expect(cache.has('k')).toBe(true);
+    expect(result).toEqual({ kind: 'miss' });
+    expect(cache.has('k')).toBe(false);
+    await expect(reservation.promise).rejects.toThrow(/expired/);
   });
 });
 
@@ -165,8 +167,8 @@ describe('reserve / complete / fail lifecycle', () => {
   it('replays the cached response even when the live session is gone', () => {
     const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
     const original: TestResponse = { session_id: 'sess-original' };
-    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
-    completeIdempotency(cache, 'k', original, 'fp-1', now + 100);
+    const reservation = reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    completeIdempotency(cache, 'k', reservation, original, now + 100);
     expect(lookupIdempotency(cache, 'k', 'fp-1', now + 60_000)).toEqual({
       kind: 'completed_match',
       response: original,
@@ -175,10 +177,10 @@ describe('reserve / complete / fail lifecycle', () => {
 
   it('failIdempotency rejects waiters and evicts so retries can succeed', async () => {
     const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
-    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    const reservation = reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
     const second = lookupIdempotency(cache, 'k', 'fp-1', now + 1);
     if (second.kind !== 'pending_match') throw new Error('expected pending_match');
-    failIdempotency(cache, 'k', new Error('createSession failed'));
+    failIdempotency(cache, 'k', reservation, new Error('createSession failed'));
     await expect(second.promise).rejects.toThrow(/createSession failed/);
     expect(cache.has('k')).toBe(false);
     expect(lookupIdempotency(cache, 'k', 'fp-1', now + 2)).toEqual({ kind: 'miss' });
@@ -186,15 +188,46 @@ describe('reserve / complete / fail lifecycle', () => {
 
   it('completeIdempotency unblocks waiters and persists the response for replay', async () => {
     const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
-    reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    const reservation = reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
     const second = lookupIdempotency(cache, 'k', 'fp-1', now + 1);
     if (second.kind !== 'pending_match') throw new Error('expected pending_match');
     const response: TestResponse = { session_id: 'sess-1' };
-    completeIdempotency(cache, 'k', response, 'fp-1', now + 100);
+    completeIdempotency(cache, 'k', reservation, response, now + 100);
     await expect(second.promise).resolves.toEqual(response);
     expect(lookupIdempotency(cache, 'k', 'fp-1', now + 200)).toEqual({
       kind: 'completed_match',
       response,
+    });
+  });
+
+  it('expirePendingIdempotency rejects + evicts wedged pending entries', async () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    const reservation = reserveIdempotency<TestResponse>(cache, 'wedged', 'fp-1', now);
+    const waiter = lookupIdempotency(cache, 'wedged', 'fp-1', now + 1);
+    if (waiter.kind !== 'pending_match') throw new Error('expected pending_match');
+
+    expirePendingIdempotency(cache, now + IDEMPOTENCY_TTL_MS + 1);
+
+    await expect(reservation.promise).rejects.toThrow(/expired/);
+    await expect(waiter.promise).rejects.toThrow(/expired/);
+    expect(cache.has('wedged')).toBe(false);
+  });
+
+  it('completeIdempotency is a no-op if the reservation was already evicted (recovered wedge cannot poison fresh entries)', async () => {
+    const cache = new Map<string, IdempotencyCacheEntry<TestResponse>>();
+    const wedged = reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now);
+    expirePendingIdempotency(cache, now + IDEMPOTENCY_TTL_MS + 1);
+    await expect(wedged.promise).rejects.toThrow();
+    // A fresh reservation comes in for the same key.
+    const fresh = reserveIdempotency<TestResponse>(cache, 'k', 'fp-1', now + IDEMPOTENCY_TTL_MS + 100);
+    // The wedged handler eventually completes — must NOT overwrite the fresh entry.
+    completeIdempotency(cache, 'k', wedged, { session_id: 'sess-wedged' }, now + IDEMPOTENCY_TTL_MS + 200);
+    expect(cache.get('k')).toBe(fresh);
+    // The fresh request can still complete normally.
+    completeIdempotency(cache, 'k', fresh, { session_id: 'sess-fresh' }, now + IDEMPOTENCY_TTL_MS + 300);
+    expect(lookupIdempotency(cache, 'k', 'fp-1', now + IDEMPOTENCY_TTL_MS + 400)).toEqual({
+      kind: 'completed_match',
+      response: { session_id: 'sess-fresh' },
     });
   });
 });

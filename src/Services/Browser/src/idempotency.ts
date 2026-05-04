@@ -67,6 +67,18 @@ export type IdempotencyLookupResult<T> =
   | { kind: 'pending_match'; promise: Promise<T> }
   | { kind: 'completed_match'; response: T };
 
+// Reject + evict any pending entry older than IDEMPOTENCY_TTL_MS so a wedged
+// createSession can't poison the (clientIp, key) slot indefinitely. Waiters
+// awaiting the rejected promise unblock with a clean error.
+export function expirePendingIdempotency<T>(cache: Map<string, IdempotencyCacheEntry<T>>, now: number): void {
+  for (const [key, entry] of cache) {
+    if (entry.kind === 'pending' && now - entry.createdAt > IDEMPOTENCY_TTL_MS) {
+      cache.delete(key);
+      entry.reject(new Error('Idempotency reservation expired (original request did not complete in time)'));
+    }
+  }
+}
+
 export function lookupIdempotency<T>(
   cache: Map<string, IdempotencyCacheEntry<T>>,
   cacheKey: string,
@@ -75,8 +87,11 @@ export function lookupIdempotency<T>(
 ): IdempotencyLookupResult<T> {
   const entry = cache.get(cacheKey);
   if (entry === undefined) return { kind: 'miss' };
-  if (entry.kind === 'completed' && now - entry.createdAt > IDEMPOTENCY_TTL_MS) {
+  if (now - entry.createdAt > IDEMPOTENCY_TTL_MS) {
     cache.delete(cacheKey);
+    if (entry.kind === 'pending') {
+      entry.reject(new Error('Idempotency reservation expired (original request did not complete in time)'));
+    }
     return { kind: 'miss' };
   }
   if (entry.fingerprint !== fingerprint) {
@@ -93,7 +108,7 @@ export function reserveIdempotency<T>(
   cacheKey: string,
   fingerprint: string,
   now: number,
-): { resolve: (value: T) => void; reject: (error: Error) => void } {
+): PendingIdempotencyEntry<T> {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
   const promise = new Promise<T>((res, rej) => {
@@ -101,28 +116,45 @@ export function reserveIdempotency<T>(
     reject = rej;
   });
   promise.catch(() => undefined);
-  cache.set(cacheKey, { kind: 'pending', fingerprint, createdAt: now, promise, resolve, reject });
-  return { resolve, reject };
+  const entry: PendingIdempotencyEntry<T> = {
+    kind: 'pending',
+    fingerprint,
+    createdAt: now,
+    promise,
+    resolve,
+    reject,
+  };
+  cache.set(cacheKey, entry);
+  return entry;
 }
 
+// Reservation passed to complete/fail so a wedged-then-recovered handler can't
+// overwrite a fresh entry that another request created after cleanup evicted us.
 export function completeIdempotency<T>(
   cache: Map<string, IdempotencyCacheEntry<T>>,
   cacheKey: string,
+  reservation: PendingIdempotencyEntry<T>,
   response: T,
-  fingerprint: string,
   now: number,
 ): void {
-  const prior = cache.get(cacheKey);
-  cache.set(cacheKey, { kind: 'completed', fingerprint, createdAt: now, response });
-  if (prior?.kind === 'pending') {
-    prior.resolve(response);
-  }
+  if (cache.get(cacheKey) !== reservation) return;
+  cache.set(cacheKey, {
+    kind: 'completed',
+    fingerprint: reservation.fingerprint,
+    createdAt: now,
+    response,
+  });
+  reservation.resolve(response);
 }
 
-export function failIdempotency<T>(cache: Map<string, IdempotencyCacheEntry<T>>, cacheKey: string, error: Error): void {
-  const prior = cache.get(cacheKey);
-  cache.delete(cacheKey);
-  if (prior?.kind === 'pending') {
-    prior.reject(error);
+export function failIdempotency<T>(
+  cache: Map<string, IdempotencyCacheEntry<T>>,
+  cacheKey: string,
+  reservation: PendingIdempotencyEntry<T>,
+  error: Error,
+): void {
+  if (cache.get(cacheKey) === reservation) {
+    cache.delete(cacheKey);
   }
+  reservation.reject(error);
 }

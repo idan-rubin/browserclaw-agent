@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { API_VERSION } from '@/lib/api-types';
 
 export type TerminalStatus = 'completed' | 'failed';
 
@@ -36,7 +37,11 @@ const HANG_DETECT_MS = 60_000;
 
 function parse(e: MessageEvent): Record<string, unknown> | undefined {
   try {
-    return JSON.parse(String(e.data)) as Record<string, unknown>;
+    const data = JSON.parse(String(e.data)) as Record<string, unknown>;
+    if (data.apiVersion !== undefined && data.apiVersion !== API_VERSION) {
+      return undefined;
+    }
+    return data;
   } catch {
     return undefined;
   }
