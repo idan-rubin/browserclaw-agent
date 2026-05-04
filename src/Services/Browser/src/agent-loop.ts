@@ -29,7 +29,13 @@ import {
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
 import type { AgentConfig } from './config.js';
-import { defaultAgentConfig, INTERJECTION_INJECTION_MAX_CHARS, MAX_STEPS_HARD_CEILING } from './config.js';
+import {
+  defaultAgentConfig,
+  INTERJECTION_INJECTION_MAX_CHARS,
+  INTERJECTION_TIMEOUT_CANCEL,
+  MAX_STEPS_HARD_CEILING,
+  STRICT_NONIDEMPOTENT_BAN,
+} from './config.js';
 import { logger } from './logger.js';
 
 function formatLessonForPrompt(lesson: TaskLesson): string {
@@ -1213,7 +1219,7 @@ export async function runAgentLoop(
 ): Promise<AgentLoopResult> {
   const cfg = defaultAgentConfig(options?.config);
   maxSteps ??= cfg.maxSteps;
-  if (maxSteps > MAX_STEPS_HARD_CEILING) {
+  if (MAX_STEPS_HARD_CEILING > 0 && maxSteps > MAX_STEPS_HARD_CEILING) {
     logger.warn({ configured: maxSteps, ceiling: MAX_STEPS_HARD_CEILING }, 'maxSteps exceeded hard ceiling — clamping');
     maxSteps = MAX_STEPS_HARD_CEILING;
   }
@@ -1972,7 +1978,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           // ignored. Emit a distinct timeout event so the UI can render it
           // clearly, then cancel the run with status='canceled-timeout'.
           const isTimeout = message.toLowerCase().includes('timed out') || message.toLowerCase().includes('timeout');
-          if (isTimeout) {
+          if (isTimeout && INTERJECTION_TIMEOUT_CANCEL) {
             emit('user_interjection_timeout', { step, question });
             return {
               success: false,
@@ -2257,6 +2263,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           entry.action = action.action;
           bannedRefs.set(action.ref, entry);
         } else if (
+          STRICT_NONIDEMPOTENT_BAN &&
           action.ref !== undefined &&
           action.ref !== '' &&
           isNonIdempotentAction(action) &&

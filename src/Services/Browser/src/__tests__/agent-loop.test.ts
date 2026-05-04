@@ -55,7 +55,9 @@ vi.mock('../skills/tab-manager.js', () => ({
 
 vi.mock('../config.js', () => ({
   INTERJECTION_INJECTION_MAX_CHARS: 2000,
-  MAX_STEPS_HARD_CEILING: 100,
+  MAX_STEPS_HARD_CEILING: 0,
+  STRICT_NONIDEMPOTENT_BAN: false,
+  INTERJECTION_TIMEOUT_CANCEL: false,
   defaultAgentConfig: (overrides?: Record<string, unknown>) => ({
     waitAfterTypeMs: 100,
     waitAfterClickMs: 100,
@@ -190,11 +192,11 @@ describe('runAgentLoop', () => {
     expect(mock.click.mock.calls.filter((c) => c[0] === '77').length).toBeLessThanOrEqual(2);
   });
 
-  it('bans a non-idempotent ref on the first failure (no free retry)', async () => {
+  it('flow-BC: a non-idempotent ref failure does NOT immediately ban (preserves pre-flag retry behavior)', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Click submit' })
       .mockResolvedValueOnce({ action: 'click', reasoning: 'Submit', ref: 'submit-1' })
-      .mockResolvedValueOnce({ action: 'click', reasoning: 'Try the same submit again', ref: 'submit-1' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Try again', ref: 'submit-1' })
       .mockResolvedValueOnce({ action: 'done', reasoning: 'Give up', answer: 'no' });
 
     const { page, mock } = mockPage();
@@ -204,7 +206,7 @@ describe('runAgentLoop', () => {
 
     await runAgentLoop('Submit form', page, emit, controller.signal);
 
-    expect(mock.click.mock.calls.filter((c) => c[0] === 'submit-1').length).toBe(1);
+    expect(mock.click.mock.calls.filter((c) => c[0] === 'submit-1').length).toBe(2);
   });
 
   it('does not ban a ref on transient network/timeout errors', async () => {
