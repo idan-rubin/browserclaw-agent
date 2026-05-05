@@ -83,11 +83,13 @@ async function nextAvailableCdpPort(): Promise<number> {
   for (let port = BASE_CDP_PORT; port < BASE_CDP_PORT + CDP_PORT_SEARCH_LIMIT; port++) {
     if (await isPortFree(port)) {
       // Purge any stale session entries claiming this port — their Chrome died silently.
+      const stale: string[] = [];
       for (const [id, s] of sessions) {
-        if (s.cdpPort === port) {
-          logger.warn({ sessionId: id, port }, 'Evicting stale session — CDP port is actually free');
-          sessions.delete(id);
-        }
+        if (s.cdpPort === port) stale.push(id);
+      }
+      for (const id of stale) {
+        logger.warn({ sessionId: id, port }, 'Evicting stale session — CDP port is actually free');
+        await closeSession(id);
       }
       return port;
     }
