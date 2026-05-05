@@ -1,33 +1,23 @@
 #!/usr/bin/env npx tsx
 /**
- * Drives the proxy mechanics end-to-end without touching the LLM:
+ * Drives the proxy mechanics end-to-end without touching the LLM.
  * - shouldProxyUrl returns expected booleans
- * - A direct browser reports a Hetzner-class IP
- * - A proxy-routed browser reports a different (US residential) IP
- * - Closing the proxy tears down the local forwarder
+ * - Direct browser reports a Hetzner-class IP
+ * - Proxy-routed browser, launched WHILE the direct one is still running
+ *   (matching the swap path's overlap), reports a different US-residential IP
+ * - The concurrent launch must use isolated: true to avoid SingletonLock
+ *   collisions on the shared user-data dir.
  *
- * Run: npx tsx src/Services/Browser/scripts/verify-proxy-swap.ts
- * Requires IPROYAL_* + RESIDENTIAL_DOMAINS in env (or .env.local loaded).
+ * Run: npx tsx --env-file=.env.local scripts/verify-proxy-swap.ts
  */
 
 import { BrowserClaw } from 'browserclaw';
 import { shouldProxyUrl, startSessionProxy } from '../src/proxy.js';
 
-async function fetchIpFromBrowser(url: string, chromeArgs: string[]): Promise<string> {
-  const browser = await BrowserClaw.launch({
-    headless: true,
-    noSandbox: process.platform === 'linux',
-    stealth: true,
-    chromeArgs,
-  });
-  try {
-    const page = await browser.currentPage();
-    await page.goto(url);
-    const text = String(await page.evaluate('document.body.innerText'));
-    return text.trim();
-  } finally {
-    await browser.stop();
-  }
+async function fetchIp(url: string, browser: BrowserClaw): Promise<string> {
+  const page = await browser.currentPage();
+  await page.goto(url);
+  return String(await page.evaluate('document.body.innerText')).trim();
 }
 
 async function main(): Promise<void> {
@@ -45,35 +35,48 @@ async function main(): Promise<void> {
     const actual = shouldProxyUrl(url);
     const pass = actual === expected;
     if (!pass) ok = false;
-    console.log(`  ${pass ? 'PASS' : 'FAIL'} shouldProxyUrl(${JSON.stringify(url)}) = ${String(actual)} (expected ${String(expected)})`);
+    console.log(`  ${pass ? 'PASS' : 'FAIL'} shouldProxyUrl(${JSON.stringify(url)}) = ${String(actual)}`);
   }
   if (!ok) {
     console.error('\nshouldProxyUrl had failures');
     process.exit(1);
   }
 
-  console.log('\n=== Direct browser ===');
-  const directIp = await fetchIpFromBrowser('https://api.ipify.org', []);
+  const isLinux = process.platform === 'linux';
+
+  console.log('\n=== Direct browser (cdpPort 9222) ===');
+  const direct = await BrowserClaw.launch({ headless: true, noSandbox: isLinux, stealth: true, cdpPort: 9222 });
+  const directIp = await fetchIp('https://api.ipify.org', direct);
   console.log(`  egress IP: ${directIp}`);
 
-  console.log('\n=== Proxied browser ===');
+  console.log('\n=== Proxied browser (cdpPort 9223, isolated) launched WHILE direct is still running ===');
   const proxy = await startSessionProxy('verify12');
   console.log(`  proxy URL: ${proxy.url}`);
   let proxiedIp: string;
+  let proxied: BrowserClaw | undefined;
   try {
-    proxiedIp = await fetchIpFromBrowser('https://api.ipify.org', [`--proxy-server=${proxy.url}`]);
+    proxied = await BrowserClaw.launch({
+      headless: true,
+      noSandbox: isLinux,
+      stealth: true,
+      isolated: true,
+      cdpPort: 9223,
+      chromeArgs: [`--proxy-server=${proxy.url}`],
+    });
+    proxiedIp = await fetchIp('https://api.ipify.org', proxied);
     console.log(`  egress IP: ${proxiedIp}`);
   } finally {
+    if (proxied !== undefined) await proxied.stop();
     await proxy.close();
-    console.log('  proxy closed');
+    await direct.stop();
   }
 
   console.log('\n=== Result ===');
   if (directIp === proxiedIp) {
-    console.error(`FAIL: direct and proxied IPs are identical (${directIp}). Proxy is not actually rerouting traffic.`);
+    console.error(`FAIL: identical IPs (${directIp}). Proxy is not rerouting.`);
     process.exit(1);
   }
-  console.log(`PASS: direct=${directIp} → proxied=${proxiedIp} (different IPs, proxy is working)`);
+  console.log(`PASS: direct=${directIp} → proxied=${proxiedIp}`);
 }
 
 main().catch((err: unknown) => {
