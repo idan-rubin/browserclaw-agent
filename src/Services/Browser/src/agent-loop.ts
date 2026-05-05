@@ -2313,8 +2313,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       // Check for new tabs after click
-      if (tabManager !== null && browser !== undefined && action.action === 'click') {
-        const newPage = await tabManager.checkForNewTab(browser);
+      const tabClickBrowser = refreshBrowserHandle();
+      if (tabManager !== null && tabClickBrowser !== undefined && action.action === 'click') {
+        const newPage = await tabManager.checkForNewTab(tabClickBrowser);
         if (newPage !== null) {
           try {
             const newUrl = await newPage.url();

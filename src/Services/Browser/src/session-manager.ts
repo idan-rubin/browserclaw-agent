@@ -65,6 +65,7 @@ interface ManagedSession {
   lastInterjectionAt: Date | null;
   proxy: SessionProxy | null;
   skipModeration: boolean;
+  headless: boolean | undefined;
 }
 
 const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
@@ -97,16 +98,13 @@ async function swapToProxiedBrowser(
     throw err;
   }
 
-  const envHeadless = process.env.BROWSER_HEADLESS;
-  const headless = envHeadless === 'false' ? false : envHeadless === 'true' ? true : undefined;
-
   const launchOpts = {
-    headless,
+    headless: managed.headless,
     noSandbox: process.platform === 'linux',
     cdpPort: newCdpPort,
     stealth: true,
     ssrfPolicy: { dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true' },
-    chromeArgs: [...(headless === true ? [] : ['--start-maximized']), `--proxy-server=${proxy.url}`],
+    chromeArgs: [...(managed.headless === true ? [] : ['--start-maximized']), `--proxy-server=${proxy.url}`],
   };
 
   let newBrowser: BrowserClaw;
@@ -328,6 +326,7 @@ export async function createSession(
     lastInterjectionAt: null,
     proxy,
     skipModeration: skipModeration === true,
+    headless,
   };
 
   sessions.set(id, managed);
