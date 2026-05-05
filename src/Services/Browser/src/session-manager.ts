@@ -81,6 +81,18 @@ let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 const CDP_PORT_SEARCH_LIMIT = 100;
 
+async function launchBrowserWithCdpRetry(launchOpts: Parameters<typeof BrowserClaw.launch>[0]): Promise<BrowserClaw> {
+  try {
+    return await BrowserClaw.launch(launchOpts);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+    if (!message.includes('Failed to start Chrome CDP')) throw err;
+    logger.warn({ cdpPort: launchOpts?.cdpPort }, 'BrowserClaw.launch hit CDP-ready race — retrying after 2s');
+    await new Promise((r) => setTimeout(r, 2000));
+    return await BrowserClaw.launch(launchOpts);
+  }
+}
+
 async function swapToProxiedBrowser(
   managed: ManagedSession,
   holder: { page: CrawlPage; browser?: BrowserClaw },
@@ -109,7 +121,7 @@ async function swapToProxiedBrowser(
 
   let newBrowser: BrowserClaw;
   try {
-    newBrowser = await BrowserClaw.launch(launchOpts);
+    newBrowser = await launchBrowserWithCdpRetry(launchOpts);
   } catch (err) {
     await proxy.close();
     throw err;
@@ -273,24 +285,11 @@ export async function createSession(
   };
   let browser: BrowserClaw;
   try {
-    browser = await BrowserClaw.launch(launchOpts);
+    browser = await launchBrowserWithCdpRetry(launchOpts);
   } catch (err) {
-    const message = err instanceof Error ? err.message : '';
-    const isCdpReadyRace = message.includes('Failed to start Chrome CDP');
-    if (!isCdpReadyRace) {
-      logger.error({ cdpPort, err }, 'BrowserClaw.launch failed');
-      if (proxy !== null) await proxy.close();
-      throw err;
-    }
-    logger.warn({ cdpPort }, 'BrowserClaw.launch hit CDP-ready race — retrying after 2s');
-    await new Promise((r) => setTimeout(r, 2000));
-    try {
-      browser = await BrowserClaw.launch(launchOpts);
-    } catch (retryErr) {
-      logger.error({ cdpPort, retryErr }, 'BrowserClaw.launch failed after retry');
-      if (proxy !== null) await proxy.close();
-      throw retryErr;
-    }
+    logger.error({ cdpPort, err }, 'BrowserClaw.launch failed');
+    if (proxy !== null) await proxy.close();
+    throw err;
   }
 
   let page: CrawlPage;
