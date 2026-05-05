@@ -6,6 +6,7 @@ import { validateConfig } from './config.js';
 import { initSkillStore } from './skill-store.js';
 import { initLessonStore } from './lesson-store.js';
 import { initTrajectoryStore } from './trajectory-store.js';
+import { logProxyConfigStatus } from './proxy.js';
 import { logger } from './logger.js';
 
 const { port, rateLimitMax, rateLimitWindowMs, internalToken } = validateConfig();
@@ -100,6 +101,7 @@ startCleanupLoop();
 
 initLessonStore();
 initTrajectoryStore();
+logProxyConfigStatus();
 initSkillStore()
   .then(() => {
     server.listen(port, () => {

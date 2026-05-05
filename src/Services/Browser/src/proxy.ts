@@ -48,6 +48,20 @@ export interface SessionProxy {
   close: () => Promise<void>;
 }
 
+export function logProxyConfigStatus(): void {
+  const configured = readConfig() !== null;
+  const domains = RESIDENTIAL_DOMAINS;
+  if (configured && domains.length > 0) {
+    logger.info({ domains, country: COUNTRY }, 'Residential proxy configured');
+  } else if (configured && domains.length === 0) {
+    logger.warn('IPROYAL_* are set but RESIDENTIAL_DOMAINS is empty — proxy will never fire');
+  } else if (!configured && domains.length > 0) {
+    logger.warn({ domains }, 'RESIDENTIAL_DOMAINS is set but IPROYAL_* env vars are missing — proxy will never fire');
+  } else {
+    logger.info('Residential proxy disabled (IPROYAL_* unset)');
+  }
+}
+
 export async function startSessionProxy(sessionToken: string): Promise<SessionProxy> {
   const config = readConfig();
   if (config === null) {
