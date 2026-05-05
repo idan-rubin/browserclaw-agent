@@ -114,7 +114,7 @@ Respond with valid JSON:
       "tab_id": "target ID of the tab to switch to or close (for switch_tab / close_tab)",
       "hold_ms": "optional hold duration in ms (for press_and_hold) — set when the button/UI specifies a hold time or a prior attempt was too short",
       "query": "search query (for web_search) — e.g. 'best apartment listing sites NYC'",
-      "answer": "direct answer to the user's question (for done)"
+      "answer": "string — direct answer to the user's question (for done). Always a single string; use markdown sections and bullet points to structure findings. Never an array or object."
     }
   ]
 }
@@ -267,7 +267,7 @@ Respond with valid JSON:
   "memory": "Your accumulated findings",
   "reasoning": "Final assessment",
   "action": "done" or "fail",
-  "answer": "Your complete answer with all findings. Structure with sections and bullet points. Only include data you saw on actual pages — never fill gaps with training knowledge."
+  "answer": "A SINGLE STRING containing your complete answer with all findings. Use markdown sections and bullet points to structure the prose — but the value must be one string, never a JSON array or object. Only include data you saw on actual pages — never fill gaps with training knowledge."
 }
 
 If you gathered useful data, use "done" with a structured answer. If not, use "fail" with what you tried.`;
@@ -764,11 +764,17 @@ function parseActions(parsed: Record<string, unknown>): AgentAction[] {
     if (typeof item.action !== 'string') {
       throw new Error(`Action at index ${String(i)} missing "action" field`);
     }
+    const rawAnswer: unknown = item.answer;
+    if (rawAnswer !== undefined && rawAnswer !== null && typeof rawAnswer !== 'string') {
+      throw new Error(
+        `Action at index ${String(i)} has non-string "answer" field (got ${typeof rawAnswer}). The answer must be a single string with markdown-style structure (sections, bullets), not an array or object.`,
+      );
+    }
     return {
       action: item.action as AgentAction['action'],
       // Thinking fields only on the first action
       ...(i === 0 ? thinking : { reasoning: `Batch action ${String(i + 1)}: ${item.action}` }),
-      answer: item.answer,
+      answer: item.answer ?? undefined,
       ref: item.ref,
       text: item.text,
       url: item.url,
