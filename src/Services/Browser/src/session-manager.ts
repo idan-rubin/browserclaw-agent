@@ -30,6 +30,7 @@ import { saveLesson, extractDomainLessons, getLesson } from './lesson-store.js';
 import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
 import { stampSSEPayload } from './sse-stamp.js';
 import { logger } from './logger.js';
+import { shouldUseResidentialProxy, startSessionProxy, type SessionProxy } from './proxy.js';
 
 interface ManagedSession {
   id: string;
@@ -62,6 +63,8 @@ interface ManagedSession {
   interjectionsReceived: number;
   /** Timestamp of the last accepted interjection — enforces the min-interval rate limit. */
   lastInterjectionAt: Date | null;
+  proxy: SessionProxy | null;
+  skipModeration: boolean;
 }
 
 const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
@@ -81,11 +84,13 @@ async function nextAvailableCdpPort(): Promise<number> {
   for (let port = BASE_CDP_PORT; port < BASE_CDP_PORT + CDP_PORT_SEARCH_LIMIT; port++) {
     if (await isPortFree(port)) {
       // Purge any stale session entries claiming this port — their Chrome died silently.
+      const stale: string[] = [];
       for (const [id, s] of sessions) {
-        if (s.cdpPort === port) {
-          logger.warn({ sessionId: id, port }, 'Evicting stale session — CDP port is actually free');
-          sessions.delete(id);
-        }
+        if (s.cdpPort === port) stale.push(id);
+      }
+      for (const id of stale) {
+        logger.warn({ sessionId: id, port }, 'Evicting stale session — CDP port is actually free');
+        await closeSession(id);
       }
       return port;
     }
@@ -177,6 +182,12 @@ export async function createSession(
 
   const cdpPort = await nextAvailableCdpPort();
 
+  let proxy: SessionProxy | null = null;
+  if (shouldUseResidentialProxy(prompt, url)) {
+    const sessionToken = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+    proxy = await startSessionProxy(sessionToken);
+  }
+
   const launchOpts = {
     headless,
     noSandbox: process.platform === 'linux',
@@ -185,7 +196,10 @@ export async function createSession(
     ssrfPolicy: {
       dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
     },
-    chromeArgs: [...(headless === true ? [] : ['--start-maximized'])],
+    chromeArgs: [
+      ...(headless === true ? [] : ['--start-maximized']),
+      ...(proxy !== null ? [`--proxy-server=${proxy.url}`] : []),
+    ],
   };
   let browser: BrowserClaw;
   try {
@@ -195,6 +209,7 @@ export async function createSession(
     const isCdpReadyRace = message.includes('Failed to start Chrome CDP');
     if (!isCdpReadyRace) {
       logger.error({ cdpPort, err }, 'BrowserClaw.launch failed');
+      if (proxy !== null) await proxy.close();
       throw err;
     }
     logger.warn({ cdpPort }, 'BrowserClaw.launch hit CDP-ready race — retrying after 2s');
@@ -203,6 +218,7 @@ export async function createSession(
       browser = await BrowserClaw.launch(launchOpts);
     } catch (retryErr) {
       logger.error({ cdpPort, retryErr }, 'BrowserClaw.launch failed after retry');
+      if (proxy !== null) await proxy.close();
       throw retryErr;
     }
   }
@@ -216,6 +232,7 @@ export async function createSession(
     await browser.stop().catch((stopErr: unknown) => {
       logger.error({ url, err: stopErr }, 'Failed to stop orphaned Chrome');
     });
+    if (proxy !== null) await proxy.close();
     throw err;
   }
 
@@ -246,10 +263,12 @@ export async function createSession(
     interjectionNonce: crypto.randomUUID().replace(/-/g, ''),
     interjectionsReceived: 0,
     lastInterjectionAt: null,
+    proxy,
+    skipModeration: skipModeration === true,
   };
 
   sessions.set(id, managed);
-  logger.info({ sessionId: id, cdpPort }, 'Created session');
+  logger.info({ sessionId: id, cdpPort, proxied: proxy !== null }, 'Created session');
 
   void logPrompt({
     timestamp: now.toISOString(),
@@ -712,15 +731,42 @@ export function waitForUserResponse(sessionId: string): Promise<string> {
  * ask_user, additionally resolves the waiting promise so existing callers keep
  * working unchanged.
  */
-export function enqueueUserMessage(sessionId: string, text: string): void {
+export async function enqueueUserMessage(sessionId: string, text: string): Promise<void> {
   const managed = getManagedSession(sessionId);
+  const preview = text.length > 200 ? `${text.slice(0, 200)}…` : text;
 
-  if (!USER_INTERJECTION_ENABLED) {
-    if (managed.pendingUserResponse === null) {
-      throw new HttpError(409, 'Session is not waiting for user input');
+  if (!USER_INTERJECTION_ENABLED && managed.pendingUserResponse === null) {
+    logger.warn(
+      { sessionId, chars: text.length, preview },
+      'User message rejected — interjections disabled and agent not awaiting reply',
+    );
+    throw new HttpError(409, 'Session is not waiting for user input');
+  }
+
+  if (USER_INTERJECTION_ENABLED && managed.pendingUserResponse === null) {
+    if (managed.interjectionsReceived >= MAX_INTERJECTIONS_PER_RUN) {
+      logger.warn(
+        { sessionId, cap: MAX_INTERJECTIONS_PER_RUN, preview },
+        'User message rejected — interjection cap reached',
+      );
+      throw new HttpError(429, `Too many messages (cap: ${String(MAX_INTERJECTIONS_PER_RUN)} per run)`);
     }
-    managed.pendingUserResponse.resolve(text);
-    return;
+    if (managed.lastInterjectionAt !== null) {
+      const elapsed = Date.now() - managed.lastInterjectionAt.getTime();
+      if (elapsed < INTERJECTION_MIN_INTERVAL_MS) {
+        const waitSec = Math.ceil((INTERJECTION_MIN_INTERVAL_MS - elapsed) / 1000);
+        logger.warn({ sessionId, waitSec, preview }, 'User message rejected — rate limit');
+        throw new HttpError(429, `Rate limit — wait ${String(waitSec)}s before sending again`);
+      }
+    }
+  }
+
+  if (!managed.skipModeration && managed.llmConfig !== undefined) {
+    const aiCheck = await runWithLlmConfig(managed.llmConfig, () => moderatePrompt(text));
+    if (!aiCheck.allowed) {
+      logger.warn({ sessionId, preview, reason: aiCheck.reason }, 'User message blocked by content policy');
+      throw new HttpError(422, aiCheck.reason ?? 'Message blocked by content policy.');
+    }
   }
 
   // Direct reply to an ask_user: unblock the agent loop via the existing
@@ -729,21 +775,9 @@ export function enqueueUserMessage(sessionId: string, text: string): void {
   // again as a "USER INTERJECTION" injected into the next step's prompt).
   if (managed.pendingUserResponse !== null) {
     managed.lastActivityAt = new Date();
+    logger.info({ sessionId, chars: text.length, preview }, 'User message → ask_user reply');
     managed.pendingUserResponse.resolve(text);
     return;
-  }
-
-  if (managed.interjectionsReceived >= MAX_INTERJECTIONS_PER_RUN) {
-    throw new HttpError(429, `Too many messages (cap: ${String(MAX_INTERJECTIONS_PER_RUN)} per run)`);
-  }
-  if (managed.lastInterjectionAt !== null) {
-    const elapsed = Date.now() - managed.lastInterjectionAt.getTime();
-    if (elapsed < INTERJECTION_MIN_INTERVAL_MS) {
-      throw new HttpError(
-        429,
-        `Rate limit — wait ${String(Math.ceil((INTERJECTION_MIN_INTERVAL_MS - elapsed) / 1000))}s before sending again`,
-      );
-    }
   }
 
   const now = new Date();
@@ -751,6 +785,16 @@ export function enqueueUserMessage(sessionId: string, text: string): void {
   managed.interjectionsReceived += 1;
   managed.lastInterjectionAt = now;
   managed.lastActivityAt = now;
+  logger.info(
+    {
+      sessionId,
+      chars: text.length,
+      preview,
+      queueDepth: managed.userMessageQueue.length,
+      received: managed.interjectionsReceived,
+    },
+    'User message queued for next step',
+  );
 }
 
 /**
@@ -761,20 +805,21 @@ export function drainUserMessages(sessionId: string): UserMessage[] {
   const managed = getManagedSession(sessionId);
   const drained = managed.userMessageQueue;
   managed.userMessageQueue = [];
+  if (drained.length > 0) {
+    logger.info(
+      {
+        sessionId,
+        count: drained.length,
+        previews: drained.map((m) => (m.text.length > 80 ? `${m.text.slice(0, 80)}…` : m.text)),
+      },
+      'Draining user messages into next agent step',
+    );
+  }
   return drained;
 }
 
 export function getInterjectionNonce(sessionId: string): string {
   return getManagedSession(sessionId).interjectionNonce;
-}
-
-/**
- * Legacy export — preserved so existing route handlers that imported it keep
- * compiling while we migrate them. Prefer `enqueueUserMessage`.
- * @deprecated use enqueueUserMessage
- */
-export function resolveUserResponse(sessionId: string, text: string): void {
-  enqueueUserMessage(sessionId, text);
 }
 
 export async function closeSession(sessionId: string): Promise<void> {
@@ -794,6 +839,9 @@ export async function closeSession(sessionId: string): Promise<void> {
     await session.browser.stop();
   } catch (err) {
     logger.error({ sessionId, err }, 'Failed to stop browser');
+  }
+  if (session.proxy !== null) {
+    await session.proxy.close();
   }
   logger.info({ sessionId }, 'Closed session');
 }

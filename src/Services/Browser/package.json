@@ -30,7 +30,8 @@
   "dependencies": {
     "browserclaw": "^0.19.0",
     "openai": "^4.80.0",
-    "pino": "^10.3.1"
+    "pino": "^10.3.1",
+    "proxy-chain": "^2.7.1"
   },
   "optionalDependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

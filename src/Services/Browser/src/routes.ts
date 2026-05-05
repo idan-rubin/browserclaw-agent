@@ -368,7 +368,7 @@ const routes: Route[] = [
         sendError(res, 400, `text must be under ${String(INTERJECTION_MAX_CHARS)} characters`);
         return;
       }
-      enqueueUserMessage(params.id, text);
+      await enqueueUserMessage(params.id, text);
       json(res, 200, { success: true });
     },
   },
