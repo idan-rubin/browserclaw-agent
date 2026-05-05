@@ -80,7 +80,10 @@ let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 const CDP_PORT_SEARCH_LIMIT = 100;
 
-async function swapToProxiedBrowser(managed: ManagedSession, holder: { page: CrawlPage }): Promise<void> {
+async function swapToProxiedBrowser(
+  managed: ManagedSession,
+  holder: { page: CrawlPage; browser?: BrowserClaw },
+): Promise<void> {
   if (managed.proxy !== null) return;
 
   const sessionToken = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
@@ -131,6 +134,7 @@ async function swapToProxiedBrowser(managed: ManagedSession, holder: { page: Cra
   managed.cdpPort = newCdpPort;
   managed.proxy = proxy;
   holder.page = newPage;
+  holder.browser = newBrowser;
 
   logger.info({ sessionId: managed.id, newCdpPort }, 'Swapped to proxied browser');
 
@@ -394,8 +398,13 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     const runAllLlmWork = async () => {
       resetLLMCallCount();
       const waitForUser = USER_INTERJECTION_ENABLED ? () => waitForUserResponse(sessionId) : undefined;
-      const pageHolder: { page: CrawlPage; ensureProxyForUrl: (url: string) => Promise<void> } = {
+      const pageHolder: {
+        page: CrawlPage;
+        browser: BrowserClaw;
+        ensureProxyForUrl: (url: string) => Promise<void>;
+      } = {
         page: managed.page,
+        browser: managed.browser,
         ensureProxyForUrl: async (url: string) => {
           if (!shouldProxyUrl(url)) return;
           if (managed.proxy !== null) return;
