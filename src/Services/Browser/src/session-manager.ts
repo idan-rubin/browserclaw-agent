@@ -729,11 +729,17 @@ export function waitForUserResponse(sessionId: string): Promise<string> {
  */
 export function enqueueUserMessage(sessionId: string, text: string): void {
   const managed = getManagedSession(sessionId);
+  const preview = text.length > 200 ? `${text.slice(0, 200)}…` : text;
 
   if (!USER_INTERJECTION_ENABLED) {
     if (managed.pendingUserResponse === null) {
+      logger.warn(
+        { sessionId, chars: text.length, preview },
+        'User message rejected — interjections disabled and agent not awaiting reply',
+      );
       throw new HttpError(409, 'Session is not waiting for user input');
     }
+    logger.info({ sessionId, chars: text.length, preview }, 'User message → ask_user reply');
     managed.pendingUserResponse.resolve(text);
     return;
   }
@@ -744,20 +750,24 @@ export function enqueueUserMessage(sessionId: string, text: string): void {
   // again as a "USER INTERJECTION" injected into the next step's prompt).
   if (managed.pendingUserResponse !== null) {
     managed.lastActivityAt = new Date();
+    logger.info({ sessionId, chars: text.length, preview }, 'User message → ask_user reply');
     managed.pendingUserResponse.resolve(text);
     return;
   }
 
   if (managed.interjectionsReceived >= MAX_INTERJECTIONS_PER_RUN) {
+    logger.warn(
+      { sessionId, cap: MAX_INTERJECTIONS_PER_RUN, preview },
+      'User message rejected — interjection cap reached',
+    );
     throw new HttpError(429, `Too many messages (cap: ${String(MAX_INTERJECTIONS_PER_RUN)} per run)`);
   }
   if (managed.lastInterjectionAt !== null) {
     const elapsed = Date.now() - managed.lastInterjectionAt.getTime();
     if (elapsed < INTERJECTION_MIN_INTERVAL_MS) {
-      throw new HttpError(
-        429,
-        `Rate limit — wait ${String(Math.ceil((INTERJECTION_MIN_INTERVAL_MS - elapsed) / 1000))}s before sending again`,
-      );
+      const waitSec = Math.ceil((INTERJECTION_MIN_INTERVAL_MS - elapsed) / 1000);
+      logger.warn({ sessionId, waitSec, preview }, 'User message rejected — rate limit');
+      throw new HttpError(429, `Rate limit — wait ${String(waitSec)}s before sending again`);
     }
   }
 
@@ -766,6 +776,16 @@ export function enqueueUserMessage(sessionId: string, text: string): void {
   managed.interjectionsReceived += 1;
   managed.lastInterjectionAt = now;
   managed.lastActivityAt = now;
+  logger.info(
+    {
+      sessionId,
+      chars: text.length,
+      preview,
+      queueDepth: managed.userMessageQueue.length,
+      received: managed.interjectionsReceived,
+    },
+    'User message queued for next step',
+  );
 }
 
 /**
@@ -776,6 +796,16 @@ export function drainUserMessages(sessionId: string): UserMessage[] {
   const managed = getManagedSession(sessionId);
   const drained = managed.userMessageQueue;
   managed.userMessageQueue = [];
+  if (drained.length > 0) {
+    logger.info(
+      {
+        sessionId,
+        count: drained.length,
+        previews: drained.map((m) => (m.text.length > 80 ? `${m.text.slice(0, 80)}…` : m.text)),
+      },
+      'Draining user messages into next agent step',
+    );
+  }
   return drained;
 }
 
