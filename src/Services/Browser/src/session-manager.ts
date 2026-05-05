@@ -30,7 +30,7 @@ import { saveLesson, extractDomainLessons, getLesson } from './lesson-store.js';
 import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
 import { stampSSEPayload } from './sse-stamp.js';
 import { logger } from './logger.js';
-import { shouldUseResidentialProxy, startSessionProxy, type SessionProxy } from './proxy.js';
+import { shouldProxyUrl, shouldUseResidentialProxy, startSessionProxy, type SessionProxy } from './proxy.js';
 
 interface ManagedSession {
   id: string;
@@ -65,6 +65,7 @@ interface ManagedSession {
   lastInterjectionAt: Date | null;
   proxy: SessionProxy | null;
   skipModeration: boolean;
+  headless: boolean | undefined;
 }
 
 const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
@@ -79,6 +80,87 @@ const sessions = new Map<string, ManagedSession>();
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 const CDP_PORT_SEARCH_LIMIT = 100;
+
+async function launchBrowserWithCdpRetry(launchOpts: Parameters<typeof BrowserClaw.launch>[0]): Promise<BrowserClaw> {
+  try {
+    return await BrowserClaw.launch(launchOpts);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+    if (!message.includes('Failed to start Chrome CDP')) throw err;
+    logger.warn({ cdpPort: launchOpts?.cdpPort }, 'BrowserClaw.launch hit CDP-ready race — retrying after 2s');
+    await new Promise((r) => setTimeout(r, 2000));
+    return await BrowserClaw.launch(launchOpts);
+  }
+}
+
+async function swapToProxiedBrowser(
+  managed: ManagedSession,
+  holder: { page: CrawlPage; browser?: BrowserClaw },
+): Promise<void> {
+  if (managed.proxy !== null) return;
+
+  const sessionToken = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+  const proxy = await startSessionProxy(sessionToken);
+
+  let newCdpPort: number;
+  try {
+    newCdpPort = await nextAvailableCdpPort();
+  } catch (err) {
+    await proxy.close();
+    throw err;
+  }
+
+  const launchOpts = {
+    headless: managed.headless,
+    noSandbox: process.platform === 'linux',
+    cdpPort: newCdpPort,
+    stealth: true,
+    ssrfPolicy: { dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true' },
+    chromeArgs: [...(managed.headless === true ? [] : ['--start-maximized']), `--proxy-server=${proxy.url}`],
+  };
+
+  let newBrowser: BrowserClaw;
+  try {
+    newBrowser = await launchBrowserWithCdpRetry(launchOpts);
+  } catch (err) {
+    await proxy.close();
+    throw err;
+  }
+
+  let newPage: CrawlPage;
+  try {
+    newPage = await newBrowser.currentPage();
+  } catch (err) {
+    await newBrowser.stop().catch((stopErr: unknown) => {
+      logger.warn({ sessionId: managed.id, err: stopErr }, 'Failed to stop orphaned proxied browser');
+    });
+    await proxy.close();
+    throw err;
+  }
+
+  if (managed.abortController.signal.aborted || !sessions.has(managed.id)) {
+    logger.info({ sessionId: managed.id }, 'Session closed mid-swap — disposing new browser and proxy');
+    await newBrowser.stop().catch((stopErr: unknown) => {
+      logger.warn({ sessionId: managed.id, err: stopErr }, 'Failed to stop orphaned proxied browser');
+    });
+    await proxy.close();
+    return;
+  }
+
+  const oldBrowser = managed.browser;
+  managed.browser = newBrowser;
+  managed.page = newPage;
+  managed.cdpPort = newCdpPort;
+  managed.proxy = proxy;
+  holder.page = newPage;
+  holder.browser = newBrowser;
+
+  logger.info({ sessionId: managed.id, newCdpPort }, 'Swapped to proxied browser');
+
+  oldBrowser.stop().catch((err: unknown) => {
+    logger.warn({ sessionId: managed.id, err }, 'Failed to stop old browser after proxy swap');
+  });
+}
 
 async function nextAvailableCdpPort(): Promise<number> {
   for (let port = BASE_CDP_PORT; port < BASE_CDP_PORT + CDP_PORT_SEARCH_LIMIT; port++) {
@@ -203,24 +285,11 @@ export async function createSession(
   };
   let browser: BrowserClaw;
   try {
-    browser = await BrowserClaw.launch(launchOpts);
+    browser = await launchBrowserWithCdpRetry(launchOpts);
   } catch (err) {
-    const message = err instanceof Error ? err.message : '';
-    const isCdpReadyRace = message.includes('Failed to start Chrome CDP');
-    if (!isCdpReadyRace) {
-      logger.error({ cdpPort, err }, 'BrowserClaw.launch failed');
-      if (proxy !== null) await proxy.close();
-      throw err;
-    }
-    logger.warn({ cdpPort }, 'BrowserClaw.launch hit CDP-ready race — retrying after 2s');
-    await new Promise((r) => setTimeout(r, 2000));
-    try {
-      browser = await BrowserClaw.launch(launchOpts);
-    } catch (retryErr) {
-      logger.error({ cdpPort, retryErr }, 'BrowserClaw.launch failed after retry');
-      if (proxy !== null) await proxy.close();
-      throw retryErr;
-    }
+    logger.error({ cdpPort, err }, 'BrowserClaw.launch failed');
+    if (proxy !== null) await proxy.close();
+    throw err;
   }
 
   let page: CrawlPage;
@@ -265,6 +334,7 @@ export async function createSession(
     lastInterjectionAt: null,
     proxy,
     skipModeration: skipModeration === true,
+    headless,
   };
 
   sessions.set(id, managed);
@@ -335,7 +405,23 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     const runAllLlmWork = async () => {
       resetLLMCallCount();
       const waitForUser = USER_INTERJECTION_ENABLED ? () => waitForUserResponse(sessionId) : undefined;
-      const pageHolder = { page: managed.page };
+      const pageHolder: {
+        page: CrawlPage;
+        browser: BrowserClaw;
+        ensureProxyForUrl: (url: string) => Promise<void>;
+      } = {
+        page: managed.page,
+        browser: managed.browser,
+        ensureProxyForUrl: async (url: string) => {
+          if (!shouldProxyUrl(url)) return;
+          if (managed.proxy !== null) return;
+          try {
+            await swapToProxiedBrowser(managed, pageHolder);
+          } catch (err) {
+            logger.warn({ sessionId, url, err }, 'Proxy swap failed — continuing direct');
+          }
+        },
+      };
       const userChatHooks = USER_INTERJECTION_ENABLED
         ? { drainMessages: () => drainUserMessages(sessionId), nonce: managed.interjectionNonce }
         : undefined;

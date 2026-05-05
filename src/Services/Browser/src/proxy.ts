@@ -43,6 +43,18 @@ export function shouldUseResidentialProxy(prompt: string, url: string | undefine
   return RESIDENTIAL_DOMAINS.some((d) => haystack.includes(d));
 }
 
+export function shouldProxyUrl(url: string): boolean {
+  if (readConfig() === null) return false;
+  if (RESIDENTIAL_DOMAINS.length === 0) return false;
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return RESIDENTIAL_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
 export interface SessionProxy {
   url: string;
   close: () => Promise<void>;

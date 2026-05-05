@@ -1187,6 +1187,8 @@ Use ONLY data that appears in the memory or steps below — never invent values.
 
 export interface PageHolder {
   page: CrawlPage;
+  browser?: BrowserClaw;
+  ensureProxyForUrl?: (url: string) => Promise<void>;
 }
 
 /**
@@ -1245,7 +1247,16 @@ export async function runAgentLoop(
       : { page: pageOrHolder as CrawlPage };
   const history: AgentStep[] = [];
   const startTime = Date.now();
-  const tabManager = browser !== undefined ? new TabManager(holder.page) : null;
+  let activeBrowser: BrowserClaw | undefined = browser;
+  let tabManager = activeBrowser !== undefined ? new TabManager(holder.page) : null;
+  const refreshBrowserHandle = (): BrowserClaw | undefined => {
+    const current = holder.browser ?? browser;
+    if (current !== activeBrowser) {
+      activeBrowser = current;
+      tabManager = current !== undefined ? new TabManager(holder.page) : null;
+    }
+    return activeBrowser;
+  };
   let consecutiveParseFailures = 0;
   let crossSiteParseFailures = 0;
   let consecutiveApiFailures = 0;
@@ -1645,9 +1656,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
     let tabCount: number | undefined;
     let tabs: TabInfo[] | undefined;
-    if (browser !== undefined) {
+    const browserForStep = refreshBrowserHandle();
+    if (browserForStep !== undefined) {
       try {
-        const allTabs = (await browser.tabs()) as TabInfo[];
+        const allTabs = (await browserForStep.tabs()) as TabInfo[];
         tabCount = allTabs.length;
         if (tabCount > 1) tabs = allTabs;
       } catch (err) {
@@ -2075,9 +2087,21 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           } catch (evalErr) {
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
           }
-        } else if (action.urls !== undefined && action.urls.length > 0 && browser !== undefined) {
+        } else if (action.urls !== undefined && action.urls.length > 0) {
           for (const url of action.urls) assertNavigateUrlAllowed(url);
-          const batch = await extractItemsFromUrls(browser, action.urls);
+          if (holder.ensureProxyForUrl !== undefined) {
+            for (const url of action.urls) {
+              await holder.ensureProxyForUrl(url);
+            }
+          }
+          const extractBrowser = refreshBrowserHandle();
+          if (extractBrowser === undefined) {
+            agentStep.action.extract_result = 'Error: extract with urls requires browser context';
+            recentFailureCount++;
+            step++;
+            break;
+          }
+          const batch = await extractItemsFromUrls(extractBrowser, action.urls);
           const header =
             batch.count >= 5
               ? `${String(batch.count)} records fetched across ${String(action.urls.length)} URLs. This is your data — parse the records and respond. Do NOT open individual URLs again; fields the user asked for (price, address, name) are embedded in each record's text or fields.\n`
@@ -2136,9 +2160,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
       // #2 Tab switching
       if (action.action === 'switch_tab') {
-        if (browser !== undefined && action.tab_id !== undefined && action.tab_id !== '') {
+        const tabBrowser = refreshBrowserHandle();
+        if (tabBrowser !== undefined && action.tab_id !== undefined && action.tab_id !== '') {
           try {
-            const newPage = browser.page(action.tab_id);
+            const newPage = tabBrowser.page(action.tab_id);
             const cdpBase = getCdpBaseUrl(holder.page);
             await activateCdpTarget(cdpBase, action.tab_id);
             holder.page = newPage;
@@ -2156,14 +2181,15 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'close_tab') {
-        if (browser !== undefined && action.tab_id !== undefined && action.tab_id !== '') {
+        const closeBrowser = refreshBrowserHandle();
+        if (closeBrowser !== undefined && action.tab_id !== undefined && action.tab_id !== '') {
           if (action.tab_id === holder.page.id) {
             agentStep.action.error_feedback =
               'close_tab: cannot close the active tab; switch to another tab first, then close this one';
             recentFailureCount++;
           } else {
             try {
-              await browser.close(action.tab_id);
+              await closeBrowser.close(action.tab_id);
               logger.info({ step, tab_id: action.tab_id }, 'Closed tab');
             } catch (tabErr) {
               agentStep.action.error_feedback = `Failed to close tab: ${tabErr instanceof Error ? tabErr.message : 'unknown'}`;
@@ -2191,9 +2217,12 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       try {
+        if (action.action === 'navigate' && action.url !== undefined && holder.ensureProxyForUrl !== undefined) {
+          await holder.ensureProxyForUrl(action.url);
+        }
         const customHandler = options?.customActions?.[action.action];
         if (customHandler !== undefined) {
-          const result = await customHandler(action, holder.page, browser);
+          const result = await customHandler(action, holder.page, refreshBrowserHandle());
           if (result?.outcome !== undefined) agentStep.outcome = result.outcome;
         } else {
           await executeAction(action, holder.page, cfg);
@@ -2296,8 +2325,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       // Check for new tabs after click
-      if (tabManager !== null && browser !== undefined && action.action === 'click') {
-        const newPage = await tabManager.checkForNewTab(browser);
+      const tabClickBrowser = refreshBrowserHandle();
+      if (tabManager !== null && tabClickBrowser !== undefined && action.action === 'click') {
+        const newPage = await tabManager.checkForNewTab(tabClickBrowser);
         if (newPage !== null) {
           try {
             const newUrl = await newPage.url();
