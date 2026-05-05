@@ -2087,9 +2087,16 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           } catch (evalErr) {
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
           }
-        } else if (action.urls !== undefined && action.urls.length > 0 && browser !== undefined) {
+        } else if (action.urls !== undefined && action.urls.length > 0) {
+          const extractBrowser = refreshBrowserHandle();
+          if (extractBrowser === undefined) {
+            agentStep.action.extract_result = 'Error: extract with urls requires browser context';
+            recentFailureCount++;
+            step++;
+            break;
+          }
           for (const url of action.urls) assertNavigateUrlAllowed(url);
-          const batch = await extractItemsFromUrls(browser, action.urls);
+          const batch = await extractItemsFromUrls(extractBrowser, action.urls);
           const header =
             batch.count >= 5
               ? `${String(batch.count)} records fetched across ${String(action.urls.length)} URLs. This is your data — parse the records and respond. Do NOT open individual URLs again; fields the user asked for (price, address, name) are embedded in each record's text or fields.\n`

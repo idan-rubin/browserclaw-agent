@@ -126,6 +126,15 @@ async function swapToProxiedBrowser(
     throw err;
   }
 
+  if (managed.abortController.signal.aborted || !sessions.has(managed.id)) {
+    logger.info({ sessionId: managed.id }, 'Session closed mid-swap — disposing new browser and proxy');
+    await newBrowser.stop().catch((stopErr: unknown) => {
+      logger.warn({ sessionId: managed.id, err: stopErr }, 'Failed to stop orphaned proxied browser');
+    });
+    await proxy.close();
+    return;
+  }
+
   const oldBrowser = managed.browser;
   managed.browser = newBrowser;
   managed.page = newPage;
