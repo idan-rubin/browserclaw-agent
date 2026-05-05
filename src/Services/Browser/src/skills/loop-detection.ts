@@ -48,7 +48,7 @@ export function detectLoop(action: { action: string; ref?: string }, history: Ag
     if (bothFailed) {
       return {
         level: 'urgent',
-        message: `STOP: ref "${action.ref}" just failed twice on "${action.action}". Do NOT try this ref again — it is blocked or not actionable. The most common cause is an overlay intercepting clicks: cookie/GDPR banner, newsletter signup, sign-in modal, "Sign in with Google" tile, marketing/upsell popup, or app-install prompt. Try: (a) keyboard "Escape" to dismiss the topmost overlay, (b) extract document.body.innerText.slice(0, 500) to see what's actually on the page, or (c) pick a DIFFERENT ref. If still stuck, navigate elsewhere.`,
+        message: `STOP: ref "${action.ref}" just failed twice on "${action.action}". Do NOT try this ref again — it is blocked or not actionable. Pick a DIFFERENT ref from the current snapshot, or press "Escape" to dismiss any overlay before retrying. If neither helps, try a different element or navigate to a different page.`,
       };
     }
   }
@@ -64,7 +64,7 @@ export function detectLoop(action: { action: string; ref?: string }, history: Ag
     return {
       level: 'urgent',
       message:
-        'STUCK: You have repeated this exact action 12+ times. This approach is not working. You MUST try something completely different. The most likely culprit is an overlay intercepting your clicks — cookie banner, newsletter popup, marketing/upsell modal, sign-in tile, app-install prompt, or date picker. Press "keyboard" "Escape" to dismiss the topmost overlay, then re-snapshot. If that fails, extract document.body.innerText.slice(0, 500) to confirm what is actually on the page, then try a different element, page, or strategy.',
+        'STUCK: You have repeated this exact action 12+ times. This approach is not working. You MUST try something completely different. If a popup, date picker, or overlay is blocking the UI, use "keyboard" with "Escape" to close it. Otherwise try a different element, a different page, or a different strategy entirely.',
     };
   }
 
@@ -72,7 +72,7 @@ export function detectLoop(action: { action: string; ref?: string }, history: Ag
     return {
       level: 'warning',
       message:
-        'You have repeated this action 8+ times. Consider whether this approach is making progress. The most common silent blocker is an overlay (cookie banner, newsletter popup, sign-in modal, marketing/upsell, app-install prompt) intercepting clicks. Press "keyboard" "Escape" to dismiss it, then try a different path — site navigation, search, or a different element.',
+        'You have repeated this action 8+ times. Consider whether this approach is making progress. If not, try pressing Escape to dismiss any blocking popups or overlays, then try a different path — use site navigation, search, or a different element.',
     };
   }
 
