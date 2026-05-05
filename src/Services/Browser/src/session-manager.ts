@@ -64,6 +64,7 @@ interface ManagedSession {
   /** Timestamp of the last accepted interjection — enforces the min-interval rate limit. */
   lastInterjectionAt: Date | null;
   proxy: SessionProxy | null;
+  skipModeration: boolean;
 }
 
 const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
@@ -263,6 +264,7 @@ export async function createSession(
     interjectionsReceived: 0,
     lastInterjectionAt: null,
     proxy,
+    skipModeration: skipModeration === true,
   };
 
   sessions.set(id, managed);
@@ -729,21 +731,42 @@ export function waitForUserResponse(sessionId: string): Promise<string> {
  * ask_user, additionally resolves the waiting promise so existing callers keep
  * working unchanged.
  */
-export function enqueueUserMessage(sessionId: string, text: string): void {
+export async function enqueueUserMessage(sessionId: string, text: string): Promise<void> {
   const managed = getManagedSession(sessionId);
   const preview = text.length > 200 ? `${text.slice(0, 200)}…` : text;
 
-  if (!USER_INTERJECTION_ENABLED) {
-    if (managed.pendingUserResponse === null) {
+  if (!USER_INTERJECTION_ENABLED && managed.pendingUserResponse === null) {
+    logger.warn(
+      { sessionId, chars: text.length, preview },
+      'User message rejected — interjections disabled and agent not awaiting reply',
+    );
+    throw new HttpError(409, 'Session is not waiting for user input');
+  }
+
+  if (USER_INTERJECTION_ENABLED && managed.pendingUserResponse === null) {
+    if (managed.interjectionsReceived >= MAX_INTERJECTIONS_PER_RUN) {
       logger.warn(
-        { sessionId, chars: text.length, preview },
-        'User message rejected — interjections disabled and agent not awaiting reply',
+        { sessionId, cap: MAX_INTERJECTIONS_PER_RUN, preview },
+        'User message rejected — interjection cap reached',
       );
-      throw new HttpError(409, 'Session is not waiting for user input');
+      throw new HttpError(429, `Too many messages (cap: ${String(MAX_INTERJECTIONS_PER_RUN)} per run)`);
     }
-    logger.info({ sessionId, chars: text.length, preview }, 'User message → ask_user reply');
-    managed.pendingUserResponse.resolve(text);
-    return;
+    if (managed.lastInterjectionAt !== null) {
+      const elapsed = Date.now() - managed.lastInterjectionAt.getTime();
+      if (elapsed < INTERJECTION_MIN_INTERVAL_MS) {
+        const waitSec = Math.ceil((INTERJECTION_MIN_INTERVAL_MS - elapsed) / 1000);
+        logger.warn({ sessionId, waitSec, preview }, 'User message rejected — rate limit');
+        throw new HttpError(429, `Rate limit — wait ${String(waitSec)}s before sending again`);
+      }
+    }
+  }
+
+  if (!managed.skipModeration && managed.llmConfig !== undefined) {
+    const aiCheck = await runWithLlmConfig(managed.llmConfig, () => moderatePrompt(text));
+    if (!aiCheck.allowed) {
+      logger.warn({ sessionId, preview, reason: aiCheck.reason }, 'User message blocked by content policy');
+      throw new HttpError(422, aiCheck.reason ?? 'Message blocked by content policy.');
+    }
   }
 
   // Direct reply to an ask_user: unblock the agent loop via the existing
@@ -755,22 +778,6 @@ export function enqueueUserMessage(sessionId: string, text: string): void {
     logger.info({ sessionId, chars: text.length, preview }, 'User message → ask_user reply');
     managed.pendingUserResponse.resolve(text);
     return;
-  }
-
-  if (managed.interjectionsReceived >= MAX_INTERJECTIONS_PER_RUN) {
-    logger.warn(
-      { sessionId, cap: MAX_INTERJECTIONS_PER_RUN, preview },
-      'User message rejected — interjection cap reached',
-    );
-    throw new HttpError(429, `Too many messages (cap: ${String(MAX_INTERJECTIONS_PER_RUN)} per run)`);
-  }
-  if (managed.lastInterjectionAt !== null) {
-    const elapsed = Date.now() - managed.lastInterjectionAt.getTime();
-    if (elapsed < INTERJECTION_MIN_INTERVAL_MS) {
-      const waitSec = Math.ceil((INTERJECTION_MIN_INTERVAL_MS - elapsed) / 1000);
-      logger.warn({ sessionId, waitSec, preview }, 'User message rejected — rate limit');
-      throw new HttpError(429, `Rate limit — wait ${String(waitSec)}s before sending again`);
-    }
   }
 
   const now = new Date();
@@ -813,15 +820,6 @@ export function drainUserMessages(sessionId: string): UserMessage[] {
 
 export function getInterjectionNonce(sessionId: string): string {
   return getManagedSession(sessionId).interjectionNonce;
-}
-
-/**
- * Legacy export — preserved so existing route handlers that imported it keep
- * compiling while we migrate them. Prefer `enqueueUserMessage`.
- * @deprecated use enqueueUserMessage
- */
-export function resolveUserResponse(sessionId: string, text: string): void {
-  enqueueUserMessage(sessionId, text);
 }
 
 export async function closeSession(sessionId: string): Promise<void> {
