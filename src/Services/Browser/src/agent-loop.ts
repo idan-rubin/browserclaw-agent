@@ -2088,6 +2088,12 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             agentStep.action.extract_result = `Error: ${evalErr instanceof Error ? evalErr.message : 'evaluation failed'}`;
           }
         } else if (action.urls !== undefined && action.urls.length > 0) {
+          for (const url of action.urls) assertNavigateUrlAllowed(url);
+          if (holder.ensureProxyForUrl !== undefined) {
+            for (const url of action.urls) {
+              await holder.ensureProxyForUrl(url);
+            }
+          }
           const extractBrowser = refreshBrowserHandle();
           if (extractBrowser === undefined) {
             agentStep.action.extract_result = 'Error: extract with urls requires browser context';
@@ -2095,7 +2101,6 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             step++;
             break;
           }
-          for (const url of action.urls) assertNavigateUrlAllowed(url);
           const batch = await extractItemsFromUrls(extractBrowser, action.urls);
           const header =
             batch.count >= 5
