@@ -115,6 +115,7 @@ async function swapToProxiedBrowser(
     noSandbox: process.platform === 'linux',
     cdpPort: newCdpPort,
     stealth: true,
+    isolated: true,
     ssrfPolicy: { dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true' },
     chromeArgs: [...(managed.headless === true ? [] : ['--start-maximized']), `--proxy-server=${proxy.url}`],
   };
