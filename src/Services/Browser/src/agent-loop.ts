@@ -1187,6 +1187,7 @@ Use ONLY data that appears in the memory or steps below — never invent values.
 
 export interface PageHolder {
   page: CrawlPage;
+  ensureProxyForUrl?: (url: string) => Promise<void>;
 }
 
 /**
@@ -2191,6 +2192,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       try {
+        if (action.action === 'navigate' && action.url !== undefined && holder.ensureProxyForUrl !== undefined) {
+          await holder.ensureProxyForUrl(action.url);
+        }
         const customHandler = options?.customActions?.[action.action];
         if (customHandler !== undefined) {
           const result = await customHandler(action, holder.page, browser);

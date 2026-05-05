@@ -30,7 +30,7 @@ import { saveLesson, extractDomainLessons, getLesson } from './lesson-store.js';
 import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
 import { stampSSEPayload } from './sse-stamp.js';
 import { logger } from './logger.js';
-import { shouldUseResidentialProxy, startSessionProxy, type SessionProxy } from './proxy.js';
+import { shouldProxyUrl, shouldUseResidentialProxy, startSessionProxy, type SessionProxy } from './proxy.js';
 
 interface ManagedSession {
   id: string;
@@ -79,6 +79,65 @@ const sessions = new Map<string, ManagedSession>();
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 const CDP_PORT_SEARCH_LIMIT = 100;
+
+async function swapToProxiedBrowser(managed: ManagedSession, holder: { page: CrawlPage }): Promise<void> {
+  if (managed.proxy !== null) return;
+
+  const sessionToken = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+  const proxy = await startSessionProxy(sessionToken);
+
+  let newCdpPort: number;
+  try {
+    newCdpPort = await nextAvailableCdpPort();
+  } catch (err) {
+    await proxy.close();
+    throw err;
+  }
+
+  const envHeadless = process.env.BROWSER_HEADLESS;
+  const headless = envHeadless === 'false' ? false : envHeadless === 'true' ? true : undefined;
+
+  const launchOpts = {
+    headless,
+    noSandbox: process.platform === 'linux',
+    cdpPort: newCdpPort,
+    stealth: true,
+    ssrfPolicy: { dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true' },
+    chromeArgs: [...(headless === true ? [] : ['--start-maximized']), `--proxy-server=${proxy.url}`],
+  };
+
+  let newBrowser: BrowserClaw;
+  try {
+    newBrowser = await BrowserClaw.launch(launchOpts);
+  } catch (err) {
+    await proxy.close();
+    throw err;
+  }
+
+  let newPage: CrawlPage;
+  try {
+    newPage = await newBrowser.currentPage();
+  } catch (err) {
+    await newBrowser.stop().catch((stopErr: unknown) => {
+      logger.warn({ sessionId: managed.id, err: stopErr }, 'Failed to stop orphaned proxied browser');
+    });
+    await proxy.close();
+    throw err;
+  }
+
+  const oldBrowser = managed.browser;
+  managed.browser = newBrowser;
+  managed.page = newPage;
+  managed.cdpPort = newCdpPort;
+  managed.proxy = proxy;
+  holder.page = newPage;
+
+  logger.info({ sessionId: managed.id, newCdpPort }, 'Swapped to proxied browser');
+
+  oldBrowser.stop().catch((err: unknown) => {
+    logger.warn({ sessionId: managed.id, err }, 'Failed to stop old browser after proxy swap');
+  });
+}
 
 async function nextAvailableCdpPort(): Promise<number> {
   for (let port = BASE_CDP_PORT; port < BASE_CDP_PORT + CDP_PORT_SEARCH_LIMIT; port++) {
@@ -335,7 +394,18 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     const runAllLlmWork = async () => {
       resetLLMCallCount();
       const waitForUser = USER_INTERJECTION_ENABLED ? () => waitForUserResponse(sessionId) : undefined;
-      const pageHolder = { page: managed.page };
+      const pageHolder: { page: CrawlPage; ensureProxyForUrl: (url: string) => Promise<void> } = {
+        page: managed.page,
+        ensureProxyForUrl: async (url: string) => {
+          if (!shouldProxyUrl(url)) return;
+          if (managed.proxy !== null) return;
+          try {
+            await swapToProxiedBrowser(managed, pageHolder);
+          } catch (err) {
+            logger.warn({ sessionId, url, err }, 'Proxy swap failed — continuing direct');
+          }
+        },
+      };
       const userChatHooks = USER_INTERJECTION_ENABLED
         ? { drainMessages: () => drainUserMessages(sessionId), nonce: managed.interjectionNonce }
         : undefined;
