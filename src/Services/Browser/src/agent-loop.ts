@@ -764,17 +764,23 @@ function parseActions(parsed: Record<string, unknown>): AgentAction[] {
     if (typeof item.action !== 'string') {
       throw new Error(`Action at index ${String(i)} missing "action" field`);
     }
+
     const rawAnswer: unknown = item.answer;
-    if (rawAnswer !== undefined && rawAnswer !== null && typeof rawAnswer !== 'string') {
-      throw new Error(
-        `Action at index ${String(i)} has non-string "answer" field (got ${typeof rawAnswer}). The answer must be a single string with markdown-style structure (sections, bullets), not an array or object.`,
-      );
+    const answerIsBadShape = rawAnswer !== undefined && rawAnswer !== null && typeof rawAnswer !== 'string';
+
+    if (item.action === 'done' && answerIsBadShape) {
+      return {
+        action: 'wait' as AgentAction['action'],
+        ...(i === 0 ? thinking : { reasoning: `Batch action ${String(i + 1)}: wait` }),
+        error_feedback: `Your "done.answer" was a ${typeof rawAnswer} (likely an array or object). It MUST be a single string — flatten every finding into markdown with sections and bullet points, then re-emit "done" with that string. Preserve every result you have already gathered.`,
+      };
     }
+
     return {
       action: item.action as AgentAction['action'],
       // Thinking fields only on the first action
       ...(i === 0 ? thinking : { reasoning: `Batch action ${String(i + 1)}: ${item.action}` }),
-      answer: item.answer ?? undefined,
+      answer: typeof rawAnswer === 'string' ? rawAnswer : undefined,
       ref: item.ref,
       text: item.text,
       url: item.url,
