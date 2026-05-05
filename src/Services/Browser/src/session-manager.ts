@@ -30,6 +30,7 @@ import { saveLesson, extractDomainLessons, getLesson } from './lesson-store.js';
 import { saveTrajectory, TRAJECTORY_STATUS } from './trajectory-store.js';
 import { stampSSEPayload } from './sse-stamp.js';
 import { logger } from './logger.js';
+import { shouldUseResidentialProxy, startSessionProxy, type SessionProxy } from './proxy.js';
 
 interface ManagedSession {
   id: string;
@@ -62,6 +63,7 @@ interface ManagedSession {
   interjectionsReceived: number;
   /** Timestamp of the last accepted interjection — enforces the min-interval rate limit. */
   lastInterjectionAt: Date | null;
+  proxy: SessionProxy | null;
 }
 
 const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
@@ -177,6 +179,12 @@ export async function createSession(
 
   const cdpPort = await nextAvailableCdpPort();
 
+  let proxy: SessionProxy | null = null;
+  if (shouldUseResidentialProxy(prompt, url)) {
+    const sessionToken = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+    proxy = await startSessionProxy(sessionToken);
+  }
+
   const launchOpts = {
     headless,
     noSandbox: process.platform === 'linux',
@@ -185,7 +193,10 @@ export async function createSession(
     ssrfPolicy: {
       dangerouslyAllowPrivateNetwork: process.env.SSRF_ALLOW_PRIVATE === 'true',
     },
-    chromeArgs: [...(headless === true ? [] : ['--start-maximized'])],
+    chromeArgs: [
+      ...(headless === true ? [] : ['--start-maximized']),
+      ...(proxy !== null ? [`--proxy-server=${proxy.url}`] : []),
+    ],
   };
   let browser: BrowserClaw;
   try {
@@ -195,6 +206,7 @@ export async function createSession(
     const isCdpReadyRace = message.includes('Failed to start Chrome CDP');
     if (!isCdpReadyRace) {
       logger.error({ cdpPort, err }, 'BrowserClaw.launch failed');
+      if (proxy !== null) await proxy.close();
       throw err;
     }
     logger.warn({ cdpPort }, 'BrowserClaw.launch hit CDP-ready race — retrying after 2s');
@@ -203,6 +215,7 @@ export async function createSession(
       browser = await BrowserClaw.launch(launchOpts);
     } catch (retryErr) {
       logger.error({ cdpPort, retryErr }, 'BrowserClaw.launch failed after retry');
+      if (proxy !== null) await proxy.close();
       throw retryErr;
     }
   }
@@ -216,6 +229,7 @@ export async function createSession(
     await browser.stop().catch((stopErr: unknown) => {
       logger.error({ url, err: stopErr }, 'Failed to stop orphaned Chrome');
     });
+    if (proxy !== null) await proxy.close();
     throw err;
   }
 
@@ -246,10 +260,11 @@ export async function createSession(
     interjectionNonce: crypto.randomUUID().replace(/-/g, ''),
     interjectionsReceived: 0,
     lastInterjectionAt: null,
+    proxy,
   };
 
   sessions.set(id, managed);
-  logger.info({ sessionId: id, cdpPort }, 'Created session');
+  logger.info({ sessionId: id, cdpPort, proxied: proxy !== null }, 'Created session');
 
   void logPrompt({
     timestamp: now.toISOString(),
@@ -794,6 +809,9 @@ export async function closeSession(sessionId: string): Promise<void> {
     await session.browser.stop();
   } catch (err) {
     logger.error({ sessionId, err }, 'Failed to stop browser');
+  }
+  if (session.proxy !== null) {
+    await session.proxy.close();
   }
   logger.info({ sessionId }, 'Closed session');
 }
