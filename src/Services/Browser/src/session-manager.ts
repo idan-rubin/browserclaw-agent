@@ -66,6 +66,7 @@ interface ManagedSession {
   proxy: SessionProxy | null;
   skipModeration: boolean;
   headless: boolean | undefined;
+  proxySwapCount: number;
 }
 
 const MAX_SESSIONS = requireEnvInt('MAX_SESSIONS');
@@ -153,6 +154,7 @@ async function swapToProxiedBrowser(
   managed.page = newPage;
   managed.cdpPort = newCdpPort;
   managed.proxy = proxy;
+  managed.proxySwapCount += 1;
   holder.page = newPage;
   holder.browser = newBrowser;
 
@@ -336,6 +338,7 @@ export async function createSession(
     proxy,
     skipModeration: skipModeration === true,
     headless,
+    proxySwapCount: proxy === null ? 0 : 1,
   };
 
   sessions.set(id, managed);
@@ -546,6 +549,11 @@ async function startAgentLoop(sessionId: string): Promise<void> {
         domain: managed.domain ?? undefined,
         skills_loaded: skillsLoadedCount,
         skill_outcome: skillOutcome,
+        walls_hit: result.walls_hit,
+        sites_visited: result.sites_visited,
+        records_extracted: result.records_extracted,
+        proxy_swap_count: managed.proxySwapCount,
+        crashed: false,
       });
     };
 
@@ -561,6 +569,18 @@ async function startAgentLoop(sessionId: string): Promise<void> {
     const stack = err instanceof Error && err.stack !== undefined ? sanitizeErrorText(err.stack) : undefined;
     logger.error({ sessionId, crashed: true, message, stack }, 'Agent loop crashed');
     emitter('failed', { step: 0, error: message });
+    void logPrompt({
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      ip: managed.ip,
+      prompt: managed.prompt,
+      status: 'failed',
+      duration_ms: Date.now() - managed.createdAt.getTime(),
+      error: message,
+      domain: managed.domain ?? undefined,
+      proxy_swap_count: managed.proxySwapCount,
+      crashed: true,
+    });
   }
 
   setTimeout(() => {
