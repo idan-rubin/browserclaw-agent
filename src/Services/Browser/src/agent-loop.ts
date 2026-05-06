@@ -341,12 +341,12 @@ const SCROLL_AT_VIEWPORT_FN = `
   })
 `;
 
-async function safeUrl(page: CrawlPage): Promise<string> {
+async function safeUrl(page: CrawlPage, fallback = ''): Promise<string> {
   try {
     return await page.url();
   } catch (err) {
-    logger.warn({ err }, 'page.url failed — returning empty');
-    return '';
+    logger.warn({ err, fallback }, 'page.url failed — using fallback');
+    return fallback;
   }
 }
 
@@ -1265,6 +1265,7 @@ export async function runAgentLoop(
       : { page: pageOrHolder as CrawlPage };
   const history: AgentStep[] = [];
   const startTime = Date.now();
+  let lastKnownUrl = '';
   let activeBrowser: BrowserClaw | undefined = browser;
   let tabManager = activeBrowser !== undefined ? new TabManager(holder.page) : null;
   const refreshBrowserHandle = (): BrowserClaw | undefined => {
@@ -1298,7 +1299,7 @@ export async function runAgentLoop(
       reasoning: reason,
       answer,
     };
-    const currentUrl = await safeUrl(holder.page);
+    const currentUrl = await safeUrl(holder.page, lastKnownUrl);
     history.push({
       step,
       action: doneAction,
@@ -1448,7 +1449,8 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     }
 
     let snapshot = await safeSnapshot(holder.page);
-    const url = await safeUrl(holder.page);
+    const url = await safeUrl(holder.page, lastKnownUrl);
+    if (url !== '') lastKnownUrl = url;
     const title = await safeTitle(holder.page);
 
     if (options?.getSkill !== undefined) {
@@ -1938,7 +1940,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       const agentStep: AgentStep = {
         step,
         action,
-        url: await safeUrl(holder.page),
+        url: await safeUrl(holder.page, lastKnownUrl),
         page_title: await safeTitle(holder.page),
         timestamp: new Date().toISOString(),
       };
@@ -2044,7 +2046,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       }
 
       if (action.action === 'press_and_hold') {
-        const pahDomain = extractDomain(await safeUrl(holder.page));
+        const pahDomain = extractDomain(await safeUrl(holder.page, lastKnownUrl));
         const priorFailures = pahFailuresByDomain.get(pahDomain) ?? 0;
         if (priorFailures >= PAH_MAX_FAILURES) {
           logger.warn(
@@ -2222,7 +2224,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         break;
       }
 
-      const preActionUrl = await safeUrl(holder.page);
+      const preActionUrl = await safeUrl(holder.page, url);
 
       if (action.action === 'navigate' && action.url !== undefined && action.url !== '') {
         const targetDomain = extractDomain(action.url);
@@ -2270,7 +2272,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
         // Validate action outcome — provide natural language feedback
         let postActionUrl = preActionUrl;
         try {
-          postActionUrl = await safeUrl(holder.page);
+          postActionUrl = await safeUrl(holder.page, preActionUrl);
           const postSnapshot = (
             await holder.page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })
           ).snapshot;
