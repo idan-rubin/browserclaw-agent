@@ -18,6 +18,11 @@ interface PromptLogEntry {
   domain?: string;
   skills_loaded?: number;
   skill_outcome?: 'saved' | 'improved' | 'refined' | 'validated' | 'none';
+  walls_hit?: { domain: string; type: string }[];
+  sites_visited?: string[];
+  records_extracted?: number;
+  proxy_swap_count?: number;
+  crashed?: boolean;
 }
 
 let ensureDirPromise: Promise<void> | null = null;
