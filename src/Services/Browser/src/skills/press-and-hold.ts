@@ -118,20 +118,25 @@ async function findButtonCoordinates(page: CrawlPage): Promise<{ x: number; y: n
 }
 
 export async function getPageText(page: CrawlPage): Promise<string> {
-  return (await page.evaluate(`
-    (function() {
-      var text = document.body.innerText || '';
-      var iframes = document.querySelectorAll('iframe');
-      for (var i = 0; i < iframes.length; i++) {
-        try {
-          if (iframes[i].contentDocument && iframes[i].contentDocument.body) {
-            text += ' ' + iframes[i].contentDocument.body.innerText;
-          }
-        } catch(e) {}
-      }
-      return text;
-    })()
-  `)) as string;
+  try {
+    return (await page.evaluate(`
+      (function() {
+        var text = (document.body && document.body.innerText) || '';
+        var iframes = document.querySelectorAll('iframe');
+        for (var i = 0; i < iframes.length; i++) {
+          try {
+            if (iframes[i].contentDocument && iframes[i].contentDocument.body) {
+              text += ' ' + iframes[i].contentDocument.body.innerText;
+            }
+          } catch(e) {}
+        }
+        return text;
+      })()
+    `)) as string;
+  } catch (err) {
+    logger.warn({ err }, 'getPageText: evaluation failed — returning empty');
+    return '';
+  }
 }
 
 export async function isStillBlocked(page: CrawlPage, type: AntiBotType): Promise<boolean> {
