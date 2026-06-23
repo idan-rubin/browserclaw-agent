@@ -99,7 +99,7 @@ jobs:
           fi
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 🚀 DEPLOY - rsync + docker compose on Hetzner
+  # 🚀 DEPLOY - build+push (mrrubin) and kubectl apply to shared k3s
   # ─────────────────────────────────────────────────────────────────────────────
   deploy:
     name: 🚀 Deploy
@@ -110,74 +110,53 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Check deploy config
-        env:
-          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
-        run: |
-          if [ -z "$SSH_KEY" ]; then
-            echo "HETZNER_SSH_KEY not set — deploy skipped"
-            echo "SKIP=true" >> $GITHUB_ENV
-          else
-            echo "SKIP=false" >> $GITHUB_ENV
-          fi
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login docker.io -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
 
-      - name: Set up SSH
-        if: env.SKIP == 'false'
-        env:
-          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
-          HOST: ${{ vars.HETZNER_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/hetzner
-          chmod 600 ~/.ssh/hetzner
-          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-      - name: Sync files
-        if: env.SKIP == 'false'
+      - name: Build & push changed images (amd64 -> mrrubin, public)
         env:
-          HOST: ${{ vars.HETZNER_HOST }}
-        run: |
-          rsync -avz --delete \
-            --exclude='node_modules' \
-            --exclude='.next' \
-            --exclude='.git' \
-            --exclude='test-results' \
-            --exclude='.env.local' \
-            --exclude='.env' \
-            -e "ssh -i ~/.ssh/hetzner" \
-            ./ "root@$HOST:/opt/browserclaw/"
-
-      - name: Deploy services
-        if: env.SKIP == 'false'
-        env:
+          TAG: ${{ needs.detect-changes.outputs.sha_short }}
           FRONTEND: ${{ needs.detect-changes.outputs.frontend }}
           BROWSER: ${{ needs.detect-changes.outputs.browser }}
           INFRA: ${{ needs.detect-changes.outputs.infra }}
-          HOST: ${{ vars.HETZNER_HOST }}
         run: |
-          SSH="ssh -i ~/.ssh/hetzner root@$HOST"
-          COMPOSE="cd /opt/browserclaw && docker compose -f docker-compose.yml -f docker-compose.prod.yml"
-
-          # If infra changed, rebuild everything
-          if [ "$INFRA" = "true" ]; then
-            echo "Infrastructure changed — full rebuild"
-            $SSH "$COMPOSE up -d --build"
-          else
-            # Build only changed services
-            SERVICES=""
-            [ "$FRONTEND" = "true" ] && SERVICES="$SERVICES frontend"
-            [ "$BROWSER" = "true" ] && SERVICES="$SERVICES browser"
-
-            if [ -n "$SERVICES" ]; then
-              echo "Rebuilding:$SERVICES"
-              $SSH "$COMPOSE up -d --build $SERVICES"
-            fi
+          if [ "$FRONTEND" = "true" ] || [ "$INFRA" = "true" ]; then
+            docker buildx build --platform linux/amd64 \
+              --build-arg NEXT_PUBLIC_GA_ID="G-PG1VRFZPH3" \
+              -t "mrrubin/browserclaw-frontend:$TAG" --push src/Frontend
+          fi
+          if [ "$BROWSER" = "true" ] || [ "$INFRA" = "true" ]; then
+            docker buildx build --platform linux/amd64 \
+              -t "mrrubin/browserclaw-browser:$TAG" --push src/Services/Browser
           fi
 
-      - name: Smoke test
-        if: env.SKIP == 'false'
+      - name: Deploy to k3s (shared-prod)
         env:
-          HOST: ${{ vars.HETZNER_HOST }}
+          KUBE_CONFIG_PROD: ${{ secrets.KUBE_CONFIG_PROD }}
+          TAG: ${{ needs.detect-changes.outputs.sha_short }}
+          FRONTEND: ${{ needs.detect-changes.outputs.frontend }}
+          BROWSER: ${{ needs.detect-changes.outputs.browser }}
+          INFRA: ${{ needs.detect-changes.outputs.infra }}
+        run: |
+          echo "$KUBE_CONFIG_PROD" | base64 -d > /tmp/kube.yaml
+          export KUBECONFIG=/tmp/kube.yaml
+          # browserclaw-secrets (LLM keys, MinIO creds, internal token) is managed out of band.
+          kubectl apply -f infrastructure/k8s/browserclaw.yaml
+          if [ "$FRONTEND" = "true" ] || [ "$INFRA" = "true" ]; then
+            kubectl -n browserclaw set image deploy/frontend frontend="mrrubin/browserclaw-frontend:$TAG"
+          fi
+          if [ "$BROWSER" = "true" ] || [ "$INFRA" = "true" ]; then
+            kubectl -n browserclaw set image deploy/browser browser="mrrubin/browserclaw-browser:$TAG"
+          fi
+          kubectl -n browserclaw rollout status deploy/frontend --timeout=180s
+          kubectl -n browserclaw rollout status deploy/browser --timeout=300s
+
+      - name: Smoke test
+        env:
+          KUBE_CONFIG_PROD: ${{ secrets.KUBE_CONFIG_PROD }}
         run: |
           echo "Waiting for production..."
           for i in $(seq 1 12); do
@@ -190,23 +169,9 @@ jobs:
             sleep 10
           done
           echo "✗ Smoke test failed after 2 minutes"
-          echo "--- Container diagnostics ---"
-          SSH="ssh -i ~/.ssh/hetzner root@$HOST"
-          $SSH "cd /opt/browserclaw && docker compose -f docker-compose.yml -f docker-compose.prod.yml ps" || true
-          echo "--- Frontend logs (last 50) ---"
-          $SSH "cd /opt/browserclaw && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50 frontend" || true
-          echo "--- Traefik logs (last 30) ---"
-          $SSH "cd /opt/browserclaw && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=30 traefik" || true
-          echo "--- Browser logs (last 30) ---"
-          $SSH "cd /opt/browserclaw && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=30 browser" || true
+          echo "$KUBE_CONFIG_PROD" | base64 -d > /tmp/kube.yaml 2>/dev/null || true
+          KUBECONFIG=/tmp/kube.yaml kubectl -n browserclaw get pods || true
           exit 1
-
-      - name: Cleanup
-        if: always() && env.SKIP == 'false'
-        env:
-          HOST: ${{ vars.HETZNER_HOST }}
-        run: |
-          ssh -i ~/.ssh/hetzner "root@$HOST" "docker image prune -f" || true
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 📊 SUMMARY
