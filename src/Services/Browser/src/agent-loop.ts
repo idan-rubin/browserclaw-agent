@@ -1265,6 +1265,9 @@ export async function runAgentLoop(
       : { page: pageOrHolder as CrawlPage };
   const history: AgentStep[] = [];
   const startTime = Date.now();
+  const wallsHit: { domain: string; type: string }[] = [];
+  const sitesVisited = new Set<string>();
+  let recordsExtracted = 0;
   let lastKnownUrl = '';
   let activeBrowser: BrowserClaw | undefined = browser;
   let tabManager = activeBrowser !== undefined ? new TabManager(holder.page) : null;
@@ -1314,6 +1317,9 @@ export async function runAgentLoop(
       answer,
       duration_ms: Date.now() - startTime,
       final_url: currentUrl,
+      walls_hit: wallsHit,
+      sites_visited: [...sitesVisited],
+      records_extracted: recordsExtracted,
     };
   };
 
@@ -1428,6 +1434,9 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
         steps: history,
         error: 'Session aborted',
         duration_ms: Date.now() - startTime,
+        walls_hit: wallsHit,
+        sites_visited: [...sitesVisited],
+        records_extracted: recordsExtracted,
       };
     }
 
@@ -1440,6 +1449,9 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
         error: 'Browser connection lost',
         duration_ms: Date.now() - startTime,
         final_url: history.length > 0 ? history[history.length - 1].url : undefined,
+        walls_hit: wallsHit,
+        sites_visited: [...sitesVisited],
+        records_extracted: recordsExtracted,
       };
     }
 
@@ -1451,6 +1463,8 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     let snapshot = await safeSnapshot(holder.page);
     const url = await safeUrl(holder.page, lastKnownUrl);
     if (url !== '') lastKnownUrl = url;
+    const visitedDomain = extractDomain(url);
+    if (visitedDomain !== '') sitesVisited.add(visitedDomain);
     const title = await safeTitle(holder.page);
 
     if (options?.getSkill !== undefined) {
@@ -1480,6 +1494,10 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
     const domText = await getPageText(holder.page);
     const antiBotType = detectAntiBot(domText);
     if (antiBotType !== null) {
+      const wallDomain = extractDomain(url);
+      if (wallDomain !== '' && !wallsHit.some((w) => w.domain === wallDomain && w.type === antiBotType)) {
+        wallsHit.push({ domain: wallDomain, type: antiBotType });
+      }
       snapshot = enrichSnapshot(snapshot, domText, antiBotType);
       const currentDomain = extractDomain(url);
       const hits = (antiBotHitsByDomain.get(currentDomain) ?? 0) + 1;
@@ -1907,6 +1925,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           steps: history,
           error: userMessage,
           duration_ms: Date.now() - startTime,
+          walls_hit: wallsHit,
+          sites_visited: [...sitesVisited],
+          records_extracted: recordsExtracted,
         };
       }
       consecutiveApiFailures++;
@@ -1926,6 +1947,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           steps: history,
           error: `Unable to reach the AI service after ${String(MAX_API_FAILURES)} attempts. Please try again.`,
           duration_ms: Date.now() - startTime,
+          walls_hit: wallsHit,
+          sites_visited: [...sitesVisited],
+          records_extracted: recordsExtracted,
         };
       }
       continue;
@@ -1990,6 +2014,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           duration_ms: Date.now() - startTime,
           final_url: agentStep.url,
           validation_warnings: validationWarnings,
+          walls_hit: wallsHit,
+          sites_visited: [...sitesVisited],
+          records_extracted: recordsExtracted,
         };
       }
 
@@ -2000,6 +2027,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           error: action.reasoning,
           duration_ms: Date.now() - startTime,
           final_url: agentStep.url,
+          walls_hit: wallsHit,
+          sites_visited: [...sitesVisited],
+          records_extracted: recordsExtracted,
         };
       }
 
@@ -2031,6 +2061,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
               error: `User did not respond to question: "${question}"`,
               duration_ms: Date.now() - startTime,
               final_url: history.length > 0 ? history[history.length - 1].url : undefined,
+              walls_hit: wallsHit,
+              sites_visited: [...sitesVisited],
+              records_extracted: recordsExtracted,
             };
           }
           emit('step_error', { step, error: message });
@@ -2039,6 +2072,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             steps: history,
             error: message,
             duration_ms: Date.now() - startTime,
+            walls_hit: wallsHit,
+            sites_visited: [...sitesVisited],
+            records_extracted: recordsExtracted,
           };
         }
         step++;
@@ -2122,6 +2158,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             break;
           }
           const batch = await extractItemsFromUrls(extractBrowser, action.urls);
+          recordsExtracted += batch.count;
           const header =
             batch.count >= 5
               ? `${String(batch.count)} records fetched across ${String(action.urls.length)} URLs. This is your data — parse the records and respond. Do NOT open individual URLs again; fields the user asked for (price, address, name) are embedded in each record's text or fields.\n`
@@ -2140,6 +2177,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           logger.info({ step, count: batch.count, failedCount: batch.failedUrls.length }, 'extract items batch');
         } else {
           const items = await extractItems(holder.page);
+          recordsExtracted += items.count;
           const header =
             items.count >= 5
               ? `${String(items.count)} records extracted from ${items.source}. This is your data — parse and respond. Before drilling individual detail pages, check the active page-wide filters (URL path/query AND visible filter chips count): any user-prompt constraint that is already enforced by an active filter (price cap, neighborhood, pets allowed, etc.) propagates to every record — re-verifying it per detail page is wasted work. For constraints not enforced by any active filter, you do need to verify per record. Drill ONLY for missing per-record fields the user asked for (e.g. exact bedrooms, address, URL) or for constraints the active filters didn't enforce.\n`
@@ -2396,6 +2434,9 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       answer: judgment.answer,
       duration_ms: Date.now() - startTime,
       final_url: history.length > 0 ? history[history.length - 1].url : undefined,
+      walls_hit: wallsHit,
+      sites_visited: [...sitesVisited],
+      records_extracted: recordsExtracted,
     };
   }
   const fallback = await getFinalSummary(refinedPrompt, history);
@@ -2406,5 +2447,8 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     error: `Reached maximum step limit (${String(maxSteps)}); still missing: ${judgment.missing}`,
     duration_ms: Date.now() - startTime,
     final_url: history.length > 0 ? history[history.length - 1].url : undefined,
+    walls_hit: wallsHit,
+    sites_visited: [...sitesVisited],
+    records_extracted: recordsExtracted,
   };
 }

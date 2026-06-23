@@ -129,6 +129,9 @@ export interface AgentLoopResult {
   duration_ms: number;
   final_url?: string;
   validation_warnings?: string[];
+  walls_hit?: { domain: string; type: string }[];
+  sites_visited?: string[];
+  records_extracted?: number;
 }
 
 export interface CatalogSkill {
