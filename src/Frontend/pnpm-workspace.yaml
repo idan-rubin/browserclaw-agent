@@ -1,4 +1,6 @@
 overrides:
+  # Keep the fixed engine while the patch supports legacy ESLint CommonJS callers.
+  minimatch: 11.0.3
   picomatch@<2.3.4: '>=2.3.4'
   postcss@<8.5.23: ^8.5.23
   uuid@<14: ^14
@@ -12,3 +14,5 @@ allowBuilds:
   msw: true
   sharp: true
   unrs-resolver: true
+patchedDependencies:
+  minimatch@11.0.3: patches/minimatch@11.0.3.patch
