@@ -37,12 +37,15 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [isSending, setIsSending] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const chatInputRef = useRef<HTMLInputElement>(null);
-  const startTime = useRef(Date.now());
+  const startTime = useRef(0);
 
   const done = status !== 'running' && status !== 'waiting_for_user';
 
   // Elapsed timer
   useEffect(() => {
+    if (startTime.current === 0) {
+      startTime.current = Date.now();
+    }
     if (done) {
       setFinalElapsed(Date.now() - startTime.current);
       return;
