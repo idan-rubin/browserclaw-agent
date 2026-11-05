@@ -1151,6 +1151,21 @@ async function getFinalSummary(prompt: string, history: AgentStep[]): Promise<st
   }
 }
 
+const PROMPT_LITERALS = /\d+(?:[ ,./:-]\d+)*|"[^"]*"/g;
+
+function literalPattern(literal: string): RegExp {
+  const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(/^\d/.test(literal) ? `(?<!\\d)${escaped}(?!\\d)` : escaped, 'g');
+}
+
+export function keepsLiterals(original: string, refined: string): boolean {
+  const counts = new Map<string, number>();
+  for (const literal of original.match(PROMPT_LITERALS) ?? []) {
+    counts.set(literal, (counts.get(literal) ?? 0) + 1);
+  }
+  return [...counts].every(([literal, count]) => (refined.match(literalPattern(literal)) ?? []).length >= count);
+}
+
 export type TerminationJudgment = { ready: true; answer: string } | { ready: false; missing: string };
 
 /**
@@ -1400,9 +1415,13 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       maxTokens: 512,
     });
     if (plan.task !== undefined && plan.task !== '' && plan.task !== prompt) {
-      refinedPrompt = plan.task;
-      emit('goal_refined', { original: prompt, refined: refinedPrompt });
-      logger.info('Goal refined');
+      if (keepsLiterals(prompt, plan.task)) {
+        refinedPrompt = plan.task;
+        emit('goal_refined', { original: prompt, refined: refinedPrompt });
+        logger.info('Goal refined');
+      } else {
+        logger.warn('Refined goal dropped literals from the prompt, keeping the original');
+      }
     }
     if (plan.plan !== '') {
       planText = plan.plan;
