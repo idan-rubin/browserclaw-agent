@@ -825,6 +825,22 @@ describe('keepsLiterals', () => {
     expect(keepsLiterals('Use code 123', 'Use code 91234')).toBe(false);
   });
 
+  it('treats a number written in groups as one value', () => {
+    const spaced = 'Fill card number 4242 4242 4242 4242, CVV 123';
+    expect(keepsLiterals(spaced, 'Enter card 4242 4242 4242 4242 with CVV 123')).toBe(true);
+    expect(keepsLiterals(spaced, 'Enter the card ending in 4242 with CVV 123')).toBe(false);
+    expect(keepsLiterals(spaced, 'Enter card 4242424242424242 with CVV 123')).toBe(false);
+  });
+
+  it('requires every occurrence of a repeated value', () => {
+    expect(keepsLiterals('Enter 123 in both fields: 123 and 123', 'Enter 123 in both fields')).toBe(false);
+    expect(keepsLiterals('Enter 123 then 123', 'Type 123, then type 123 again')).toBe(true);
+  });
+
+  it('rejects a value whose separators changed', () => {
+    expect(keepsLiterals('expiry 05/27', 'expiry 05-27')).toBe(false);
+  });
+
   it('accepts a rewrite of a prompt without literals', () => {
     expect(
       keepsLiterals('find apartments in Chelsea', 'Find apartments for rent in Chelsea; stop when results repeat.'),

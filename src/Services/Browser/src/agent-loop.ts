@@ -1151,12 +1151,19 @@ async function getFinalSummary(prompt: string, history: AgentStep[]): Promise<st
   }
 }
 
-const PROMPT_LITERALS = /\d+|"[^"]*"/g;
+const PROMPT_LITERALS = /\d+(?:[ ,./:-]\d+)*|"[^"]*"/g;
+
+function literalPattern(literal: string): RegExp {
+  const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(/^\d/.test(literal) ? `(?<!\\d)${escaped}(?!\\d)` : escaped, 'g');
+}
 
 export function keepsLiterals(original: string, refined: string): boolean {
-  return (original.match(PROMPT_LITERALS) ?? []).every((literal) =>
-    /^\d/.test(literal) ? new RegExp(`(?<!\\d)${literal}(?!\\d)`).test(refined) : refined.includes(literal),
-  );
+  const counts = new Map<string, number>();
+  for (const literal of original.match(PROMPT_LITERALS) ?? []) {
+    counts.set(literal, (counts.get(literal) ?? 0) + 1);
+  }
+  return [...counts].every(([literal, count]) => (refined.match(literalPattern(literal)) ?? []).length >= count);
 }
 
 export type TerminationJudgment = { ready: true; answer: string } | { ready: false; missing: string };
