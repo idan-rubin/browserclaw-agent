@@ -1151,6 +1151,14 @@ async function getFinalSummary(prompt: string, history: AgentStep[]): Promise<st
   }
 }
 
+const PROMPT_LITERALS = /\d+|"[^"]*"/g;
+
+export function keepsLiterals(original: string, refined: string): boolean {
+  return (original.match(PROMPT_LITERALS) ?? []).every((literal) =>
+    /^\d/.test(literal) ? new RegExp(`(?<!\\d)${literal}(?!\\d)`).test(refined) : refined.includes(literal),
+  );
+}
+
 export type TerminationJudgment = { ready: true; answer: string } | { ready: false; missing: string };
 
 /**
@@ -1400,9 +1408,13 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
       maxTokens: 512,
     });
     if (plan.task !== undefined && plan.task !== '' && plan.task !== prompt) {
-      refinedPrompt = plan.task;
-      emit('goal_refined', { original: prompt, refined: refinedPrompt });
-      logger.info('Goal refined');
+      if (keepsLiterals(prompt, plan.task)) {
+        refinedPrompt = plan.task;
+        emit('goal_refined', { original: prompt, refined: refinedPrompt });
+        logger.info('Goal refined');
+      } else {
+        logger.warn('Refined goal dropped literals from the prompt, keeping the original');
+      }
     }
     if (plan.plan !== '') {
       planText = plan.plan;

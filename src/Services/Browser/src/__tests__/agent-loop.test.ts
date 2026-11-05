@@ -80,7 +80,7 @@ vi.mock('../logger.js', () => ({
   },
 }));
 
-const { runAgentLoop, shouldCheckTermination } = await import('../agent-loop.js');
+const { runAgentLoop, shouldCheckTermination, keepsLiterals } = await import('../agent-loop.js');
 const { llmJson } = await import('../llm.js');
 const mockedLlmJson = vi.mocked(llmJson);
 
@@ -797,6 +797,78 @@ describe('shouldCheckTermination', () => {
   it('does not trigger off-interval past the min step', () => {
     expect(shouldCheckTermination(9)).toBe(false);
     expect(shouldCheckTermination(11)).toBe(false);
+  });
+});
+
+describe('keepsLiterals', () => {
+  const prompt = 'Fill card number 4242424242424242, expiry 05/27, CVV 123, amount 147.50, name "Jane Doe".';
+
+  it('accepts a rewrite that carries every number and quoted value', () => {
+    expect(
+      keepsLiterals(
+        prompt,
+        'On the open page enter 4242424242424242, 05/27, 123 and 147.50 for "Jane Doe", then submit.',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects a rewrite that summarises values away', () => {
+    expect(
+      keepsLiterals(
+        prompt,
+        'Fill the form with the provided card details, expiry 05/27, amount 147.50, name "Jane Doe".',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not accept a number embedded in a longer one', () => {
+    expect(keepsLiterals('Use code 123', 'Use code 91234')).toBe(false);
+  });
+
+  it('accepts a rewrite of a prompt without literals', () => {
+    expect(
+      keepsLiterals('find apartments in Chelsea', 'Find apartments for rent in Chelsea; stop when results repeat.'),
+    ).toBe(true);
+  });
+});
+
+describe('goal refinement', () => {
+  const prompt = 'Fill card number 4242424242424242 and CVV 123, then submit';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('keeps the original prompt when the planner drops its literals', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({
+        task: 'Fill the form with the provided card details, then submit',
+        plan: 'Fill and submit',
+      })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Submit', ref: '1' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done', answer: 'Submitted.' });
+    const { page } = mockPage();
+    const emit = vi.fn();
+
+    await runAgentLoop(prompt, page, emit, new AbortController().signal);
+
+    expect(emit).not.toHaveBeenCalledWith('goal_refined', expect.anything());
+    expect(mockedLlmJson.mock.calls[1][0].message).toContain('4242424242424242');
+  });
+
+  it('adopts a refinement that keeps them', async () => {
+    const refined = 'Enter card 4242424242424242 with CVV 123 on the open form, then submit it';
+    mockedLlmJson
+      .mockResolvedValueOnce({ task: refined, plan: 'Fill and submit' })
+      .mockResolvedValueOnce({ action: 'click', reasoning: 'Submit', ref: '1' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done', answer: 'Submitted.' });
+    const { page } = mockPage();
+    const emit = vi.fn();
+
+    await runAgentLoop(prompt, page, emit, new AbortController().signal);
+
+    expect(emit).toHaveBeenCalledWith('goal_refined', { original: prompt, refined });
+    expect(mockedLlmJson.mock.calls[1][0].message).toContain(refined);
   });
 });
 
