@@ -375,6 +375,24 @@ describe('runAgentLoop', () => {
     expect(first.message).not.toContain('was not valid JSON');
   });
 
+  it('accepts a reply shaped like the recovery example', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'Payment of $147.50 was submitted. Confirmation BZ-1'))
+      .mockImplementationOnce((req) => {
+        const example = /respond with (\{.*\})\.?$/m.exec(req.message);
+        if (example === null) throw new Error('recovery example missing from the prompt');
+        const reply = JSON.parse(example[1]) as Record<string, string>;
+        return Promise.resolve({ ...reply, answer: 'Confirmation BZ-1 was issued for the payment.' });
+      });
+
+    const { page } = mockPage();
+    const result = await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    expect(result.success).toBe(true);
+    expect(result.answer).toBe('Confirmation BZ-1 was issued for the payment.');
+  });
+
   it('does not wait for content on a short page that has elements to act on', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Pay' })

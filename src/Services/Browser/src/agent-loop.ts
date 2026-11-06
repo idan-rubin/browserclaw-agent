@@ -1258,7 +1258,7 @@ export interface UserChatHooks {
 
 function parseFailureFeedback(responseSnippet: string): string {
   const began = responseSnippet.replace(/\s+/g, ' ').trim().slice(0, 80);
-  return `⚠ Your previous response was not valid JSON (it began: "${began}"). Reply with ONLY one JSON object in the required format. If the task is complete, respond with {"action": "done", "answer": "<your findings>"}.`;
+  return `⚠ Your previous response was not valid JSON (it began: "${began}"). Reply with ONLY one JSON object in the required format. If the task is complete, respond with {"action": "done", "reasoning": "<why the task is complete>", "answer": "<your findings>"}.`;
 }
 
 export async function runAgentLoop(
