@@ -515,16 +515,40 @@ describe('runAgentLoop', () => {
       });
     const { page, mock } = mockPage();
     mock.snapshot.mockResolvedValue({ snapshot: '- textbox [ref=f1e8]\n- textbox [ref=f1e10]' });
-    mock.evaluateInAllFrames.mockResolvedValue([
+    const frames = [
       { frameUrl: 'https://example.com/pay', frameName: '', result: [] },
       { frameUrl: 'https://fields.example.com/checkout', frameName: 'checkout', result: ['cc-number', 'cc-name'] },
-    ]);
+    ];
+    mock.evaluateInAllFrames.mockImplementation((script: unknown) =>
+      Promise.resolve(String(script).includes('role="alert"') ? [] : frames),
+    );
 
     await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
 
     expect(mock.evaluate).not.toHaveBeenCalled();
     const next = mockedLlmJson.mock.calls[2][0] as { message: string };
     expect(next.message).toContain('[frame https://fields.example.com/checkout]\n["cc-number","cc-name"]');
+  });
+
+  it('shows live-region messages the snapshot dropped', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockResolvedValueOnce({ action: 'select', reasoning: 'Pick the country', ref: 'e1', value: 'US' })
+      .mockResolvedValueOnce({
+        action: 'done',
+        reasoning: 'Done',
+        answer: 'The country was selected and the form accepted.',
+      });
+    const { page, mock } = mockPage();
+    mock.snapshot.mockResolvedValue({ snapshot: '- combobox "Country" [ref=e1]\n- button "Pay now" [ref=e2]' });
+    mock.evaluateInAllFrames.mockResolvedValue([
+      { frameUrl: 'https://example.com/pay', frameName: '', result: ['Select your country'] },
+    ]);
+
+    await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    const first = mockedLlmJson.mock.calls[1][0] as { message: string };
+    expect(first.message).toContain('[ALERTS — messages the page is showing right now]\n- Select your country');
   });
 
   it('surfaces the main-frame error when an extract expression throws everywhere', async () => {
