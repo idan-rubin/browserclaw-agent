@@ -287,6 +287,14 @@ export function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
 const PAGE_READY_RETRIES = 2;
 const PAGE_READY_WAIT_MS = 2000;
 const PAGE_TEXT_READY_MIN = 40;
+const SUGGESTION_LINE = /\b(listbox|option|menuitem|aria-autocomplete|suggestion|dropdown)\b/i;
+const EXPANDED = '[expanded]';
+
+// A native <select> is a combobox with its options before and after typing; only a list that appeared counts.
+export function suggestionListAppeared(before: string, after: string): boolean {
+  const count = (snapshot: string): number => snapshot.split('\n').filter((l) => SUGGESTION_LINE.test(l)).length;
+  return count(after) > count(before) || (after.includes(EXPANDED) && !before.includes(EXPANDED));
+}
 const PAGE_TEXT_PREVIEW = 800;
 
 // A text-only page (receipt, confirmation, error) snapshots as "(no interactive elements)"; its text proves it rendered.
@@ -2346,7 +2354,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
             const postTypeSnapshot = (
               await holder.page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })
             ).snapshot;
-            if (/combobox|listbox|aria-autocomplete|suggestion|dropdown/i.test(postTypeSnapshot)) {
+            if (suggestionListAppeared(snapshot, postTypeSnapshot)) {
               agentStep.action.error_feedback =
                 'AUTOCOMPLETE DETECTED: A dropdown/suggestion list appeared after typing. Wait for it to fully load, then click the correct suggestion. Do NOT press Enter.';
               step++;

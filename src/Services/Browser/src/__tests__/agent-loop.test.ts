@@ -445,6 +445,59 @@ describe('runAgentLoop', () => {
     expect(prompt.message).toContain('Confirmation number: BZ-1234567');
   });
 
+  it('keeps typing through a batch on a page with a native select', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockResolvedValueOnce({
+        reasoning: 'Fill the billing step',
+        actions: [
+          { action: 'type', reasoning: 'cvv', ref: 'e1', text: '123' },
+          { action: 'type', reasoning: 'zip', ref: 'e5', text: '62704' },
+        ],
+      })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done', answer: 'Both billing fields were filled in.' });
+    const { page, mock } = mockPage();
+    mock.snapshot.mockResolvedValue({
+      snapshot: [
+        '- textbox "Security code" [ref=e1]',
+        '- combobox "Country" [ref=e2]:',
+        '  - option "United States" [ref=e3]',
+        '- textbox "Billing ZIP code" [ref=e5]',
+      ].join('\n'),
+    });
+
+    await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    expect(mock.type).toHaveBeenCalledTimes(2);
+    const next = mockedLlmJson.mock.calls[2][0] as { message: string };
+    expect(next.message).not.toContain('AUTOCOMPLETE DETECTED');
+  });
+
+  it('stops a batch when typing opens a suggestion list', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockResolvedValueOnce({
+        reasoning: 'Fill the address',
+        actions: [
+          { action: 'type', reasoning: 'city', ref: 'e1', text: 'Spring' },
+          { action: 'type', reasoning: 'zip', ref: 'e2', text: '62704' },
+        ],
+      })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done', answer: 'Stopped to pick a suggestion first.' });
+    const { page, mock } = mockPage();
+    const form = '- combobox "City" [ref=e1]\n- textbox "ZIP" [ref=e2]';
+    mock.snapshot.mockResolvedValue({ snapshot: form });
+    mock.type.mockImplementation(() => {
+      mock.snapshot.mockResolvedValue({ snapshot: `${form}\n- listbox [ref=e3]:\n  - option "Springfield" [ref=e4]` });
+    });
+
+    await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    expect(mock.type).toHaveBeenCalledTimes(1);
+    const next = mockedLlmJson.mock.calls[2][0] as { message: string };
+    expect(next.message).toContain('AUTOCOMPLETE DETECTED');
+  });
+
   it('switches sites after 5 parse failures, force-completes at 8 cross-site', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Try something' })
