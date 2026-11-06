@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { CrawlPage } from 'browserclaw';
 import { LlmParseError } from '../types.js';
+import { getPageText } from '../skills/press-and-hold.js';
 import type { AgentLoopResult } from '../types.js';
 
 // Mock external dependencies
 vi.mock('../llm.js', () => ({
   llmJson: vi.fn(),
   llmVision: vi.fn(),
+  setLlmAbortSignal: vi.fn(),
   sanitizeErrorText: (s: string) => s,
   getTokenUsage: vi.fn(() => ({ input: 0, output: 0, total: 0 })),
   getLLMCallCount: vi.fn(() => 0),
@@ -351,6 +353,96 @@ describe('runAgentLoop', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Session aborted');
+  });
+
+  it('tells the model its response was not JSON before the next step', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'Payment of $147.50 was submitted. Confirmation BZ-1'))
+      .mockResolvedValueOnce({
+        action: 'done',
+        reasoning: 'Done',
+        answer: 'Confirmation BZ-1 was issued for the payment.',
+      });
+
+    const { page } = mockPage();
+    const result = await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    expect(result.success).toBe(true);
+    const retry = mockedLlmJson.mock.calls[2][0] as { message: string };
+    expect(retry.message).toContain('Your previous response was not valid JSON');
+    expect(retry.message).toContain('it began: "Payment of $147.50 was submitted');
+    const first = mockedLlmJson.mock.calls[1][0] as { message: string };
+    expect(first.message).not.toContain('was not valid JSON');
+  });
+
+  it('accepts a reply shaped like the recovery example', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockRejectedValueOnce(new LlmParseError('No JSON', 'Payment of $147.50 was submitted. Confirmation BZ-1'))
+      .mockImplementationOnce((req) => {
+        const example = /respond with (\{.*\})\.?$/m.exec(req.message);
+        if (example === null) throw new Error('recovery example missing from the prompt');
+        const reply = JSON.parse(example[1]) as Record<string, string>;
+        return Promise.resolve({ ...reply, answer: 'Confirmation BZ-1 was issued for the payment.' });
+      });
+
+    const { page } = mockPage();
+    const result = await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    expect(result.success).toBe(true);
+    expect(result.answer).toBe('Confirmation BZ-1 was issued for the payment.');
+  });
+
+  it('does not wait for content on a short page that has elements to act on', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done', answer: 'The form was already complete.' });
+    const { page, mock } = mockPage();
+    mock.snapshot.mockResolvedValue({
+      snapshot: ['- textbox "Card number" [ref=e1]', '- textbox "Expiry" [ref=e2]', '- button "Pay" [ref=e3]'].join(
+        '\n',
+      ),
+    });
+
+    await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    expect(mock.waitFor).not.toHaveBeenCalledWith({ timeMs: 2000 });
+  });
+
+  it('waits for content on a short page with nothing to act on', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done', answer: 'Nothing rendered on the page yet.' });
+    const { page, mock } = mockPage();
+    mock.snapshot.mockResolvedValue({ snapshot: '- text "Loading"' });
+
+    await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    expect(mock.waitFor).toHaveBeenCalledWith({ timeMs: 2000 });
+  });
+
+  it('reads a text-only page instead of waiting for it', async () => {
+    const receipt =
+      'Payment received\nThank you. Your payment of $147.50 was submitted.\nConfirmation number: BZ-1234567';
+    vi.mocked(getPageText).mockResolvedValue(receipt);
+    mockedLlmJson.mockResolvedValueOnce({ plan: 'Pay' }).mockResolvedValueOnce({
+      action: 'done',
+      reasoning: 'Done',
+      answer: 'Confirmation BZ-1234567 was issued for the payment.',
+    });
+    const { page, mock } = mockPage();
+    mock.snapshot.mockResolvedValue({ snapshot: '(no interactive elements)' });
+
+    try {
+      await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+    } finally {
+      vi.mocked(getPageText).mockResolvedValue('');
+    }
+
+    expect(mock.waitFor).not.toHaveBeenCalledWith({ timeMs: 2000 });
+    const prompt = mockedLlmJson.mock.calls[1][0] as { message: string };
+    expect(prompt.message).toContain('Confirmation number: BZ-1234567');
   });
 
   it('switches sites after 5 parse failures, force-completes at 8 cross-site', async () => {

@@ -25,6 +25,7 @@ import {
   getTokenUsage,
   isFailFastError,
   extractProviderMessage,
+  setLlmAbortSignal,
 } from './llm.js';
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
@@ -272,18 +273,35 @@ Respond with valid JSON:
 
 If you gathered useful data, use "done" with a structured answer. If not, use "fail" with what you tried.`;
 
-function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
+// A short snapshot is only "empty" when nothing on it can be acted on; lean forms and receipts are ready.
+export function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
   const lines = snapshot.split('\n').filter((l) => l.trim() !== '');
   const elementCount = lines.length;
   const textLength = lines.reduce((sum, l) => sum + l.replace(/\[.*?\]/g, '').trim().length, 0);
 
-  if (elementCount < 10) return 'empty';
+  if (elementCount < 10 && !lines.some((l) => l.includes('[ref='))) return 'empty';
   if (elementCount > 20 && textLength < elementCount * 5) return 'skeleton';
   return 'ready';
 }
 
 const PAGE_READY_RETRIES = 2;
 const PAGE_READY_WAIT_MS = 2000;
+const PAGE_TEXT_READY_MIN = 40;
+const PAGE_TEXT_PREVIEW = 800;
+
+// A text-only page (receipt, confirmation, error) snapshots as "(no interactive elements)"; its text proves it rendered.
+async function pageReady(page: CrawlPage, snapshot: string): Promise<'ready' | 'empty' | 'skeleton'> {
+  const state = isPageReady(snapshot);
+  if (state !== 'empty') return state;
+  const text = await getPageText(page);
+  return text.trim().length >= PAGE_TEXT_READY_MIN ? 'ready' : 'empty';
+}
+
+function withPageText(snapshot: string, domText: string): string {
+  const text = domText.trim();
+  const truncated = text.length > PAGE_TEXT_PREVIEW ? '\n…(truncated)' : '';
+  return `${snapshot}\n\n[PAGE TEXT — nothing to interact with; the page says]\n${text.slice(0, PAGE_TEXT_PREVIEW)}${truncated}`;
+}
 const SNAPSHOT_TIMEOUT_MS = 10000;
 const NAVIGATE_TIMEOUT_MS = 30000;
 
@@ -384,14 +402,14 @@ async function safeSnapshot(page: CrawlPage): Promise<string> {
   }
 
   // Wait for page to fully load if it looks empty or skeleton-like
-  const state = isPageReady(snapshot);
+  const state = await pageReady(page, snapshot);
   if (state !== 'ready') {
     logger.info({ state }, 'Page not ready — waiting for content');
     for (let i = 0; i < PAGE_READY_RETRIES; i++) {
       await page.waitFor({ timeMs: PAGE_READY_WAIT_MS });
       try {
         snapshot = (await page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })).snapshot;
-        if (isPageReady(snapshot) === 'ready') break;
+        if ((await pageReady(page, snapshot)) === 'ready') break;
       } catch (retryErr) {
         logger.warn(
           { attempt: i + 1, error: retryErr instanceof Error ? retryErr.message : 'unknown' },
@@ -1254,6 +1272,11 @@ export interface UserChatHooks {
   nonce: string;
 }
 
+function parseFailureFeedback(responseSnippet: string): string {
+  const began = responseSnippet.replace(/\s+/g, ' ').trim().slice(0, 80);
+  return `⚠ Your previous response was not valid JSON (it began: "${began}"). Reply with ONLY one JSON object in the required format. If the task is complete, respond with {"action": "done", "reasoning": "<why the task is complete>", "answer": "<your findings>"}.`;
+}
+
 export async function runAgentLoop(
   prompt: string,
   pageOrHolder: CrawlPage | PageHolder,
@@ -1267,6 +1290,7 @@ export async function runAgentLoop(
   options?: AgentLoopOptions,
 ): Promise<AgentLoopResult> {
   const cfg = defaultAgentConfig(options?.config);
+  setLlmAbortSignal(signal);
   maxSteps ??= cfg.maxSteps;
   if (MAX_STEPS_HARD_CEILING > 0 && maxSteps > MAX_STEPS_HARD_CEILING) {
     logger.warn({ configured: maxSteps, ceiling: MAX_STEPS_HARD_CEILING }, 'maxSteps exceeded hard ceiling — clamping');
@@ -1305,6 +1329,7 @@ export async function runAgentLoop(
   let consecutiveRecoveryCount = 0;
   let lastRecoveryDomain: string | null = null;
   let pendingSiteSwitch: string | null = null;
+  let pendingParseFeedback: string | null = null;
   let duplicateMemoryCount = 0;
   const bannedRefs = new Map<string, { action: string; failures: number }>();
   const BAN_THRESHOLD = 2;
@@ -1526,6 +1551,9 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
         domainSkill = null;
       }
     }
+    if (antiBotType === null && !snapshot.includes('[ref=') && domText.trim() !== '') {
+      snapshot = withPageText(snapshot, domText);
+    }
     const pageState = detectPageState({ snapshot, domText, title, url, antiBotType });
 
     // #5 Screenshot fallback: when a11y snapshot and DOM text are both sparse,
@@ -1687,6 +1715,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
     if (pendingSiteSwitch !== null) {
       recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + pendingSiteSwitch;
       pendingSiteSwitch = null;
+    }
+
+    if (pendingParseFeedback !== null) {
+      recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + pendingParseFeedback;
+      pendingParseFeedback = null;
     }
 
     if (terminationNudge !== null) {
@@ -1895,6 +1928,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           error_kind: 'parse_error',
           ...(process.env.DEBUG !== undefined && { rawText: err.responseSnippet }),
         });
+        pendingParseFeedback = parseFailureFeedback(err.responseSnippet);
 
         // Absolute last resort: too many parse failures across all sites
         if (crossSiteParseFailures >= MAX_CROSS_SITE_PARSE_FAILURES) {
