@@ -93,6 +93,7 @@ interface SessionLlmContext {
   inputTokens: number;
   outputTokens: number;
   byokClient?: OpenAI;
+  signal?: AbortSignal;
 }
 
 function requireCtx(): SessionLlmContext {
@@ -120,6 +121,14 @@ export function runWithLlmConfig<T>(config: LlmConfig, fn: () => Promise<T>): Pr
   return sessionLlmStore.run({ llmConfig: config, llmCallCount: 0, inputTokens: 0, outputTokens: 0 }, fn);
 }
 
+/**
+ * Cancel in-flight LLM calls made in the current BYOK context when `signal` aborts.
+ */
+export function setLlmAbortSignal(signal: AbortSignal): void {
+  const ctx = sessionLlmStore.getStore();
+  if (ctx) ctx.signal = signal;
+}
+
 function recordUsage(input: number, output: number): void {
   const ctx = requireCtx();
   ctx.inputTokens += input;
@@ -143,7 +152,11 @@ export interface LLMRequest {
   system: string;
   message: string;
   maxTokens: number;
+  json?: boolean;
 }
+
+// The Codex backend rejects json_object unless the input mentions JSON; an unconstrained json_schema forces an object either way.
+const JSON_OBJECT_FORMAT = { type: 'json_schema', name: 'json_object', strict: false, schema: { type: 'object' } };
 
 interface LLMResponse {
   text: string;
@@ -154,11 +167,13 @@ async function callCodexResponsesAPI(
   model: string,
   req: LLMRequest,
   apiKey: string,
+  signal?: AbortSignal,
 ): Promise<LLMResponse> {
   const url = `${provider.baseURL}/codex/responses`;
 
   const res = await fetch(url, {
     method: 'POST',
+    signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -172,6 +187,7 @@ async function callCodexResponsesAPI(
       store: false,
       stream: true,
       reasoning: { effort: 'low' },
+      ...(req.json === true && { text: { format: JSON_OBJECT_FORMAT } }),
     }),
   });
 
@@ -182,7 +198,8 @@ async function callCodexResponsesAPI(
 
   const body = await res.text();
   const lines = body.split('\n');
-  const textParts: string[] = [];
+  const streamedParts: string[] = [];
+  let completedText = '';
   let sawCompleted = false;
   for (const line of lines) {
     if (!line.startsWith('data: ')) continue;
@@ -194,7 +211,7 @@ async function callCodexResponsesAPI(
     }
     if (data.type === 'response.output_text.done') {
       const text = data.text as string | undefined;
-      if (text !== undefined && text !== '') textParts.push(text);
+      if (text !== undefined && text !== '') streamedParts.push(text);
     } else if (data.type === 'response.completed') {
       sawCompleted = true;
       const resp = data.response as Record<string, unknown> | undefined;
@@ -202,11 +219,12 @@ async function callCodexResponsesAPI(
       if (usage) recordUsage(usage.input_tokens ?? 0, usage.output_tokens ?? 0);
       const output = (resp?.output as Record<string, unknown>[] | undefined)?.[0];
       const content = (output?.content as Record<string, unknown>[] | undefined)?.[0];
-      const legacyText = content?.text as string | undefined;
-      if (legacyText !== undefined && legacyText !== '') textParts.push(legacyText);
+      completedText = (content?.text as string | undefined) ?? '';
     }
   }
-  if (sawCompleted && textParts.length > 0) return { text: textParts.join('') };
+  // The completed event repeats the streamed text; use it only when nothing was streamed.
+  const text = streamedParts.length > 0 ? streamedParts.join('') : completedText;
+  if (sawCompleted && text !== '') return { text };
 
   throw new Error('Codex Responses API returned no completed response');
 }
@@ -216,15 +234,19 @@ async function callChatCompletions(
   model: string,
   req: LLMRequest,
   client: OpenAI,
+  signal?: AbortSignal,
 ): Promise<LLMResponse> {
-  const response = await client.chat.completions.create({
-    model,
-    ...(provider.useMaxCompletionTokens ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens }),
-    messages: [
-      { role: 'system', content: req.system },
-      { role: 'user', content: req.message },
-    ],
-  });
+  const response = await client.chat.completions.create(
+    {
+      model,
+      ...(provider.useMaxCompletionTokens ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens }),
+      messages: [
+        { role: 'system', content: req.system },
+        { role: 'user', content: req.message },
+      ],
+    },
+    { signal },
+  );
 
   if (response.usage) {
     recordUsage(response.usage.prompt_tokens, response.usage.completion_tokens);
@@ -344,21 +366,24 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
 
   if (config.provider === 'openai-oauth') {
     return await withTimeout(
-      retryTransient(() => callCodexResponsesAPI(provider, config.model, req, config.api_key), 'BYOK Codex API'),
+      retryTransient(
+        () => callCodexResponsesAPI(provider, config.model, req, config.api_key, ctx.signal),
+        'BYOK Codex API',
+      ),
       LLM_CODEX_TIMEOUT_MS,
       'LLM call (BYOK OAuth)',
     );
   }
 
   return await withTimeout(
-    callChatCompletions(provider, config.model, req, getClient(ctx, provider)),
+    callChatCompletions(provider, config.model, req, getClient(ctx, provider), ctx.signal),
     LLM_TIMEOUT_MS,
     'LLM call (BYOK)',
   );
 }
 
 export async function llmJson<T>(req: LLMRequest): Promise<T> {
-  const { text } = await llm(req);
+  const { text } = await llm({ ...req, json: true });
   try {
     return parseJsonResponse(text) as T;
   } catch (err) {

@@ -25,6 +25,7 @@ import {
   getTokenUsage,
   isFailFastError,
   extractProviderMessage,
+  setLlmAbortSignal,
 } from './llm.js';
 import { LlmParseError } from './types.js';
 import type { AgentAction, AgentStep, AgentLoopResult, AgentProgress, CatalogSkill, TaskLesson } from './types.js';
@@ -272,12 +273,13 @@ Respond with valid JSON:
 
 If you gathered useful data, use "done" with a structured answer. If not, use "fail" with what you tried.`;
 
-function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
+// A short snapshot is only "empty" when nothing on it can be acted on; lean forms and receipts are ready.
+export function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
   const lines = snapshot.split('\n').filter((l) => l.trim() !== '');
   const elementCount = lines.length;
   const textLength = lines.reduce((sum, l) => sum + l.replace(/\[.*?\]/g, '').trim().length, 0);
 
-  if (elementCount < 10) return 'empty';
+  if (elementCount < 10 && !lines.some((l) => l.includes('[ref='))) return 'empty';
   if (elementCount > 20 && textLength < elementCount * 5) return 'skeleton';
   return 'ready';
 }
@@ -1254,6 +1256,11 @@ export interface UserChatHooks {
   nonce: string;
 }
 
+function parseFailureFeedback(responseSnippet: string): string {
+  const began = responseSnippet.replace(/\s+/g, ' ').trim().slice(0, 80);
+  return `⚠ Your previous response was not valid JSON (it began: "${began}"). Reply with ONLY one JSON object in the required format. If the task is complete, respond with {"action": "done", "answer": "<your findings>"}.`;
+}
+
 export async function runAgentLoop(
   prompt: string,
   pageOrHolder: CrawlPage | PageHolder,
@@ -1267,6 +1274,7 @@ export async function runAgentLoop(
   options?: AgentLoopOptions,
 ): Promise<AgentLoopResult> {
   const cfg = defaultAgentConfig(options?.config);
+  setLlmAbortSignal(signal);
   maxSteps ??= cfg.maxSteps;
   if (MAX_STEPS_HARD_CEILING > 0 && maxSteps > MAX_STEPS_HARD_CEILING) {
     logger.warn({ configured: maxSteps, ceiling: MAX_STEPS_HARD_CEILING }, 'maxSteps exceeded hard ceiling — clamping');
@@ -1305,6 +1313,7 @@ export async function runAgentLoop(
   let consecutiveRecoveryCount = 0;
   let lastRecoveryDomain: string | null = null;
   let pendingSiteSwitch: string | null = null;
+  let pendingParseFeedback: string | null = null;
   let duplicateMemoryCount = 0;
   const bannedRefs = new Map<string, { action: string; failures: number }>();
   const BAN_THRESHOLD = 2;
@@ -1689,6 +1698,11 @@ Respond with JSON: {"plan": "your revised plan here"}`,
       pendingSiteSwitch = null;
     }
 
+    if (pendingParseFeedback !== null) {
+      recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + pendingParseFeedback;
+      pendingParseFeedback = null;
+    }
+
     if (terminationNudge !== null) {
       recoveryMessage = (recoveryMessage !== null ? recoveryMessage + '\n' : '') + terminationNudge;
     }
@@ -1895,6 +1909,7 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           error_kind: 'parse_error',
           ...(process.env.DEBUG !== undefined && { rawText: err.responseSnippet }),
         });
+        pendingParseFeedback = parseFailureFeedback(err.responseSnippet);
 
         // Absolute last resort: too many parse failures across all sites
         if (crossSiteParseFailures >= MAX_CROSS_SITE_PARSE_FAILURES) {
