@@ -286,6 +286,22 @@ export function isPageReady(snapshot: string): 'ready' | 'empty' | 'skeleton' {
 
 const PAGE_READY_RETRIES = 2;
 const PAGE_READY_WAIT_MS = 2000;
+const PAGE_TEXT_READY_MIN = 40;
+const PAGE_TEXT_PREVIEW = 800;
+
+// A text-only page (receipt, confirmation, error) snapshots as "(no interactive elements)"; its text proves it rendered.
+async function pageReady(page: CrawlPage, snapshot: string): Promise<'ready' | 'empty' | 'skeleton'> {
+  const state = isPageReady(snapshot);
+  if (state !== 'empty') return state;
+  const text = await getPageText(page);
+  return text.trim().length >= PAGE_TEXT_READY_MIN ? 'ready' : 'empty';
+}
+
+function withPageText(snapshot: string, domText: string): string {
+  const text = domText.trim();
+  const truncated = text.length > PAGE_TEXT_PREVIEW ? '\n…(truncated)' : '';
+  return `${snapshot}\n\n[PAGE TEXT — nothing to interact with; the page says]\n${text.slice(0, PAGE_TEXT_PREVIEW)}${truncated}`;
+}
 const SNAPSHOT_TIMEOUT_MS = 10000;
 const NAVIGATE_TIMEOUT_MS = 30000;
 
@@ -386,14 +402,14 @@ async function safeSnapshot(page: CrawlPage): Promise<string> {
   }
 
   // Wait for page to fully load if it looks empty or skeleton-like
-  const state = isPageReady(snapshot);
+  const state = await pageReady(page, snapshot);
   if (state !== 'ready') {
     logger.info({ state }, 'Page not ready — waiting for content');
     for (let i = 0; i < PAGE_READY_RETRIES; i++) {
       await page.waitFor({ timeMs: PAGE_READY_WAIT_MS });
       try {
         snapshot = (await page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })).snapshot;
-        if (isPageReady(snapshot) === 'ready') break;
+        if ((await pageReady(page, snapshot)) === 'ready') break;
       } catch (retryErr) {
         logger.warn(
           { attempt: i + 1, error: retryErr instanceof Error ? retryErr.message : 'unknown' },
@@ -1534,6 +1550,9 @@ Respond with JSON: {"task": "the SMART task", "plan": "your action plan"}`,
         logger.info({ domain: currentDomain, hits }, 'Clearing domain skill — repeated anti-bot on this domain');
         domainSkill = null;
       }
+    }
+    if (antiBotType === null && !snapshot.includes('[ref=') && domText.trim() !== '') {
+      snapshot = withPageText(snapshot, domText);
     }
     const pageState = detectPageState({ snapshot, domText, title, url, antiBotType });
 

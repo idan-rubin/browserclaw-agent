@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { CrawlPage } from 'browserclaw';
 import { LlmParseError } from '../types.js';
+import { getPageText } from '../skills/press-and-hold.js';
 import type { AgentLoopResult } from '../types.js';
 
 // Mock external dependencies
@@ -419,6 +420,29 @@ describe('runAgentLoop', () => {
     await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
 
     expect(mock.waitFor).toHaveBeenCalledWith({ timeMs: 2000 });
+  });
+
+  it('reads a text-only page instead of waiting for it', async () => {
+    const receipt =
+      'Payment received\nThank you. Your payment of $147.50 was submitted.\nConfirmation number: BZ-1234567';
+    vi.mocked(getPageText).mockResolvedValue(receipt);
+    mockedLlmJson.mockResolvedValueOnce({ plan: 'Pay' }).mockResolvedValueOnce({
+      action: 'done',
+      reasoning: 'Done',
+      answer: 'Confirmation BZ-1234567 was issued for the payment.',
+    });
+    const { page, mock } = mockPage();
+    mock.snapshot.mockResolvedValue({ snapshot: '(no interactive elements)' });
+
+    try {
+      await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+    } finally {
+      vi.mocked(getPageText).mockResolvedValue('');
+    }
+
+    expect(mock.waitFor).not.toHaveBeenCalledWith({ timeMs: 2000 });
+    const prompt = mockedLlmJson.mock.calls[1][0] as { message: string };
+    expect(prompt.message).toContain('Confirmation number: BZ-1234567');
   });
 
   it('switches sites after 5 parse failures, force-completes at 8 cross-site', async () => {
