@@ -95,6 +95,7 @@ interface MockPage {
   goto: ReturnType<typeof vi.fn>;
   select: ReturnType<typeof vi.fn>;
   evaluate: ReturnType<typeof vi.fn>;
+  evaluateInAllFrames: ReturnType<typeof vi.fn>;
   press: ReturnType<typeof vi.fn>;
   waitFor: ReturnType<typeof vi.fn>;
   id: string;
@@ -110,6 +111,7 @@ function mockPage(): { page: CrawlPage; mock: MockPage } {
     goto: vi.fn().mockResolvedValue(undefined),
     select: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn().mockResolvedValue(''),
+    evaluateInAllFrames: vi.fn().mockResolvedValue([]),
     press: vi.fn().mockResolvedValue(undefined),
     waitFor: vi.fn().mockResolvedValue(undefined),
     id: 'test-page-id',
@@ -496,6 +498,55 @@ describe('runAgentLoop', () => {
     expect(mock.type).toHaveBeenCalledTimes(1);
     const next = mockedLlmJson.mock.calls[2][0] as { message: string };
     expect(next.message).toContain('AUTOCOMPLETE DETECTED');
+  });
+
+  it('reports extract results from a payment iframe under its frame URL', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockResolvedValueOnce({
+        action: 'extract',
+        reasoning: 'Read the unlabeled inputs',
+        expression: "Array.from(document.querySelectorAll('input')).map((i) => i.autocomplete)",
+      })
+      .mockResolvedValueOnce({
+        action: 'done',
+        reasoning: 'Done',
+        answer: 'The card field is the first textbox in the frame.',
+      });
+    const { page, mock } = mockPage();
+    mock.snapshot.mockResolvedValue({ snapshot: '- textbox [ref=f1e8]\n- textbox [ref=f1e10]' });
+    mock.evaluateInAllFrames.mockResolvedValue([
+      { frameUrl: 'https://example.com/pay', frameName: '', result: [] },
+      { frameUrl: 'https://fields.example.com/checkout', frameName: 'checkout', result: ['cc-number', 'cc-name'] },
+    ]);
+
+    await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    expect(mock.evaluate).not.toHaveBeenCalled();
+    const next = mockedLlmJson.mock.calls[2][0] as { message: string };
+    expect(next.message).toContain('[frame https://fields.example.com/checkout]\n["cc-number","cc-name"]');
+  });
+
+  it('surfaces the main-frame error when an extract expression throws everywhere', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockResolvedValueOnce({
+        action: 'extract',
+        reasoning: 'Read the frame',
+        expression: 'document.querySelector("iframe").contentDocument.title',
+      })
+      .mockResolvedValueOnce({
+        action: 'done',
+        reasoning: 'Done',
+        answer: 'The frame document cannot be reached that way.',
+      });
+    const { page, mock } = mockPage();
+    mock.evaluate.mockRejectedValue(new Error("TypeError: Cannot read properties of null (reading 'title')"));
+
+    await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    const next = mockedLlmJson.mock.calls[2][0] as { message: string };
+    expect(next.message).toContain("Error: TypeError: Cannot read properties of null (reading 'title')");
   });
 
   it('switches sites after 5 parse failures, force-completes at 8 cross-site', async () => {
