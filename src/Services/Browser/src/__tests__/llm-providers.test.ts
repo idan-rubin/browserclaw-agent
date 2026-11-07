@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as sdk from '../index.js';
 import { BYOK_PROVIDERS } from '../llm.js';
 import type { LlmProvider } from '../types.js';
 
@@ -13,5 +14,13 @@ describe('BYOK_PROVIDERS', () => {
 
   it('openai and openai-oauth have different base URLs', () => {
     expect(BYOK_PROVIDERS.openai?.baseURL).not.toBe(BYOK_PROVIDERS['openai-oauth']?.baseURL);
+  });
+});
+
+describe('public entry point', () => {
+  it('exposes the model calls so a host can proxy its subscription', () => {
+    expect(typeof sdk.llm).toBe('function');
+    expect(typeof sdk.llmJson).toBe('function');
+    expect(typeof sdk.runWithLlmConfig).toBe('function');
   });
 });

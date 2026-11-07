@@ -158,7 +158,7 @@ export interface LLMRequest {
 // The Codex backend rejects json_object unless the input mentions JSON; an unconstrained json_schema forces an object either way.
 const JSON_OBJECT_FORMAT = { type: 'json_schema', name: 'json_object', strict: false, schema: { type: 'object' } };
 
-interface LLMResponse {
+export interface LLMResponse {
   text: string;
 }
 
