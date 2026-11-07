@@ -23,6 +23,12 @@ describe('newFormFields', () => {
     expect(newFormFields(STEP, after)).toEqual([]);
   });
 
+  it('counts a second unnamed textbox as new', () => {
+    const before = '- textbox [ref=e1]\n- button "Continue" [ref=e2]';
+    const after = '- textbox [ref=e1]: "4242"\n- textbox [ref=e3]\n- button "Continue" [ref=e2]';
+    expect(newFormFields(before, after)).toEqual(['- textbox']);
+  });
+
   it('ignores a page that lost fields', () => {
     expect(newFormFields(STEP, '- button "Pay now" [ref=e1]')).toEqual([]);
   });

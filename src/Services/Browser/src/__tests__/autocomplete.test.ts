@@ -44,6 +44,11 @@ describe('suggestionListAppeared', () => {
     );
   });
 
+  it('ignores a suggestion list that closed after typing', () => {
+    const open = '- combobox "City" [ref=e1] [expanded]\n- listbox [ref=e2]:\n  - option "Springfield" [ref=e3]';
+    expect(suggestionListAppeared(open, '- combobox "City" [ref=e1]: "Springfield"')).toBe(false);
+  });
+
   it('ignores a native select whose refs were renumbered', () => {
     const after = FORM_WITH_SELECT.replace('[ref=e3]', '[ref=e13]').replace('[ref=e4]', '[ref=e14]');
     expect(suggestionListAppeared(FORM_WITH_SELECT, after)).toBe(false);
