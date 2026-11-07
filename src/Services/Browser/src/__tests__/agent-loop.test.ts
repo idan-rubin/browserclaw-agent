@@ -530,10 +530,35 @@ describe('runAgentLoop', () => {
     expect(next.message).toContain('[frame https://fields.example.com/checkout]\n["cc-number","cc-name"]');
   });
 
+  it('stops a batch when an action reveals new fields', async () => {
+    mockedLlmJson
+      .mockResolvedValueOnce({ plan: 'Pay' })
+      .mockResolvedValueOnce({
+        reasoning: 'Finish the billing step',
+        actions: [
+          { action: 'select', reasoning: 'country', ref: 'e1', options: ['US'] },
+          { action: 'click', reasoning: 'continue', ref: 'e2' },
+        ],
+      })
+      .mockResolvedValueOnce({ action: 'done', reasoning: 'Done', answer: 'Stopped to fill the postal code first.' });
+    const { page, mock } = mockPage();
+    const form = '- combobox "Country" [ref=e1]:\n  - option "United States" [ref=e3]\n- button "Continue" [ref=e2]';
+    mock.snapshot.mockResolvedValue({ snapshot: form });
+    mock.select.mockImplementation(() => {
+      mock.snapshot.mockResolvedValue({ snapshot: `${form}\n- textbox "Billing ZIP code" [ref=e5]` });
+    });
+
+    await runAgentLoop('Pay the bill', page, vi.fn(), new AbortController().signal);
+
+    expect(mock.click).not.toHaveBeenCalled();
+    const next = mockedLlmJson.mock.calls[2][0] as { message: string };
+    expect(next.message).toContain('NEW FIELDS APPEARED (- textbox "Billing ZIP code"). Aborting 1 queued action(s)');
+  });
+
   it('shows live-region messages the snapshot dropped', async () => {
     mockedLlmJson
       .mockResolvedValueOnce({ plan: 'Pay' })
-      .mockResolvedValueOnce({ action: 'select', reasoning: 'Pick the country', ref: 'e1', value: 'US' })
+      .mockResolvedValueOnce({ action: 'select', reasoning: 'Pick the country', ref: 'e1', options: ['US'] })
       .mockResolvedValueOnce({
         action: 'done',
         reasoning: 'Done',

@@ -314,6 +314,38 @@ export function suggestionListAppeared(before: string, after: string): boolean {
   if (after.includes(EXPANDED) && !before.includes(EXPANDED)) return true;
   return suggestionLines(after).join('\n') !== suggestionLines(before).join('\n');
 }
+
+const FORM_FIELD_ROLES = new Set([
+  'textbox',
+  'combobox',
+  'checkbox',
+  'radio',
+  'spinbutton',
+  'switch',
+  'searchbox',
+  'slider',
+]);
+
+function formFields(snapshot: string): string[] {
+  const fields: string[] = [];
+  for (const line of snapshot.split('\n')) {
+    const match = SNAPSHOT_LINE.exec(line);
+    if (match !== null && FORM_FIELD_ROLES.has(match[1])) {
+      fields.push(line.replace(LINE_VALUE, '').replace(REF_ATTR, '').trim());
+    }
+  }
+  return fields;
+}
+
+// An action that reveals fields (a country select that shows its postal code, a section that unfolds) invalidates
+// the plan the batch was built on; only a page with MORE fields counts, so a renamed or renumbered control does not.
+export function newFormFields(before: string, after: string): string[] {
+  const seen = formFields(before);
+  const now = formFields(after);
+  if (now.length <= seen.length) return [];
+  const known = new Set(seen);
+  return [...new Set(now.filter((field) => !known.has(field)))];
+}
 const PAGE_TEXT_PREVIEW = 800;
 const ALERT_SELECTOR = '[role="alert"],[role="status"],[aria-live="assertive"],[aria-live="polite"]';
 const ALERT_MAX = 5;
@@ -2436,9 +2468,10 @@ Respond with JSON: {"plan": "your revised plan here"}`,
 
         // Validate action outcome — provide natural language feedback
         let postActionUrl = preActionUrl;
+        let postSnapshot = '';
         try {
           postActionUrl = await safeUrl(holder.page, preActionUrl);
-          const postSnapshot = (
+          postSnapshot = (
             await holder.page.snapshot({ interactive: true, compact: true, timeoutMs: SNAPSHOT_TIMEOUT_MS })
           ).snapshot;
           const outcome = validateAction(action, preActionUrl, postActionUrl, snapshot.length, postSnapshot.length);
@@ -2470,6 +2503,14 @@ Respond with JSON: {"plan": "your revised plan here"}`,
           const remaining = actions.length - actionIdx - 1;
           agentStep.outcome = `URL changed (${preActionUrl} → ${postActionUrl}). Aborting ${String(remaining)} queued action(s) — their refs are stale on the new page.${filterLossMessage}`;
           logger.info({ step, remaining, preActionUrl, postActionUrl }, 'Stale-DOM abort');
+          step++;
+          break;
+        }
+        const revealed = hasMoreQueued ? newFormFields(snapshot, postSnapshot) : [];
+        if (revealed.length > 0) {
+          const remaining = actions.length - actionIdx - 1;
+          agentStep.outcome = `NEW FIELDS APPEARED (${revealed.join('; ')}). Aborting ${String(remaining)} queued action(s) — fill them before moving on.${filterLossMessage}`;
+          logger.info({ step, remaining, revealed }, 'Revealed-fields abort');
           step++;
           break;
         }
