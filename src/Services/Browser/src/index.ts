@@ -4,8 +4,8 @@ export type { PageHolder, UserChatHooks, AgentLoopOptions, TerminationJudgment }
 export { defaultAgentConfig } from './config.js';
 export type { AgentConfig } from './config.js';
 
-export { runWithLlmConfig, getTokenUsage } from './llm.js';
-export type { TokenUsage } from './llm.js';
+export { runWithLlmConfig, getTokenUsage, llm, llmJson } from './llm.js';
+export type { LLMRequest, LLMResponse, TokenUsage } from './llm.js';
 
 export { fillIframeFieldByTokens } from './skills/fill-iframe-field.js';
 export type { FillIframeFieldResult } from './skills/fill-iframe-field.js';
