@@ -201,7 +201,7 @@ export default function LandingPage() {
               vs <span className="italic text-primary">browser-use</span>
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-sm text-muted-foreground sm:text-base">
-              Different lineage, different design.{' '}
+              Different lineage, different design. browserclaw was born from{' '}
               <a
                 href="https://openclaw.ai"
                 target="_blank"
@@ -209,8 +209,8 @@ export default function LandingPage() {
                 className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
               >
                 OpenClaw
-              </a>{' '}
-              took the{' '}
+              </a>
+              &apos;s browser module, which follows the{' '}
               <a
                 href="https://github.com/microsoft/playwright-mcp"
                 target="_blank"
@@ -219,8 +219,8 @@ export default function LandingPage() {
               >
                 Playwright MCP
               </a>{' '}
-              snapshot-and-ref approach, refined it locally, and shipped it as a standalone library. browser-use rolled
-              its own Python bundle.
+              snapshot-and-ref approach. It is now an independent, standalone library, not affiliated with OpenClaw.
+              browser-use rolled its own Python bundle.
             </p>
           </div>
 

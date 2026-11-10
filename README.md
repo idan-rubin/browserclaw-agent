@@ -20,7 +20,7 @@ browser-use welds these into one package. We keep them as separate, swappable la
 
 ## vs browser-use
 
-**Different lineage, different design.** [OpenClaw](https://openclaw.ai) took the [Playwright MCP](https://github.com/microsoft/playwright-mcp) approach — Microsoft's snapshot-and-ref pattern — implemented it locally, and refined it into [browserclaw](https://github.com/idan-rubin/browserclaw), a standalone npm library. This agent rides on that library. browser-use rolled its own Python stack as one bundled package.
+**Different lineage, different design.** [browserclaw](https://github.com/idan-rubin/browserclaw) was born from the browser module in [OpenClaw](https://openclaw.ai), which implements the [Playwright MCP](https://github.com/microsoft/playwright-mcp) approach — Microsoft's snapshot-and-ref pattern. It took that design and became its own standalone npm library: an independent project, not affiliated with OpenClaw. This agent rides on that library. browser-use rolled its own Python stack as one bundled package.
 
 |                             |    browserclaw     |    browser-use     |
 | :-------------------------- | :----------------: | :----------------: |
@@ -215,4 +215,4 @@ Swap Anthropic for OpenAI, Groq, Gemini, or a local model. See the full [browser
 ## Built with
 
 - [BrowserClaw](https://github.com/idan-rubin/browserclaw) — the browser automation library
-- [OpenClaw](https://github.com/openclaw/openclaw) — the community behind it
+- [OpenClaw](https://github.com/openclaw/openclaw) — the project browserclaw was born from (no affiliation)
