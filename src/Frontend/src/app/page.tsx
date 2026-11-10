@@ -268,6 +268,32 @@ export default function LandingPage() {
 
         {/* Built With / Inspired By */}
         <section className="relative z-10 py-8 sm:py-12">
+          <div className="mb-3 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground/50 sm:mb-4 sm:gap-x-8 sm:text-sm">
+            <span>In production at</span>
+            <span className="flex items-baseline gap-2">
+              <a
+                href="https://beelz.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
+              >
+                beelz.ai
+              </a>
+              <span>bill pay</span>
+            </span>
+            <span className="text-muted-foreground/30">&middot;</span>
+            <span className="flex items-baseline gap-2">
+              <a
+                href="https://tovli.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
+              >
+                tovli.ai
+              </a>
+              <span>charitable giving</span>
+            </span>
+          </div>
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs sm:text-sm text-muted-foreground/50 sm:gap-x-8">
             <span>Built with</span>
             <a

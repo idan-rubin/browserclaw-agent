@@ -8,6 +8,14 @@
 
 The AI agent for [browserclaw](https://github.com/idan-rubin/browserclaw).
 
+## In production
+
+Real products run on browserclaw-agent, completing real payments on third-party websites:
+
+- **[beelz.ai](https://beelz.ai)** — automated bill pay. Give it a biller's payment page and an amount; the agent logs in, fills the form, and pays. No per-provider integrations.
+- **[tovli.ai](https://tovli.ai)** — AI-powered charitable giving. The agent completes the donation form on each nonprofit's own website.
+- **[browserclaw.org](https://browserclaw.org)** — the open playground, deployed from this repo.
+
 ## Layered, not bundled
 
 Three separate layers, not one monolith:
