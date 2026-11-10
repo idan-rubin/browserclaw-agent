@@ -210,7 +210,7 @@ export default function LandingPage() {
               >
                 OpenClaw
               </a>
-              &apos;s browser module, which follows the{' '}
+              &apos;s browser module, which put the{' '}
               <a
                 href="https://github.com/microsoft/playwright-mcp"
                 target="_blank"
@@ -219,8 +219,8 @@ export default function LandingPage() {
               >
                 Playwright MCP
               </a>{' '}
-              snapshot-and-ref approach. It is now an independent, standalone library, not affiliated with OpenClaw.
-              browser-use rolled its own Python bundle.
+              snapshot-and-ref approach to work in a real agent. We pulled it out into a standalone library. browser-use
+              rolled its own Python bundle.
             </p>
           </div>
 
@@ -352,7 +352,6 @@ export default function LandingPage() {
               title="Open Source"
               links={[
                 { label: 'BrowserClaw', href: 'https://github.com/idan-rubin/browserclaw' },
-                { label: 'OpenClaw', href: 'https://openclaw.ai' },
                 { label: 'npm', href: 'https://www.npmjs.com/package/browserclaw' },
               ]}
             />
