@@ -352,7 +352,6 @@ export default function LandingPage() {
               title="Open Source"
               links={[
                 { label: 'BrowserClaw', href: 'https://github.com/idan-rubin/browserclaw' },
-                { label: 'OpenClaw', href: 'https://openclaw.ai' },
                 { label: 'npm', href: 'https://www.npmjs.com/package/browserclaw' },
               ]}
             />

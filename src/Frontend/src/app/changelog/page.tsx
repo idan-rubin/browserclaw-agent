@@ -3,7 +3,7 @@ import { PageShell } from '@/components/page-shell';
 
 export const metadata: Metadata = {
   title: 'Changelog',
-  description: "What's new in BrowserClaw. All releases synced from OpenClaw's browser module.",
+  description: "What's new in BrowserClaw, an independent library born from OpenClaw's browser module.",
 };
 
 export default function ChangelogPage() {
@@ -13,7 +13,7 @@ export default function ChangelogPage() {
         <div className="mx-auto max-w-3xl">
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Changelog</h1>
           <p className="mt-4 text-lg text-muted-foreground">
-            What&apos;s new in BrowserClaw. All releases synced from{' '}
+            What&apos;s new in BrowserClaw, an independent library born from{' '}
             <a
               href="https://openclaw.ai"
               target="_blank"
