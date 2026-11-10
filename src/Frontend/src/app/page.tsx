@@ -201,7 +201,7 @@ export default function LandingPage() {
               vs <span className="italic text-primary">browser-use</span>
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-sm text-muted-foreground sm:text-base">
-              Different lineage, different design.{' '}
+              Different lineage, different design. browserclaw was born from{' '}
               <a
                 href="https://openclaw.ai"
                 target="_blank"
@@ -209,8 +209,8 @@ export default function LandingPage() {
                 className="text-foreground/90 underline decoration-border/70 underline-offset-4 transition-colors hover:decoration-foreground"
               >
                 OpenClaw
-              </a>{' '}
-              took the{' '}
+              </a>
+              &apos;s browser module, which follows the{' '}
               <a
                 href="https://github.com/microsoft/playwright-mcp"
                 target="_blank"
@@ -219,8 +219,8 @@ export default function LandingPage() {
               >
                 Playwright MCP
               </a>{' '}
-              snapshot-and-ref approach, refined it locally, and shipped it as a standalone library. browser-use rolled
-              its own Python bundle.
+              snapshot-and-ref approach. It is now an independent, standalone library, not affiliated with OpenClaw.
+              browser-use rolled its own Python bundle.
             </p>
           </div>
 
@@ -268,6 +268,32 @@ export default function LandingPage() {
 
         {/* Built With / Inspired By */}
         <section className="relative z-10 py-8 sm:py-12">
+          <div className="mb-3 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground/50 sm:mb-4 sm:gap-x-8 sm:text-sm">
+            <span>In production at</span>
+            <span className="flex items-baseline gap-2">
+              <a
+                href="https://beelz.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
+              >
+                beelz.ai
+              </a>
+              <span>bill pay</span>
+            </span>
+            <span className="text-muted-foreground/30">&middot;</span>
+            <span className="flex items-baseline gap-2">
+              <a
+                href="https://tovli.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
+              >
+                tovli.ai
+              </a>
+              <span>charitable giving</span>
+            </span>
+          </div>
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs sm:text-sm text-muted-foreground/50 sm:gap-x-8">
             <span>Built with</span>
             <a
