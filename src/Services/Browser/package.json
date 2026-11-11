@@ -1,6 +1,6 @@
 {
   "name": "browserclaw-agent",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Browser automation agent loop powered by browserclaw",
   "type": "module",
   "main": "./dist/index.js",
