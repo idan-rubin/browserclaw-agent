@@ -10,6 +10,20 @@ permissions:
   contents: read
 
 jobs:
+  typescript-only:
+    name: TypeScript-only sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Reject JavaScript source files
+        shell: bash
+        run: |
+          javascript_files="$(git ls-files -- '*.js' '*.jsx' '*.mjs' '*.cjs')"
+          if [[ -n "$javascript_files" ]]; then
+            printf 'Use TypeScript instead of JavaScript for these files:\n%s\n' "$javascript_files"
+            exit 1
+          fi
+
   lint-browser:
     name: lint
     runs-on: ubuntu-latest

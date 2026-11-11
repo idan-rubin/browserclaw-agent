@@ -1,21 +1,22 @@
-#!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const pkgDir = resolve(new URL('..', import.meta.url).pathname);
-const { name } = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+const { name } = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')) as {
+  name: string;
+};
 
 const workDir = mkdtempSync(join(tmpdir(), 'pack-smoke-'));
-const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: 'inherit' });
+const run = (cmd: string, args: string[], cwd: string) => execFileSync(cmd, args, { cwd, stdio: 'inherit' });
 
 try {
   console.log(`[pack-smoke] Packing ${name} into ${workDir}`);
   run('npm', ['pack', '--pack-destination', workDir], pkgDir);
 
-  const tarball = readdirSync(workDir).find(f => f.endsWith('.tgz'));
-  if (!tarball) throw new Error('npm pack produced no tarball');
+  const tarball = readdirSync(workDir).find((f) => f.endsWith('.tgz'));
+  if (tarball === undefined) throw new Error('npm pack produced no tarball');
 
   const installDir = join(workDir, 'consumer');
   mkdirSync(installDir, { recursive: true });
