@@ -439,7 +439,7 @@ export async function llmVision(system: string, message: string, imageBase64: st
       withTimeout(
         client.chat.completions.create({
           model: config.model,
-          max_tokens: 2048,
+          ...(provider.useMaxCompletionTokens ? { max_completion_tokens: 2048 } : { max_tokens: 2048 }),
           messages: [
             { role: 'system', content: system },
             {

@@ -15,6 +15,13 @@ export const PROVIDERS = [
   { value: 'gemini' as const, label: 'Google Gemini' },
 ];
 
+const OPENAI_MODELS = [
+  { value: 'gpt-6.2-sol', label: 'GPT-6.2 Sol' },
+  { value: 'gpt-6.2-astra', label: 'GPT-6.2 Astra' },
+  { value: 'gpt-6.1-terra', label: 'GPT-6.1 Terra' },
+  { value: 'gpt-6-luna', label: 'GPT-6 Luna' },
+];
+
 const MODELS: Record<string, { value: string; label: string }[]> = {
   anthropic: [
     { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
@@ -22,19 +29,22 @@ const MODELS: Record<string, { value: string; label: string }[]> = {
     { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
     { value: 'claude-fable-5-2', label: 'Claude Fable 5.2' },
   ],
-  openai: [
-    { value: 'gpt-5.4', label: 'GPT-5.4' },
-    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
-  ],
-  'openai-oauth': [
-    { value: 'gpt-5.4', label: 'GPT-5.4' },
-    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
-  ],
+  openai: OPENAI_MODELS,
+  'openai-oauth': OPENAI_MODELS,
   gemini: [
-    { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro' },
-    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
+    { value: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen' },
+    { value: 'gemini-4-carbon', label: 'Gemini 4 Carbon' },
+    { value: 'gemini-4-neon', label: 'Gemini 4 Neon' },
+    { value: 'gemini-4-argon', label: 'Gemini 4 Argon' },
+    { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite' },
   ],
 };
+
+const MODEL_REPLACEMENTS = new Map([
+  ['claude-opus-4-6', 'claude-opus-5-5'],
+  ['gpt-5.4-mini', 'gpt-6-luna'],
+  ['gemini-3.1-pro-preview', 'gemini-4-carbon'],
+]);
 
 const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
 const STORAGE_KEY = 'browserclaw_llm_config';
@@ -61,9 +71,7 @@ function loadStoredConfig(): StoredConfig {
     const parsed = JSON.parse(raw) as Partial<StoredConfig>;
     const provider = parsed.provider ?? DEFAULT_PROVIDER;
     const models = MODELS[provider] ?? [];
-    // Sonnet is the fallback. Keep returning Opus users on the Opus line.
-    const savedModel =
-      provider === 'anthropic' && parsed.model === 'claude-opus-4-6' ? 'claude-opus-5-5' : parsed.model;
+    const savedModel = MODEL_REPLACEMENTS.get(parsed.model ?? '') ?? parsed.model;
     const model = models.find((m) => m.value === savedModel)?.value ?? models.at(0)?.value ?? '';
     return { provider, model, api_key: parsed.api_key ?? '', refresh_token: parsed.refresh_token ?? '' };
   } catch {
