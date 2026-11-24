@@ -214,7 +214,7 @@ export function CompareClient() {
             setRefreshToken={llm.setRefreshToken}
             allowedProviders={SHARED_PROVIDERS}
           />
-          {launchError !== null && <p className="text-xs text-red-400">{launchError}</p>}
+          {launchError !== null && <p className="text-xs text-red-600 dark:text-red-400">{launchError}</p>}
           {!hasApiKey && <p className="text-xs text-amber-500/80">Enter your API key above to run.</p>}
         </div>
       </div>
@@ -235,9 +235,7 @@ export function CompareClient() {
                 />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center bg-black/90 px-4 text-center">
-                  <span className="font-[family-name:var(--font-heading)] text-xl text-foreground/70">
-                    {side.label}
-                  </span>
+                  <span className="display text-xl text-foreground/70">{side.label}</span>
                   <p className="mt-2 text-xs text-muted-foreground">
                     {state.error ?? (running ? 'Launching\u2026' : 'Waiting for prompt')}
                   </p>

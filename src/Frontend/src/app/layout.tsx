@@ -1,22 +1,15 @@
 import type { Metadata } from 'next';
-import { Inter, Source_Serif_4, JetBrains_Mono } from 'next/font/google';
+import { Mona_Sans, JetBrains_Mono } from 'next/font/google';
 import { ThemeProvider } from 'next-themes';
 import { ThemeColor } from '@/components/theme-toggle';
 import { Toaster } from 'sonner';
 import Script from 'next/script';
 import './globals.css';
 
-const inter = Inter({
+const monaSans = Mona_Sans({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-inter',
-  display: 'swap',
-});
-
-const sourceSerif = Source_Serif_4({
-  subsets: ['latin'],
-  weight: ['600', '700', '800'],
-  variable: '--font-heading',
+  axes: ['wdth'],
+  variable: '--font-mona-sans',
   display: 'swap',
 });
 
@@ -56,10 +49,8 @@ gtag('config', '${gaId}');`}
           </>
         )}
       </head>
-      <body
-        className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} font-[family-name:var(--font-inter)] antialiased`}
-      >
-        <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
+      <body className={`${monaSans.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+        <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
           <ThemeColor />
           {children}
           <Toaster

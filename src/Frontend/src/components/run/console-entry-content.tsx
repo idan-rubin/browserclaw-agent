@@ -15,7 +15,7 @@ export function ConsoleEntryContent({ entry, variant }: { entry: ConsoleEntry; v
     if (entry.type === 'ask_user') {
       return (
         <div className="min-w-0 text-sm">
-          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 font-[family-name:var(--font-jetbrains-mono)] text-xs text-amber-400">
+          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 font-[family-name:var(--font-jetbrains-mono)] text-xs text-amber-600 dark:text-amber-400">
             ask_user
           </span>
           <span className="ml-2 text-foreground">{entry.message}</span>
@@ -35,10 +35,10 @@ export function ConsoleEntryContent({ entry, variant }: { entry: ConsoleEntry; v
     if (entry.type === 'skill_event') {
       return (
         <div className="min-w-0 text-sm">
-          <span className="rounded bg-violet-500/10 px-1.5 py-0.5 font-[family-name:var(--font-jetbrains-mono)] text-xs text-violet-400">
+          <span className="rounded bg-violet-500/10 px-1.5 py-0.5 font-[family-name:var(--font-jetbrains-mono)] text-xs text-violet-600 dark:text-violet-400">
             skill
           </span>
-          <span className="ml-2 text-violet-300/70">{entry.message}</span>
+          <span className="ml-2 text-violet-600/70 dark:text-violet-300/70">{entry.message}</span>
         </div>
       );
     }
@@ -57,7 +57,7 @@ export function ConsoleEntryContent({ entry, variant }: { entry: ConsoleEntry; v
   if (entry.type === 'ask_user') {
     return (
       <>
-        <span className="mx-2 text-amber-400">ask_user</span>
+        <span className="mx-2 text-amber-600 dark:text-amber-400">ask_user</span>
         <span className="truncate text-foreground">{entry.message}</span>
       </>
     );
@@ -73,8 +73,8 @@ export function ConsoleEntryContent({ entry, variant }: { entry: ConsoleEntry; v
   if (entry.type === 'skill_event') {
     return (
       <>
-        <span className="mx-2 text-violet-400">skill</span>
-        <span className="truncate text-violet-300/70">{entry.message}</span>
+        <span className="mx-2 text-violet-600 dark:text-violet-400">skill</span>
+        <span className="truncate text-violet-600/70 dark:text-violet-300/70">{entry.message}</span>
       </>
     );
   }

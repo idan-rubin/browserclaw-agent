@@ -46,7 +46,7 @@ export function RunSummary({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <SiteHeader border />
+      <SiteHeader />
 
       <div className="flex flex-1 justify-center overflow-y-auto px-4 py-10 sm:py-16">
         <div className="w-full max-w-2xl space-y-8 animate-page-in">
@@ -63,7 +63,7 @@ export function RunSummary({
           {/* Answer */}
           {answer != null && answer !== '' && (
             <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 sm:p-6">
-              <span className="inline-block rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-emerald-400">
+              <span className="inline-block rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
                 Answer
               </span>
               <p className="mt-3 text-lg leading-relaxed">{answer}</p>
@@ -72,7 +72,7 @@ export function RunSummary({
 
           {/* Error banner */}
           {error != null && error !== '' && (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 px-5 py-3.5 text-center text-sm text-red-400">
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 px-5 py-3.5 text-center text-sm text-red-600 dark:text-red-400">
               {error}
             </div>
           )}

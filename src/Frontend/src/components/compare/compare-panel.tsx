@@ -227,13 +227,13 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, onTerminal }:
     <div className="relative flex h-full w-full flex-col bg-black">
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between border-b border-border/50 bg-background/90 px-3 py-2 backdrop-blur">
-        <span className="font-[family-name:var(--font-heading)] text-sm tracking-tight text-foreground">{label}</span>
+        <span className="display text-sm tracking-tight text-foreground">{label}</span>
         <span
           className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
             status === 'completed'
               ? 'bg-green-500/15 text-green-500'
               : status === 'failed'
-                ? 'bg-red-500/15 text-red-400'
+                ? 'bg-red-500/15 text-red-600 dark:text-red-400'
                 : 'bg-primary/15 text-primary'
           }`}
         >
@@ -277,11 +277,11 @@ export function ComparePanel({ sessionId, apiBase, vncBase, label, onTerminal }:
         {done && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/70 px-3 py-2 text-xs text-white/90 backdrop-blur-sm">
             {status === 'completed' ? (
-              <span className="text-green-400">
+              <span className="text-green-600 dark:text-green-400">
                 &#10003; completed in {elapsed}s &middot; {step} steps
               </span>
             ) : (
-              <span className="text-red-400">
+              <span className="text-red-600 dark:text-red-400">
                 &#10007; {error ?? 'failed'} &middot; {step} steps
               </span>
             )}

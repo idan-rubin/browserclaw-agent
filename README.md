@@ -41,6 +41,23 @@ browser-use welds these into one package. We keep them as separate, swappable la
 
 :white_check_mark: = Yes&ensp; :heavy_minus_sign: = Partial&ensp; :x: = No
 
+## vs ego lite
+
+**Different shape, different job.** [ego lite](https://github.com/citrolabs/ego-lite) is a desktop browser you install so a coding agent on your computer (Claude Code, Codex, Cursor) can work in your signed-in tabs. browserclaw is a library you ship inside your own product, and it runs anywhere Node and a Chromium browser do.
+
+|                                 |    browserclaw     |      ego lite      |
+| :------------------------------ | :----------------: | :----------------: |
+| Embeds as an npm library        | :white_check_mark: |        :x:         |
+| Runs headless on servers and CI | :white_check_mark: |        :x:         |
+| Works with any agent            | :white_check_mark: | :white_check_mark: |
+| Uses your signed-in browser     | :heavy_minus_sign: | :white_check_mark: |
+| Auto-learns skills per site     | :white_check_mark: | :heavy_minus_sign: |
+| Solves anti-bot in OSS          | :white_check_mark: |        :x:         |
+
+:white_check_mark: = Yes&ensp; :heavy_minus_sign: = Partial&ensp; :x: = No
+
+Sourced from ego lite's [README](https://github.com/citrolabs/ego-lite#readme) and [agent guide](https://github.com/citrolabs/ego-lite/blob/main/package/ego-browser/skill-body/SKILL.md) on November 24, 2026. It is a desktop app for macOS and Windows, with Linux on its roadmap. Any agent CLI drives it through the `ego-browser` skill. It bundles site learnings for GitHub, Google, and X, and lists auto-learned skills as coming soon. Its agent guide hands CAPTCHAs to the user. browserclaw reaches a signed-in browser by attaching to a running Chrome with `connect()` or reusing a profile, which takes setup that ego lite does not need.
+
 ## What the agent does
 
 The agent reads an accessibility snapshot of the page, decides what to do next, and executes the action. Up to 100 steps per run. It maintains a memory scratchpad across steps and evaluates whether each action succeeded before deciding the next move.

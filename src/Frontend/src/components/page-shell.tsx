@@ -8,7 +8,7 @@ interface PageShellProps {
 export function PageShell({ activePath, children }: PageShellProps) {
   return (
     <div className="relative min-h-screen flex flex-col">
-      <SiteHeader activePath={activePath} border />
+      <SiteHeader activePath={activePath} />
       {children}
     </div>
   );

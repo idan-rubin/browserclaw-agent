@@ -3,11 +3,11 @@
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 
-const THEME_COLORS = { dark: '#1e1d25', light: '#fbfaf8' } as const;
+const THEME_COLORS = { dark: '#0c1120', light: '#e8e7e5' } as const;
 
 export function ThemeColor() {
   const { resolvedTheme } = useTheme();
-  const color = THEME_COLORS[resolvedTheme === 'light' ? 'light' : 'dark'];
+  const color = THEME_COLORS[resolvedTheme === 'dark' ? 'dark' : 'light'];
   return <meta name="theme-color" content={color} />;
 }
 

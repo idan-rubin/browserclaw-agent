@@ -30,22 +30,22 @@ export type RunStatus = 'running' | 'waiting_for_user' | 'completed' | 'failed';
 
 export const STATUS_CONFIG: Record<RunStatus, { badge: string; dot: string; label: string }> = {
   running: {
-    badge: 'bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20',
+    badge: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 ring-1 ring-blue-500/20',
     dot: 'bg-blue-400',
     label: 'Running',
   },
   waiting_for_user: {
-    badge: 'bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20',
+    badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20',
     dot: 'bg-amber-400 animate-pulse',
     label: 'Waiting for your input',
   },
   completed: {
-    badge: 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20',
+    badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/20',
     dot: 'bg-emerald-400',
     label: 'Run completed',
   },
   failed: {
-    badge: 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20',
+    badge: 'bg-red-500/10 text-red-600 dark:text-red-400 ring-1 ring-red-500/20',
     dot: 'bg-red-400',
     label: 'Run failed',
   },

@@ -31,7 +31,9 @@ export function SkillCard({
             {source && (
               <span
                 className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
-                  source === 'generated' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-violet-500/10 text-violet-400'
+                  source === 'generated'
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
                 }`}
               >
                 {source === 'generated' ? 'New' : 'Catalog'}
