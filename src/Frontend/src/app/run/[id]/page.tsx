@@ -340,7 +340,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     <div className="flex h-screen flex-col overflow-hidden">
       <nav className="relative z-20 flex shrink-0 items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-md sm:px-6">
         <div className="flex items-center gap-3">
-          <Link href="/" className="font-[family-name:var(--font-heading)] text-lg tracking-tight">
+          <Link href="/" className="display text-lg tracking-tight">
             <BrowserClawWordmark />
           </Link>
           {plan && (
@@ -370,7 +370,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             onClick={() => {
               setShowCancelConfirm(true);
             }}
-            className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/50"
+            className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/50"
           >
             Cancel
           </button>

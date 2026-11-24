@@ -35,8 +35,8 @@ export function SamplePrompts() {
   const [active, setActive] = useState(0);
   const current = SAMPLES[active] ?? SAMPLES[0];
   return (
-    <div className="rounded-2xl border border-border bg-card/60 p-2 backdrop-blur-sm">
-      <div className="flex flex-wrap items-center gap-1 rounded-xl bg-background/40 p-1">
+    <div className="rounded-3xl border border-border bg-card p-2 sm:p-3">
+      <div className="flex flex-wrap items-center gap-1 rounded-full bg-muted p-1 sm:w-fit">
         {SAMPLES.map((s, i) => (
           <button
             key={s.label}
@@ -44,10 +44,8 @@ export function SamplePrompts() {
             onClick={() => {
               setActive(i);
             }}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition-all sm:text-sm ${
-              i === active
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-card/60 hover:text-foreground'
+            className={`rounded-full px-4 py-2 text-xs font-semibold transition-all sm:text-sm ${
+              i === active ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
             }`}
             aria-pressed={i === active}
           >
@@ -55,11 +53,11 @@ export function SamplePrompts() {
           </button>
         ))}
       </div>
-      <div className="flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:gap-5">
-        <p className="flex-1 text-sm text-foreground/90 sm:text-base">{current.prompt}</p>
+      <div className="flex flex-col gap-5 px-4 py-6 sm:flex-row sm:items-center sm:gap-8 sm:px-5 sm:py-8">
+        <p className="flex-1 text-base text-foreground sm:text-xl sm:leading-snug">{current.prompt}</p>
         <Link
           href={`/try?prompt=${encodeURIComponent(current.prompt)}`}
-          className="shrink-0 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97]"
+          className="shrink-0 rounded-full bg-primary px-6 py-3 text-center text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03] active:scale-[0.97] sm:text-base"
         >
           Try this &rarr;
         </Link>

@@ -95,7 +95,7 @@ export function AgentViewToggle({ children }: { children: React.ReactNode }) {
                 </pre>
               </>
             ) : skillError !== null ? (
-              <p className="text-xs text-red-400">Failed to load skill: {skillError}</p>
+              <p className="text-xs text-red-600 dark:text-red-400">Failed to load skill: {skillError}</p>
             ) : (
               <p className="text-xs text-muted-foreground">Loading…</p>
             )}

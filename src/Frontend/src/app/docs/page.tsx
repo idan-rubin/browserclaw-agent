@@ -277,10 +277,10 @@ function ComparisonRow({ label, values }: { label: string; values: ('yes' | 'no'
 function ComparisonIcon({ value }: { value: 'yes' | 'no' | 'partial' }) {
   switch (value) {
     case 'yes':
-      return <span className="text-green-400">&#10003;</span>;
+      return <span className="text-green-600 dark:text-green-400">&#10003;</span>;
     case 'partial':
-      return <span className="text-yellow-400">~</span>;
+      return <span className="text-yellow-600 dark:text-yellow-400">~</span>;
     case 'no':
-      return <span className="text-red-400">&#10005;</span>;
+      return <span className="text-red-600 dark:text-red-400">&#10005;</span>;
   }
 }

@@ -16,7 +16,7 @@ function ErrorContent() {
     <div className="w-full max-w-2xl space-y-8 animate-page-in">
       {/* Status */}
       <div className="text-center">
-        <span className="inline-flex items-center gap-2.5 rounded-full bg-red-500/10 px-5 py-2 text-sm font-semibold tracking-wide text-red-400 ring-1 ring-red-500/20">
+        <span className="inline-flex items-center gap-2.5 rounded-full bg-red-500/10 px-5 py-2 text-sm font-semibold tracking-wide text-red-600 dark:text-red-400 ring-1 ring-red-500/20">
           <span className="h-2 w-2 rounded-full bg-red-400" />
           Run failed
         </span>
@@ -24,7 +24,7 @@ function ErrorContent() {
 
       {/* Error details */}
       <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 sm:p-6">
-        <span className="inline-block rounded-md bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-red-400">
+        <span className="inline-block rounded-md bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-red-600 dark:text-red-400">
           Error
         </span>
         <p className="mt-3 text-lg leading-relaxed">{error}</p>
@@ -87,7 +87,7 @@ function ErrorContent() {
 export default function ErrorPage() {
   return (
     <div className="flex min-h-screen flex-col">
-      <SiteHeader border />
+      <SiteHeader />
 
       <div className="flex flex-1 justify-center overflow-y-auto px-4 py-10 sm:py-16">
         <Suspense>

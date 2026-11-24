@@ -8,7 +8,7 @@ import { LlmConfigPanel, useLlmConfig } from '@/components/llm-config';
 import { isLocalBrowserMode } from '@/lib/env';
 
 const RUN_BUTTON_CLASS =
-  'shrink-0 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none sm:px-6 sm:py-3 sm:text-base';
+  'shrink-0 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none sm:px-6 sm:py-3 sm:text-base';
 
 const EXAMPLES = [
   {
@@ -186,16 +186,14 @@ export default function TryPage() {
   return (
     <AgentViewToggle>
       <div className="relative min-h-screen flex flex-col overflow-x-hidden">
-        <div className="pointer-events-none fixed inset-0 z-0 dot-grid" />
-
-        <SiteHeader />
+        <SiteHeader cta={false} />
 
         {/* Prompt UI */}
-        <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 sm:px-6">
+        <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 py-6 sm:px-6 sm:py-10">
           <div className="w-full max-w-3xl animate-page-in">
-            <h1 className="text-center text-[2.5rem] font-bold leading-[1.1] tracking-tight sm:text-7xl lg:text-8xl">
+            <h1 className="text-center text-[2.25rem] font-semibold leading-[0.98] tracking-[-0.02em] sm:text-6xl lg:text-7xl">
               <span className="block">
-                Let the agent <span className="italic text-primary">click&nbsp;through</span>
+                Let the agent <span className="text-brand">click&nbsp;through</span>
               </span>
               <span className="block">for you.</span>
             </h1>
@@ -206,7 +204,7 @@ export default function TryPage() {
             </p>
 
             <div className="mt-8 space-y-3 sm:mt-12">
-              <div className="group rounded-2xl border border-border bg-card/60 p-2 backdrop-blur-sm transition-colors focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20">
+              <div className="group rounded-3xl border border-border bg-card p-2 transition-colors focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20">
                 <div className="flex items-end gap-2">
                   <textarea
                     ref={textareaRef}
@@ -301,7 +299,7 @@ export default function TryPage() {
               href="https://github.com/idan-rubin/browserclaw"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
+              className="display text-muted-foreground/70 transition-colors hover:text-foreground"
             >
               BrowserClaw
             </a>
@@ -311,7 +309,7 @@ export default function TryPage() {
               href="https://openclaw.ai"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-[family-name:var(--font-heading)] text-muted-foreground/70 transition-colors hover:text-foreground"
+              className="display text-muted-foreground/70 transition-colors hover:text-foreground"
             >
               OpenClaw
             </a>
