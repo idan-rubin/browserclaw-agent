@@ -99,6 +99,9 @@ def make_llm(provider: str, model: str, api_key: str):
             status_code=400,
             detail=f"Unsupported provider '{provider}'. Must be one of: {sorted(PROVIDERS)}",
         )
+    if provider == "openai" and model.startswith("gpt-6"):
+        # The pinned adapter omits sampling parameters for recognized reasoning models.
+        return ChatOpenAI(model=model, api_key=api_key, reasoning_models=[model])
     # browser-use 0.12.6 forces a named tool for structured Anthropic replies.
     # New Claude models can return thinking before text, and several reject
     # forced tools. The compatibility endpoint provides text for schema validation.
