@@ -19,9 +19,6 @@ const SIDES: Side[] = [
   { key: 'browser-use', label: 'browser-use', apiBase: '/api/v1/bu-runs', vncBase: '/vnc-bu' },
 ];
 
-const SHARED_PROVIDERS: readonly LlmConfig['provider'][] = ['anthropic', 'openai', 'gemini'];
-const DEFAULT_PROVIDER: LlmConfig['provider'] = 'anthropic';
-
 interface SideState {
   sessionId: string | null;
   terminal: TerminalStatus | null;
@@ -74,13 +71,6 @@ export function CompareClient() {
     statesRef.current = states;
   }, [states]);
 
-  const { provider: llmProvider, setProvider: llmSetProvider } = llm;
-  useEffect(() => {
-    if (!SHARED_PROVIDERS.includes(llmProvider)) {
-      llmSetProvider(DEFAULT_PROVIDER);
-    }
-  }, [llmProvider, llmSetProvider]);
-
   const hasApiKey = llm.apiKey.trim() !== '';
   const hasActiveSession = states.browserclaw.sessionId !== null || states['browser-use'].sessionId !== null;
   const bothTerminal = states.browserclaw.terminal !== null && states['browser-use'].terminal !== null;
@@ -119,7 +109,7 @@ export function CompareClient() {
         return;
       }
       if (llmConfig === undefined) {
-        setLaunchError('Add your API key above to run.');
+        setLaunchError('Add your API key or subscription token above to run.');
         return;
       }
 
@@ -212,10 +202,11 @@ export function CompareClient() {
             setApiKey={llm.setApiKey}
             refreshToken={llm.refreshToken}
             setRefreshToken={llm.setRefreshToken}
-            allowedProviders={SHARED_PROVIDERS}
           />
           {launchError !== null && <p className="text-xs text-red-600 dark:text-red-400">{launchError}</p>}
-          {!hasApiKey && <p className="text-xs text-amber-500/80">Enter your API key above to run.</p>}
+          {!hasApiKey && (
+            <p className="text-xs text-amber-500/80">Enter your API key or subscription token above to run.</p>
+          )}
         </div>
       </div>
 

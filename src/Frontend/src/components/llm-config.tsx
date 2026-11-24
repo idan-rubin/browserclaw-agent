@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback, useState, useMemo } from 'react';
+import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 
 export interface LlmConfig {
   provider: 'anthropic' | 'openai' | 'openai-oauth' | 'gemini';
@@ -11,14 +11,16 @@ export interface LlmConfig {
 export const PROVIDERS = [
   { value: 'anthropic' as const, label: 'Anthropic' },
   { value: 'openai' as const, label: 'OpenAI' },
-  { value: 'openai-oauth' as const, label: 'OpenAI (Codex)' },
+  { value: 'openai-oauth' as const, label: 'ChatGPT subscription (Codex)' },
   { value: 'gemini' as const, label: 'Google Gemini' },
 ];
 
 const MODELS: Record<string, { value: string; label: string }[]> = {
   anthropic: [
-    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-    { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+    { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+    { value: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+    { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
+    { value: 'claude-fable-5-2', label: 'Claude Fable 5.2' },
   ],
   openai: [
     { value: 'gpt-5.4', label: 'GPT-5.4' },
@@ -59,10 +61,10 @@ function loadStoredConfig(): StoredConfig {
     const parsed = JSON.parse(raw) as Partial<StoredConfig>;
     const provider = parsed.provider ?? DEFAULT_PROVIDER;
     const models = MODELS[provider] ?? [];
-    const model =
-      parsed.model !== undefined && parsed.model !== '' && models.some((m) => m.value === parsed.model)
-        ? parsed.model
-        : (models[0]?.value ?? '');
+    // Sonnet is the fallback. Keep returning Opus users on the Opus line.
+    const savedModel =
+      provider === 'anthropic' && parsed.model === 'claude-opus-4-6' ? 'claude-opus-5-5' : parsed.model;
+    const model = models.find((m) => m.value === savedModel)?.value ?? models.at(0)?.value ?? '';
     return { provider, model, api_key: parsed.api_key ?? '', refresh_token: parsed.refresh_token ?? '' };
   } catch {
     return emptyConfig();
@@ -136,6 +138,7 @@ export function useLlmConfig() {
   const [model, setModel] = useState(initial.model);
   const [apiKey, setApiKey] = useState(initial.api_key);
   const [refreshToken, setRefreshToken] = useState(initial.refresh_token);
+  const providerRevision = useRef(0);
 
   // Resolve model when provider changes
   const resolvedModel = useMemo(() => {
@@ -149,7 +152,10 @@ export function useLlmConfig() {
   }, [provider, resolvedModel, apiKey, refreshToken]);
 
   const handleSetProvider = useCallback((p: LlmConfig['provider']) => {
+    providerRevision.current++;
     setProvider(p);
+    setApiKey('');
+    setRefreshToken('');
     const models = MODELS[p] ?? [];
     setModel(models[0]?.value ?? '');
   }, []);
@@ -159,7 +165,9 @@ export function useLlmConfig() {
     if (trimmedKey === '') return undefined;
     let accessToken = trimmedKey;
     if (provider === 'openai-oauth' && refreshToken.trim() !== '' && shouldRefresh(accessToken)) {
+      const revision = providerRevision.current;
       const fresh = await refreshOpenAIOAuthTokens(refreshToken.trim());
+      if (revision !== providerRevision.current) return undefined;
       accessToken = fresh.access_token;
       setApiKey(fresh.access_token);
       setRefreshToken(fresh.refresh_token);
@@ -192,7 +200,6 @@ export function LlmConfigPanel({
   setApiKey,
   refreshToken,
   setRefreshToken,
-  allowedProviders,
 }: {
   provider: LlmConfig['provider'];
   setProvider: (p: LlmConfig['provider']) => void;
@@ -202,16 +209,9 @@ export function LlmConfigPanel({
   setApiKey: (k: string) => void;
   refreshToken: string;
   setRefreshToken: (t: string) => void;
-  /**
-   * Optional filter for the provider dropdown. Pages that integrate with
-   * backends that don't support every provider can narrow the list.
-   */
-  allowedProviders?: readonly LlmConfig['provider'][];
 }) {
   const [open, setOpen] = useState(apiKey === '');
   const models = MODELS[provider] ?? [];
-  const shownProviders =
-    allowedProviders !== undefined ? PROVIDERS.filter((p) => allowedProviders.includes(p.value)) : PROVIDERS;
 
   return (
     <div className="w-full">
@@ -238,7 +238,7 @@ export function LlmConfigPanel({
         <span className="truncate">
           {apiKey !== ''
             ? `${PROVIDERS.find((p) => p.value === provider)?.label ?? provider} — ${models.find((m) => m.value === model)?.label ?? model}`
-            : 'Bring your own API key'}
+            : 'API key or subscription token'}
         </span>
       </button>
 
@@ -269,9 +269,9 @@ export function LlmConfigPanel({
                 setProvider(e.target.value as LlmConfig['provider']);
               }}
               aria-label="LLM Provider"
-              className={`${FIELD_CLASS} sm:w-40`}
+              className={`${FIELD_CLASS} sm:w-auto`}
             >
-              {shownProviders.map((p) => (
+              {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>
                   {p.label}
                 </option>
@@ -299,8 +299,8 @@ export function LlmConfigPanel({
               onChange={(e) => {
                 setApiKey(e.target.value);
               }}
-              placeholder={provider === 'openai-oauth' ? 'OAuth token' : 'API key'}
-              aria-label={provider === 'openai-oauth' ? 'OAuth Token' : 'API Key'}
+              placeholder={provider === 'openai-oauth' ? 'ChatGPT access token' : 'API key'}
+              aria-label={provider === 'openai-oauth' ? 'ChatGPT access token' : 'API Key'}
               autoComplete="off"
               className={`${FIELD_CLASS} flex-1 placeholder:text-muted-foreground/40`}
             />

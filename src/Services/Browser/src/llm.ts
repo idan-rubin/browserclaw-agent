@@ -168,9 +168,17 @@ async function callCodexResponsesAPI(
   req: LLMRequest,
   apiKey: string,
   signal?: AbortSignal,
+  imageBase64?: string,
 ): Promise<LLMResponse> {
   const url = `${provider.baseURL}/codex/responses`;
 
+  const content =
+    imageBase64 === undefined
+      ? req.message
+      : [
+          { type: 'input_text', text: req.message },
+          { type: 'input_image', image_url: `data:image/png;base64,${imageBase64}` },
+        ];
   const res = await fetch(url, {
     method: 'POST',
     signal,
@@ -183,7 +191,7 @@ async function callCodexResponsesAPI(
     body: JSON.stringify({
       model,
       instructions: req.system,
-      input: [{ role: 'user', content: req.message }],
+      input: [{ role: 'user', content }],
       store: false,
       stream: true,
       reasoning: { effort: 'low' },
@@ -357,6 +365,22 @@ function getClient(ctx: SessionLlmContext, provider: ProviderConfig): OpenAI {
   return ctx.byokClient;
 }
 
+function callCodex(
+  ctx: SessionLlmContext,
+  provider: ProviderConfig,
+  req: LLMRequest,
+  imageBase64?: string,
+): Promise<LLMResponse> {
+  return withTimeout(
+    retryTransient(
+      () => callCodexResponsesAPI(provider, ctx.llmConfig.model, req, ctx.llmConfig.api_key, ctx.signal, imageBase64),
+      'BYOK Codex API',
+    ),
+    LLM_CODEX_TIMEOUT_MS,
+    'LLM call (BYOK OAuth)',
+  );
+}
+
 export async function llm(req: LLMRequest): Promise<LLMResponse> {
   const ctx = requireCtx();
   ctx.llmCallCount++;
@@ -365,14 +389,7 @@ export async function llm(req: LLMRequest): Promise<LLMResponse> {
   const provider = resolveProvider(config);
 
   if (config.provider === 'openai-oauth') {
-    return await withTimeout(
-      retryTransient(
-        () => callCodexResponsesAPI(provider, config.model, req, config.api_key, ctx.signal),
-        'BYOK Codex API',
-      ),
-      LLM_CODEX_TIMEOUT_MS,
-      'LLM call (BYOK OAuth)',
-    );
+    return callCodex(ctx, provider, req);
   }
 
   return await withTimeout(
@@ -411,6 +428,10 @@ export async function llmVision(system: string, message: string, imageBase64: st
 
   const config = ctx.llmConfig;
   const provider = resolveProvider(config);
+  if (config.provider === 'openai-oauth') {
+    const response = await callCodex(ctx, provider, { system, message, maxTokens: 2048 }, imageBase64);
+    return response.text;
+  }
   const client = getClient(ctx, provider);
 
   const response = await retryTransient(
