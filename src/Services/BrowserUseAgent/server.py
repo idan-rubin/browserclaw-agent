@@ -77,6 +77,12 @@ def require_token(authorization: str = Header(default="")) -> None:
 
 # ── LLM provider factory ─────────────────────────────────────────────────────
 
+class ClaudeChatCompletions(ChatOpenAI):
+    @property
+    def provider(self) -> str:
+        return "anthropic"
+
+
 PROVIDERS = {
     "anthropic": ChatAnthropic,
     "openai": ChatOpenAI,
@@ -92,6 +98,17 @@ def make_llm(provider: str, model: str, api_key: str):
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported provider '{provider}'. Must be one of: {sorted(PROVIDERS)}",
+        )
+    # browser-use 0.12.6 forces a named tool for structured Anthropic replies.
+    # New Claude models can return thinking before text, and several reject
+    # forced tools. The compatibility endpoint provides text for schema validation.
+    if provider == "anthropic" and model in {
+        "claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5", "claude-fable-5-2",
+    }:
+        return ClaudeChatCompletions(
+            model=model, api_key=api_key, base_url="https://api.anthropic.com/v1/",
+            temperature=None, frequency_penalty=None, max_completion_tokens=8192,
+            add_schema_to_system_prompt=True, dont_force_structured_output=True,
         )
     return cls(model=model, api_key=api_key)
 

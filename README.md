@@ -93,7 +93,7 @@ Chrome opens on your desktop. No containers, no VNC.
 ```bash
 cd src/Services/Browser
 cp .env.example .env.local
-# Set LLM_PROVIDER and at least one API key (see LLM providers below)
+# Set BROWSER_INTERNAL_TOKEN in .env.local for service authentication
 npm install
 npm run dev
 ```
@@ -103,13 +103,14 @@ Start a run:
 ```bash
 curl -X POST http://localhost:5040/api/v1/sessions \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Find apartments in NYC under $3000"}'
+  -H "Authorization: Bearer ${BROWSER_INTERNAL_TOKEN}" \
+  -d '{"prompt":"Find apartments in NYC under $3000","llm_config":{"provider":"anthropic","model":"claude-sonnet-5-5","api_key":"YOUR_ANTHROPIC_API_KEY"}}'
 ```
 
 Stream progress:
 
 ```bash
-curl http://localhost:5040/api/v1/sessions/{id}/stream
+curl -H "Authorization: Bearer ${BROWSER_INTERNAL_TOKEN}" http://localhost:5040/api/v1/sessions/{id}/stream
 ```
 
 ### Docker (full stack)
@@ -120,7 +121,6 @@ Runs the frontend, browser service (headless Chrome + VNC), MinIO (skill storage
 git clone https://github.com/idan-rubin/browserclaw-agent.git
 cd browserclaw-agent
 cp src/Services/Browser/.env.example src/Services/Browser/.env.local
-# Set LLM_PROVIDER and at least one API key
 # Set BROWSER_INTERNAL_TOKEN to a random secret (used for frontend → browser service auth):
 echo "BROWSER_INTERNAL_TOKEN=$(openssl rand -hex 32)" >> .env
 docker compose up
@@ -130,17 +130,15 @@ Open [localhost](http://localhost).
 
 ### LLM providers
 
-Add at least one API key to `.env.local` and set `LLM_PROVIDER`:
+On the Try or Compare page, select a model and enter your Anthropic, OpenAI, or Gemini API key. For a ChatGPT subscription, select **ChatGPT subscription (Codex)** and paste your OAuth access token. The optional refresh token lets the browser renew access before a run.
 
-| Provider                      | Env var              | `LLM_PROVIDER` | Free tier         |
-| ----------------------------- | -------------------- | -------------- | ----------------- |
-| Groq                          | `GROQ_API_KEY`       | `groq`         | Yes               |
-| Google Gemini                 | `GEMINI_API_KEY`     | `gemini`       | Yes               |
-| OpenAI                        | `OPENAI_API_KEY`     | `openai`       | No                |
-| OpenAI (ChatGPT subscription) | `OPENAI_OAUTH_TOKEN` | `openai-oauth` | No (subscription) |
-| Anthropic                     | `ANTHROPIC_API_KEY`  | `anthropic`    | No                |
+To obtain the tokens, run the login helper from `src/Services/Browser` after installing dependencies. It prints a sign-in URL and waits for the local callback.
 
-Set `LLM_MODEL` to override the default model for your provider.
+```bash
+npx tsx scripts/openai-login.ts
+```
+
+Direct API clients supply the provider (`anthropic`, `openai`, `openai-oauth`, or `gemini`), model, and access token or API key in each session’s `llm_config`. The refresh token stays in the browser.
 
 ### Other features
 
@@ -189,7 +187,7 @@ const history = [];
 for (let step = 0; step < 20; step++) {
   const { snapshot } = await page.snapshot();
   const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-5-5",
     max_tokens: 1024,
     system:
       "You control a browser. Given a page snapshot, return JSON: { action, ref?, text?, url?, reasoning }. Actions: click, type, navigate, done.",
@@ -202,7 +200,9 @@ for (let step = 0; step < 20; step++) {
     ],
   });
 
-  const action = JSON.parse(response.content[0].text);
+  const reply = response.content.find((block) => block.type === "text");
+  if (!reply) throw new Error("Claude returned no action");
+  const action = JSON.parse(reply.text);
   history.push(
     { role: "user", content: `Page:\n${snapshot}` },
     { role: "assistant", content: JSON.stringify(action) },

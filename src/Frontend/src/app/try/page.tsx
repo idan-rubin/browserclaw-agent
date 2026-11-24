@@ -137,7 +137,7 @@ export default function TryPage() {
     try {
       const llmConfig = await llm.getConfig();
       if (llmConfig === undefined) {
-        setModal({ type: 'blocked', reason: 'Add your API key above to run.' });
+        setModal({ type: 'blocked', reason: 'Add your API key or subscription token above to run.' });
         return;
       }
       const res = await fetch('/api/v1/runs', {
@@ -240,7 +240,9 @@ export default function TryPage() {
                 </div>
                 <div className="flex items-center justify-end gap-3 px-2 pt-1">
                   {!hasApiKey && prompt.trim() && (
-                    <span className="text-xs text-amber-500/80">Enter your API key below to run</span>
+                    <span className="text-xs text-amber-500/80">
+                      Enter your API key or subscription token below to run
+                    </span>
                   )}
                   <span className="hidden text-sm text-muted-foreground/40 sm:inline">Shift+Enter for new line</span>
                   {prompt.trim() && (

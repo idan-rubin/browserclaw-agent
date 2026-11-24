@@ -2,7 +2,7 @@
 /**
  * OpenAI OAuth login script.
  * Runs the Codex PKCE flow to get an OAuth token from your ChatGPT subscription.
- * Paste the resulting OPENAI_OAUTH_TOKEN into your .env.local file.
+ * Paste the access token into the ChatGPT subscription field on the Try or Compare page.
  *
  * Usage: npx tsx scripts/openai-login.ts
  */
@@ -110,7 +110,7 @@ async function main() {
   console.log('Got authorization code, exchanging for token...\n');
   const token = await exchangeCode(code, verifier);
 
-  console.log('Add these to your .env.local:\n');
+  console.log('Select ChatGPT subscription (Codex) and paste the access token and optional refresh token:\n');
   console.log(`OPENAI_OAUTH_TOKEN=${token.access_token}`);
   console.log(`OPENAI_REFRESH_TOKEN=${token.refresh_token}`);
   console.log(`\nToken expires in ${Math.round(token.expires_in / 3600)} hours. It will auto-refresh using the refresh token.`);

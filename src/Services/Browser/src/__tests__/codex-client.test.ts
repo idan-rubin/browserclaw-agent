@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { llm, llmJson, runWithLlmConfig, setLlmAbortSignal } from '../llm.js';
+import { llm, llmJson, llmVision, runWithLlmConfig, setLlmAbortSignal } from '../llm.js';
 
 const CONFIG = { provider: 'openai-oauth' as const, model: 'gpt-test', api_key: 'token' };
 const REQUEST = { system: 'Respond with valid JSON.', message: 'Say hi', maxTokens: 64 };
@@ -70,6 +70,26 @@ describe('Codex Responses client', () => {
     await runWithLlmConfig(CONFIG, () => llm(REQUEST));
 
     expect(sentBody()).not.toHaveProperty('text');
+  });
+
+  it('sends screenshots to the Codex endpoint with the subscription bearer', async () => {
+    respondWith(sse([completed('visible text')]));
+
+    const text = await runWithLlmConfig(CONFIG, () => llmVision('Read the page', 'What is visible?', 'aW1hZ2U='));
+
+    expect(text).toBe('visible text');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://chatgpt.com/backend-api/codex/responses');
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer token');
+    expect(sentBody().input).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'What is visible?' },
+          { type: 'input_image', image_url: 'data:image/png;base64,aW1hZ2U=' },
+        ],
+      },
+    ]);
   });
 
   it('passes the context abort signal to fetch', async () => {
